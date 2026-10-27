@@ -147,7 +147,9 @@ export function createA2AHandler(agent, cardJson, hooks = {}) {
  * @returns {Promise<unknown>} the answer (a signed RECEIPT or REFUSE), to be checked by recordAnswer
  */
 export async function sendToAgent(baseUrl, message, o = {}) {
-  const client = await new ClientFactory().createFromUrl(baseUrl);
+  // The SDK resolves the card path relative to the base URL, so an agent under a path
+  // (https://host/agents/jcb) needs the trailing slash or the last segment is dropped.
+  const client = await new ClientFactory().createFromUrl(baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
   const result = await client.sendMessage(
     /** @type {any} */ ({ message: a2aMessage('ROLE_USER', message, message.order_id) }),
     { signal: AbortSignal.timeout(o.timeoutMs ?? 15000), serviceParameters: ServiceParameters.create(withA2AExtensions(EXTENSION_URI)) },
