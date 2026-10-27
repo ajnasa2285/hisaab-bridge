@@ -130,11 +130,11 @@ Signature: Ed25519 over the RFC 8785 canonical JSON of the message without `sig`
 | `BOOKING_REQUEST` | buyer → seller | `kind: 'jcb_hours'|'material'`, `site`, `day`, `time?`, `hoursTenths?` (JCB), `items?: {name, qtyHundredths, unit}[]` (material), `note?` |
 | `BOOKING_REPLY` | seller → buyer | `answer: 'yes'|'no'|'other_time'`, `day?`, `time?`, `ratePaise?` (per hour or per unit), `note?` |
 | `DELIVERY` | seller → buyer | material only: `items`, `challan: {sha256, readValues}`, `deliveredAt` |
-| `BILL` | seller → buyer | `lines: {what, qtyHundredths?, hoursTenths?, ratePaise, amountPaise}[]`, `totalPaise`, `evidence: {sha256, kind: 'meter'|'challan', readValue, takenAt, sentAt}[]`, `replaces?: msg_id` |
+| `BILL` | seller → buyer | `lines: {what, qtyHundredths?, hoursTenths?, ratePaise, amountPaise}[]`, `totalPaise`, `evidence: {sha256, kind: 'meter'|'challan', readValue, takenAt, sentAt}[]`; `totalPaise` must equal the sum of `amountPaise`; never has `replaces` |
 | `RECEIPT` | receiver → sender | `receipt_for: msg_id`, `entry_hash`, `chain_head` |
 | `ACCEPT` | buyer → seller | `bill: msg_id` |
 | `DISPUTE` | buyer → seller | `bill: msg_id`, `theirFigure: {hoursTenths?|qtyHundredths?|totalPaise}`, `reason` |
-| `CORRECTION` | seller → buyer | a new `BILL` body with `replaces` set (type kept separate for clarity) |
+| `CORRECTION` | seller → buyer | a `BILL` body that always has `replaces: msg_id` (the bill or correction it replaces) |
 | `PAYMENT_CLAIM` | buyer → seller | `bill: msg_id`, `amountPaise`, `utr`, `paidOn`, `screenshot: {sha256}` |
 | `SETTLED` | seller → buyer | `bill: msg_id`, `payment: msg_id`, `amountPaise` |
 | `REFUSE` | either | `refers_to: msg_id`, `code` |
