@@ -11,11 +11,17 @@ function rate(numerator, denominator) {
   return { numerator, denominator, basisPoints: denominator ? Math.round(numerator * 10000 / denominator) : null };
 }
 
+/** Receipts print the same name in more than one case (e.g. a capitalised header and the
+ * bank's "Banking Name" line), and UPI addresses are case-insensitive. @param {unknown} v */
+const folded = v => typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').toLowerCase() : v;
+const FOLDED = new Set(['payeeName', 'payeeVpa', 'payerName']);
+
 /** UTC timestamp spelling may omit zero milliseconds without changing the instant.
- * All other fields retain exact equality. @param {UpiField} field @param {unknown} left @param {unknown} right */
+ * Names and VPAs ignore case and spacing; all other fields retain exact equality.
+ * @param {UpiField} field @param {unknown} left @param {unknown} right */
 function sameField(field, left, right) {
-  return left === right || (field === 'time' && validUpiTime(left) && validUpiTime(right)
-    && Date.parse(left) === Date.parse(right));
+  return left === right || (FOLDED.has(field) && folded(left) === folded(right))
+    || (field === 'time' && validUpiTime(left) && validUpiTime(right) && Date.parse(left) === Date.parse(right));
 }
 
 /** Pure projection: only static field names and aggregate numbers can leave this module.

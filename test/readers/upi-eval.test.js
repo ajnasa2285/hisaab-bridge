@@ -186,3 +186,14 @@ test('empty evaluations and malformed keys cannot masquerade as accurate', () =>
   assert.equal(unscored.labeled, 0);
   assert.equal(unscored.wrongButConfidentCount, null);
 });
+
+test('a name printed in capitals and in the bank line matches either way; other fields stay exact', () => {
+  const key = buildUpiAnswer(input({ payeeName: 'Example Shop S/O Owner', payeeVpa: 'Example.Shop@bank' }));
+  const same = summarizeUpi([{ prediction: reading({ payeeName: 'EXAMPLE  SHOP S/O OWNER', payeeVpa: 'example.shop@bank' }), expected: key, elapsedMs: 100 }]);
+  assert.equal(same.fieldAccuracy.payeeName.numerator, 1);
+  assert.equal(same.fieldAccuracy.payeeVpa.numerator, 1);
+  assert.equal(same.wrongButConfidentCount, 0);
+  const other = summarizeUpi([{ prediction: reading({ payeeName: 'Example Shops S/O Owner', utr: '123456789013' }), expected: key, elapsedMs: 100 }]);
+  assert.equal(other.fieldAccuracy.payeeName.numerator, 0);
+  assert.equal(other.fieldAccuracy.utr.numerator, 0);
+});
