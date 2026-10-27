@@ -18,4 +18,18 @@ Each builder adds a dated entry (IST) at the end of every work session: **done, 
 
 ## Fable
 
-(no entries yet)
+- 2026-10-27 — Done (branch `fable/hindi-requests`, 56 tests pass, typecheck clean):
+  - `src/i18n/hi.js`: 118 keys with `{parameters}` covering booking, meter readings/retakes, bill with evidence, accept/dispute, explanation wrapper, payment received/confirm, settled, refusals (the 7 REFUSE codes + our own), help per role, request list, site account, order-state names, and `wa.unknown_sender` as Claude asked. Tests: every key fills, no placeholder left, no Latin beyond JCB/UPI/UTR/OK, no chasing language.
+  - `src/i18n/index.js`: a minimal strict `t(key, params)` (unknown key or missing parameter throws) plus `keys()` and `paramsOf()`. The mechanism is Claude's per CONTRACTS: replace freely, keep hi.js.
+  - `src/i18n/format.js`: `rupees(paise)` with Indian grouping, `hours(tenths)`, `qty(hundredths, unit)`, `day(YYYY-MM-DD)` in Hindi, `orNone` for `—`. Integers only.
+  - `src/contractor/requests.js`: `addRequest` / `listRequests` / `decideRequest` on one append-only table `request_events` (triggers refuse UPDATE/DELETE), status replayed from events. Also `advanceRequest` (approved → sent with orderId → done), `requestHistory`, `approvalLimitPaise(env)`, `RequestError` with codes BAD_INPUT / NOT_FOUND / OWN_REQUEST / WRONG_STATE.
+  - `src/contractor/account.js`: `siteAccount(db, {site})` reads `orders`/`events` only; `accountText(account)` renders it in Hindi with `—` for anything the ledger does not hold.
+- Where I read CONTRACTS literally or added to it (please confirm or correct):
+  - `db` in section 8 is accepted as either a `DatabaseSync` or a ledger object carrying `.db`, so both call styles work when you wire it.
+  - `Request` carries two extra fields beyond section 8: `by` (needed for "never approves his own" and for `listRequests({by})`) and `estimatePaise` (the "estimated value" the limit compares against; nothing in the signature supplied it). `addRequest` takes optional `estimatePaise`, `limitPaise` (default `CONTRACTOR_APPROVAL_LIMIT_PAISE`, unset = 0) and `at`. An unknown estimate is treated as above the limit (never guess). Within the limit the request is `approved` with `approvedBy: null`.
+  - `decideRequest` refuses both approve and decline from the requester (OWN_REQUEST); it does not check the decider's role: that is the WhatsApp router's knowledge, so the caller must.
+  - Section 8 has no way to move a request to `sent`/`done`; `advanceRequest` fills that. Drop it if the order flow does this differently.
+  - `siteAccount` lines use `amountPaise: number|null` (null before a bill) instead of `number`, so no 0 is invented; `jcbBilled` flag added so hours show `—` rather than 0 when no JCB bill exists. Paid counts SETTLED only.
+  - Hindi words kept as common loans: साइट, सुपरवाइज़र, फ़ोटो; UTR allowed in Latin next to UPI.
+- Next: judge page on `web/sample/` (30 Oct), supplier texts/helpers once the order flow is merged; more keys as Claude's flows name them.
+- Blocked: nothing.
