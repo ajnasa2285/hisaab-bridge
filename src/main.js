@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { generateKeys, privateKeyFromPem, publicKeyText } from './protocol/keys.js';
 import { createApp } from './app.js';
-import { museSpark, transcribe } from './meta/client.js';
+import { listModels, museSpark, transcribe } from './meta/client.js';
 import { readMeter } from './readers/meter.js';
 
 /** @typedef {import('./protocol/messages.js').MessageType} MessageType */
@@ -77,6 +77,8 @@ export function loadConfig(env) {
 
   return {
     port: Number(env.HB_PORT ?? 8080),
+    // Only the reverse proxy on the same machine reaches the service unless told otherwise.
+    host: env.HB_HOST || '127.0.0.1',
     baseUrl,
     exportToken: env.HB_EXPORT_TOKEN || undefined,
     waStoreFile: join(dataDir, 'wa.db'),
@@ -106,9 +108,14 @@ async function main() {
       if (!res.headersSent) res.writeHead(500).end();
     });
   });
-  server.listen(cfg.port, () => {
-    console.log(`hisaab-bridge listening on ${cfg.port}; agents: ${cfg.agents.map((a) => `${a.id} ${publicKeyText(a.privateKey)}`).join(', ')}`);
+  server.listen(cfg.port, cfg.host, () => {
+    console.log(`hisaab-bridge listening on ${cfg.host}:${cfg.port}; agents: ${cfg.agents.map((a) => `${a.id} ${publicKeyText(a.privateKey)}`).join(', ')}`);
   });
+  // A wrong Meta setting would otherwise only show as "try again" replies: say it once at start.
+  const models = await listModels();
+  const want = [process.env.MUSE_SPARK_MODEL, process.env.MUSE_TRANSCRIBE_MODEL];
+  if (!models.ok) console.error(`meta: not usable (${models.reason}); check META_API_KEY and META_API_BASE`);
+  else for (const m of want) if (!m || !models.models.includes(m)) console.error(`meta: model "${m ?? ''}" is not in the catalog; check MUSE_SPARK_MODEL / MUSE_TRANSCRIBE_MODEL`);
   const stop = () => server.close(() => {
     app.close();
     process.exit(0);
