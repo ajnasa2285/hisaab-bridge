@@ -1,0 +1,824 @@
+{
+  "v": "hb-export/0.1",
+  "exportedAt": "2026-10-30T09:12:00.000Z",
+  "jcb": {
+    "agentId": "agent:jcb-1",
+    "publicKey": "ed25519:9e8sYlARuom2uKasPM9lJIxfW3PQYA9mXZwHzBKLcTo=",
+    "orders": [
+      {
+        "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "kind": "jcb_hours",
+        "counterparty": "agent:contractor-1",
+        "site": "Shivpuri",
+        "created_at": "2026-10-28T03:30:00.000Z"
+      }
+    ],
+    "events": [
+      {
+        "seq": 1,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "BOOKING_REQUEST",
+        "msgId": "8e8facb7-e972-485c-ad47-1dc811bc5a4d",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "8e8facb7-e972-485c-ad47-1dc811bc5a4d",
+          "type": "BOOKING_REQUEST",
+          "from": "agent:contractor-1",
+          "to": "agent:jcb-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-28T03:30:00.000Z",
+          "expires_at": "2026-10-29T03:30:00.000Z",
+          "body": {
+            "kind": "jcb_hours",
+            "site": "Shivpuri",
+            "day": "2026-10-29",
+            "time": "08:00",
+            "hoursTenths": 60
+          },
+          "sig": "ed25519:5OY5sWm84Is3CnCaJB0KYhwveT6//pLsqNtYTWGiZJDhOBpReuJMbYHjrrYyzxIQF1GuO3cVXM1amiRY2w9TBw=="
+        },
+        "at": "2026-10-28T03:30:00.000Z",
+        "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "hash": "8814a468d97ac946a99700f3253ca2173c9cf37b7868ab4d3617ec712a4d05ca"
+      },
+      {
+        "seq": 2,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "out",
+        "type": "BOOKING_REPLY",
+        "msgId": "9bedbf6e-6461-415e-9487-9480af7cabaa",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "9bedbf6e-6461-415e-9487-9480af7cabaa",
+          "type": "BOOKING_REPLY",
+          "from": "agent:jcb-1",
+          "to": "agent:contractor-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-28T03:55:00.000Z",
+          "expires_at": "2026-10-29T03:55:00.000Z",
+          "body": {
+            "answer": "yes",
+            "ratePaise": 120000
+          },
+          "sig": "ed25519:k2YYusujrZNb3NQHWn666nYwWJmI1e/l97BX9g7QttFQpAMKIwnc09OVvY758dg1aqF5EodJ4D277tKvzXJuCw=="
+        },
+        "at": "2026-10-28T03:55:00.000Z",
+        "prevHash": "8814a468d97ac946a99700f3253ca2173c9cf37b7868ab4d3617ec712a4d05ca",
+        "hash": "b3377b0f5992bf9d1b77a8fee403086647845a17248642bd1d700224ddab4c50"
+      },
+      {
+        "seq": 3,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "RECEIPT",
+        "msgId": "0b55f210-cbd8-45e5-8141-9274aac21d7f",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "0b55f210-cbd8-45e5-8141-9274aac21d7f",
+          "type": "RECEIPT",
+          "from": "agent:contractor-1",
+          "to": "agent:jcb-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-28T03:55:00.000Z",
+          "expires_at": "2026-10-29T03:55:00.000Z",
+          "body": {
+            "receipt_for": "9bedbf6e-6461-415e-9487-9480af7cabaa",
+            "entry_hash": "cae700c8818da3c9a9f689d98272fa3e9bbf5561fcaef6268dae3b1606802314",
+            "chain_head": "cae700c8818da3c9a9f689d98272fa3e9bbf5561fcaef6268dae3b1606802314"
+          },
+          "sig": "ed25519:MzLs+aT/UAESFemnGfqwXnAigbEnNEc6l84DT3kyOt2PF7dXul4XqwPIuC0ymBqeh1TOuA1h4OODk875iIqhAA=="
+        },
+        "at": "2026-10-28T03:55:00.000Z",
+        "prevHash": "b3377b0f5992bf9d1b77a8fee403086647845a17248642bd1d700224ddab4c50",
+        "hash": "3042e8d20e6981cfd974c9f024e8f0ff780aef4d2c1ec2b04723b053a7351aa1"
+      },
+      {
+        "seq": 4,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "local",
+        "type": "EVIDENCE",
+        "msgId": "e673c47f-0cc6-445d-9329-a9bb6dd90ef2",
+        "body": {
+          "kind": "meter",
+          "which": "start",
+          "valueTenths": 12345,
+          "sha256": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+          "takenAt": "2026-10-29T02:33:00Z"
+        },
+        "at": "2026-10-29T03:05:00.000Z",
+        "prevHash": "3042e8d20e6981cfd974c9f024e8f0ff780aef4d2c1ec2b04723b053a7351aa1",
+        "hash": "5af76dd58d409a16010fa86630552e4b575e5240af5b9bdd90503b45130529dd"
+      },
+      {
+        "seq": 5,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "local",
+        "type": "EVIDENCE",
+        "msgId": "dc50ed0f-7b59-4764-8fbe-97b0ae542fac",
+        "body": {
+          "kind": "meter",
+          "which": "end",
+          "valueTenths": 12406,
+          "sha256": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+          "takenAt": "2026-10-29T08:52:00Z"
+        },
+        "at": "2026-10-29T09:25:00.000Z",
+        "prevHash": "5af76dd58d409a16010fa86630552e4b575e5240af5b9bdd90503b45130529dd",
+        "hash": "fd9be4c2731f7d36ec6f4c632a66d8d25b1d5e8a1ebc8cb7b3fdc7a9a07d3789"
+      },
+      {
+        "seq": 6,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "out",
+        "type": "BILL",
+        "msgId": "a1e03219-9d14-4348-bc92-0abe07b397c1",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "a1e03219-9d14-4348-bc92-0abe07b397c1",
+          "type": "BILL",
+          "from": "agent:jcb-1",
+          "to": "agent:contractor-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-29T10:05:00.000Z",
+          "expires_at": "2026-10-30T10:05:00.000Z",
+          "body": {
+            "lines": [
+              {
+                "what": "JCB",
+                "hoursTenths": 61,
+                "ratePaise": 120000,
+                "amountPaise": 732000
+              }
+            ],
+            "totalPaise": 732000,
+            "evidence": [
+              {
+                "sha256": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+                "kind": "meter",
+                "readValue": "1234.5",
+                "takenAt": "2026-10-29T02:33:00Z",
+                "sentAt": "2026-10-29T03:05:00.000Z"
+              },
+              {
+                "sha256": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+                "kind": "meter",
+                "readValue": "1240.6",
+                "takenAt": "2026-10-29T08:52:00Z",
+                "sentAt": "2026-10-29T09:25:00.000Z"
+              }
+            ]
+          },
+          "sig": "ed25519:FAs6SlFTDk70JBtl8HXAJKYUABnNW/Fo/foJ/+zyIzUl7SAYnvIiod07nnBBlwqpbOlMq3KE9HErWQ3WXMyyBQ=="
+        },
+        "at": "2026-10-29T10:05:00.000Z",
+        "prevHash": "fd9be4c2731f7d36ec6f4c632a66d8d25b1d5e8a1ebc8cb7b3fdc7a9a07d3789",
+        "hash": "ccd517d9fb08a5a5f7ed65a28b261de9cf6a88d61a4c5d967f272af8739a113e"
+      },
+      {
+        "seq": 7,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "RECEIPT",
+        "msgId": "63ce4891-4199-456a-b08e-dd87b266cf0c",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "63ce4891-4199-456a-b08e-dd87b266cf0c",
+          "type": "RECEIPT",
+          "from": "agent:contractor-1",
+          "to": "agent:jcb-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-29T10:05:00.000Z",
+          "expires_at": "2026-10-30T10:05:00.000Z",
+          "body": {
+            "receipt_for": "a1e03219-9d14-4348-bc92-0abe07b397c1",
+            "entry_hash": "b6d3ec7f4da01bccde08c539e6a1fb411084aaf04837fa309bb70a27e8726b61",
+            "chain_head": "b6d3ec7f4da01bccde08c539e6a1fb411084aaf04837fa309bb70a27e8726b61"
+          },
+          "sig": "ed25519:r8TZF7wiCfc6UnkjNyyqaVZ+VFNnvGlp/O9/58upE/OhcUEDctsZAQvD1d6pHOO1lfga+GCAm/F9uJmrNvj6Cw=="
+        },
+        "at": "2026-10-29T10:05:00.000Z",
+        "prevHash": "ccd517d9fb08a5a5f7ed65a28b261de9cf6a88d61a4c5d967f272af8739a113e",
+        "hash": "3e4f9f80aa4698ab6e7df33ec6b162c9912cb6d5bb5bd09a49dfa81dea4e583f"
+      },
+      {
+        "seq": 8,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "DISPUTE",
+        "msgId": "4fbedfe4-82ce-43e2-8d29-c90afb74245a",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "4fbedfe4-82ce-43e2-8d29-c90afb74245a",
+          "type": "DISPUTE",
+          "from": "agent:contractor-1",
+          "to": "agent:jcb-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-29T11:40:00.000Z",
+          "expires_at": "2026-10-30T11:40:00.000Z",
+          "body": {
+            "bill": "a1e03219-9d14-4348-bc92-0abe07b397c1",
+            "theirFigure": {
+              "hoursTenths": 55
+            },
+            "reason": "machine stood 36 minutes for the lunch break"
+          },
+          "sig": "ed25519:DFxQGfywjEhx4kktrnA0PjqSqy1lp+5wf5IrB+oGkS96/rEa8FAnx0+tNMZ2iX0GPu99lBVFiU5t52gkZaC+BQ=="
+        },
+        "at": "2026-10-29T11:40:00.000Z",
+        "prevHash": "3e4f9f80aa4698ab6e7df33ec6b162c9912cb6d5bb5bd09a49dfa81dea4e583f",
+        "hash": "6b4e48bcf73ba66f5e13f85415ef7a1ee26cc097425787435723e7948826d77b"
+      },
+      {
+        "seq": 9,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "out",
+        "type": "CORRECTION",
+        "msgId": "828a3f77-0a9e-4057-8c3e-67c8dc7dcf0e",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "828a3f77-0a9e-4057-8c3e-67c8dc7dcf0e",
+          "type": "CORRECTION",
+          "from": "agent:jcb-1",
+          "to": "agent:contractor-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-29T12:10:00.000Z",
+          "expires_at": "2026-10-30T12:10:00.000Z",
+          "body": {
+            "lines": [
+              {
+                "what": "JCB",
+                "hoursTenths": 55,
+                "ratePaise": 120000,
+                "amountPaise": 660000
+              }
+            ],
+            "totalPaise": 660000,
+            "evidence": [
+              {
+                "sha256": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+                "kind": "meter",
+                "readValue": "1234.5",
+                "takenAt": "2026-10-29T02:33:00Z",
+                "sentAt": "2026-10-29T03:05:00.000Z"
+              },
+              {
+                "sha256": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+                "kind": "meter",
+                "readValue": "1240.6",
+                "takenAt": "2026-10-29T08:52:00Z",
+                "sentAt": "2026-10-29T09:25:00.000Z"
+              }
+            ],
+            "replaces": "a1e03219-9d14-4348-bc92-0abe07b397c1"
+          },
+          "sig": "ed25519:teJlplnYOqg0ViM5QM5Wi9ZbO/dONv1DdMCYy4i368rNxzAJuyuGDFXliNIYR/pJcH+fUKQt9PN2VBu5EuUZDA=="
+        },
+        "at": "2026-10-29T12:10:00.000Z",
+        "prevHash": "6b4e48bcf73ba66f5e13f85415ef7a1ee26cc097425787435723e7948826d77b",
+        "hash": "aca189d0bb3c338a57029fb878555b93141cdabbc63c5abf2b790b9360d35f34"
+      },
+      {
+        "seq": 10,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "RECEIPT",
+        "msgId": "9bfb0724-fef0-4abd-9760-2173b7101883",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "9bfb0724-fef0-4abd-9760-2173b7101883",
+          "type": "RECEIPT",
+          "from": "agent:contractor-1",
+          "to": "agent:jcb-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-29T12:10:00.000Z",
+          "expires_at": "2026-10-30T12:10:00.000Z",
+          "body": {
+            "receipt_for": "828a3f77-0a9e-4057-8c3e-67c8dc7dcf0e",
+            "entry_hash": "f27d0de57450e34a17a988e9bded191453ae38f6b3dd6387c979153fe48b5d0f",
+            "chain_head": "f27d0de57450e34a17a988e9bded191453ae38f6b3dd6387c979153fe48b5d0f"
+          },
+          "sig": "ed25519:MpO7/k3pvOZ7qHnNRtmkdGM9WxCiMTssk5rNHhfyxlU67lYCJNvWvwnOcIHm3Ws5yh4RpbbYCnmdASSWhobRDg=="
+        },
+        "at": "2026-10-29T12:10:00.000Z",
+        "prevHash": "aca189d0bb3c338a57029fb878555b93141cdabbc63c5abf2b790b9360d35f34",
+        "hash": "696c82f61ed46a7f91cb65211ed5d7b649432f1cb6bfc5379cd6e0b7c74e2a4b"
+      },
+      {
+        "seq": 11,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "ACCEPT",
+        "msgId": "010a24a2-850c-48cd-8ff5-ffbd782ea540",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "010a24a2-850c-48cd-8ff5-ffbd782ea540",
+          "type": "ACCEPT",
+          "from": "agent:contractor-1",
+          "to": "agent:jcb-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-29T12:22:00.000Z",
+          "expires_at": "2026-10-30T12:22:00.000Z",
+          "body": {
+            "bill": "828a3f77-0a9e-4057-8c3e-67c8dc7dcf0e"
+          },
+          "sig": "ed25519:13rW+atkxSJTXzB6CTjT3e0jbXSKmKOy/flYd8e8FGCEvBIZGdll4zIqvwUE8ihngNPYvBupHcBxYmesvBXnBA=="
+        },
+        "at": "2026-10-29T12:22:00.000Z",
+        "prevHash": "696c82f61ed46a7f91cb65211ed5d7b649432f1cb6bfc5379cd6e0b7c74e2a4b",
+        "hash": "bdb514e8b0a2ce2574c39b006938a3426cef1f2e2050439bffe1d5e0dd3120af"
+      },
+      {
+        "seq": 12,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "PAYMENT_CLAIM",
+        "msgId": "4b224384-0fe5-4544-a3fb-551f7e964ffa",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "4b224384-0fe5-4544-a3fb-551f7e964ffa",
+          "type": "PAYMENT_CLAIM",
+          "from": "agent:contractor-1",
+          "to": "agent:jcb-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-30T08:22:00.000Z",
+          "expires_at": "2026-10-31T08:22:00.000Z",
+          "body": {
+            "bill": "828a3f77-0a9e-4057-8c3e-67c8dc7dcf0e",
+            "amountPaise": 660000,
+            "utr": "000000000001",
+            "paidOn": "2026-10-30",
+            "screenshot": {
+              "sha256": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
+            }
+          },
+          "sig": "ed25519:kyhKJwNF2g/pIsmQvftEELqR3StIMCrAeoKJtyYr2GY0M3zZ+pATGSP6hLTzEpX1vhEL6zPHhPYi8xUtgp3eBw=="
+        },
+        "at": "2026-10-30T08:22:00.000Z",
+        "prevHash": "bdb514e8b0a2ce2574c39b006938a3426cef1f2e2050439bffe1d5e0dd3120af",
+        "hash": "173240c0bd88e1ba5f03717e6e53c5f64cdcd8bdb2a758d6472d9714714074a7"
+      },
+      {
+        "seq": 13,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "out",
+        "type": "SETTLED",
+        "msgId": "f0dfb3a4-a04e-46b5-b1da-39240b5e01a8",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "f0dfb3a4-a04e-46b5-b1da-39240b5e01a8",
+          "type": "SETTLED",
+          "from": "agent:jcb-1",
+          "to": "agent:contractor-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-30T09:12:00.000Z",
+          "expires_at": "2026-10-31T09:12:00.000Z",
+          "body": {
+            "bill": "828a3f77-0a9e-4057-8c3e-67c8dc7dcf0e",
+            "payment": "4b224384-0fe5-4544-a3fb-551f7e964ffa",
+            "amountPaise": 660000
+          },
+          "sig": "ed25519:Xt705AI7GBDkTXcDMfNBjutWYBcdRqf/EQr0yGAsvhq7GzeTil93y820DXWTWAaUAzBlHVnpy2Xoq0NYmk2TCg=="
+        },
+        "at": "2026-10-30T09:12:00.000Z",
+        "prevHash": "173240c0bd88e1ba5f03717e6e53c5f64cdcd8bdb2a758d6472d9714714074a7",
+        "hash": "78f0f1d7fc9389b83159c73a18394e828c1c2d89225c5c406e282148d9628611"
+      },
+      {
+        "seq": 14,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "RECEIPT",
+        "msgId": "1b2b4c6a-af71-4646-8c24-f7100ddc0ed8",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "1b2b4c6a-af71-4646-8c24-f7100ddc0ed8",
+          "type": "RECEIPT",
+          "from": "agent:contractor-1",
+          "to": "agent:jcb-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-30T09:12:00.000Z",
+          "expires_at": "2026-10-31T09:12:00.000Z",
+          "body": {
+            "receipt_for": "f0dfb3a4-a04e-46b5-b1da-39240b5e01a8",
+            "entry_hash": "a27358633c80785d7d9e9f64cb8f5a0e1ed92cc4cace31ea69564310843550cb",
+            "chain_head": "a27358633c80785d7d9e9f64cb8f5a0e1ed92cc4cace31ea69564310843550cb"
+          },
+          "sig": "ed25519:/P29wNFxSsab9S1mla1Kn1klAOVpMU7oitVQEYgeV5Wwst+1TPW2sRmDmowfJpA6JfgxtbgV7QCTzQOug8IwAw=="
+        },
+        "at": "2026-10-30T09:12:00.000Z",
+        "prevHash": "78f0f1d7fc9389b83159c73a18394e828c1c2d89225c5c406e282148d9628611",
+        "hash": "b85b0f7b668ba467935d9868bb3bc5162fc8bfc15a6aa1d560c320c03c7103f2"
+      }
+    ],
+    "chain": {
+      "ok": true,
+      "events": 14
+    }
+  },
+  "contractor": {
+    "agentId": "agent:contractor-1",
+    "publicKey": "ed25519:u/HlWXnmXhwG5dTwD2apomJUDeBRqDo011uoF43gXqE=",
+    "orders": [
+      {
+        "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "kind": "jcb_hours",
+        "counterparty": "agent:jcb-1",
+        "site": "Shivpuri",
+        "created_at": "2026-10-28T03:30:00.000Z"
+      }
+    ],
+    "events": [
+      {
+        "seq": 1,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "out",
+        "type": "BOOKING_REQUEST",
+        "msgId": "8e8facb7-e972-485c-ad47-1dc811bc5a4d",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "8e8facb7-e972-485c-ad47-1dc811bc5a4d",
+          "type": "BOOKING_REQUEST",
+          "from": "agent:contractor-1",
+          "to": "agent:jcb-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-28T03:30:00.000Z",
+          "expires_at": "2026-10-29T03:30:00.000Z",
+          "body": {
+            "kind": "jcb_hours",
+            "site": "Shivpuri",
+            "day": "2026-10-29",
+            "time": "08:00",
+            "hoursTenths": 60
+          },
+          "sig": "ed25519:5OY5sWm84Is3CnCaJB0KYhwveT6//pLsqNtYTWGiZJDhOBpReuJMbYHjrrYyzxIQF1GuO3cVXM1amiRY2w9TBw=="
+        },
+        "at": "2026-10-28T03:30:00.000Z",
+        "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "hash": "dc1578b14ea6e792f3564451d3bd9a3d367e3cb9bcc01b7c84d74836a8d76960"
+      },
+      {
+        "seq": 2,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "RECEIPT",
+        "msgId": "f66805ba-b6f3-4b63-8a5c-3dcc0b75b7a4",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "f66805ba-b6f3-4b63-8a5c-3dcc0b75b7a4",
+          "type": "RECEIPT",
+          "from": "agent:jcb-1",
+          "to": "agent:contractor-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-28T03:30:00.000Z",
+          "expires_at": "2026-10-29T03:30:00.000Z",
+          "body": {
+            "receipt_for": "8e8facb7-e972-485c-ad47-1dc811bc5a4d",
+            "entry_hash": "8814a468d97ac946a99700f3253ca2173c9cf37b7868ab4d3617ec712a4d05ca",
+            "chain_head": "8814a468d97ac946a99700f3253ca2173c9cf37b7868ab4d3617ec712a4d05ca"
+          },
+          "sig": "ed25519:Z4pI3zcqxNNexJWutsYQSUH42bb3NgRAxWtYhz54ZuQ3/6eDxbSX3Ns2+e6KetTW5KKSiwv46v/60S3SxuK5Dg=="
+        },
+        "at": "2026-10-28T03:30:00.000Z",
+        "prevHash": "dc1578b14ea6e792f3564451d3bd9a3d367e3cb9bcc01b7c84d74836a8d76960",
+        "hash": "e1d6d6c42a32aacf7bdeb1f4e9b05265f337cd8b5fad992ad5bbd291d99e8072"
+      },
+      {
+        "seq": 3,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "BOOKING_REPLY",
+        "msgId": "9bedbf6e-6461-415e-9487-9480af7cabaa",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "9bedbf6e-6461-415e-9487-9480af7cabaa",
+          "type": "BOOKING_REPLY",
+          "from": "agent:jcb-1",
+          "to": "agent:contractor-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-28T03:55:00.000Z",
+          "expires_at": "2026-10-29T03:55:00.000Z",
+          "body": {
+            "answer": "yes",
+            "ratePaise": 120000
+          },
+          "sig": "ed25519:k2YYusujrZNb3NQHWn666nYwWJmI1e/l97BX9g7QttFQpAMKIwnc09OVvY758dg1aqF5EodJ4D277tKvzXJuCw=="
+        },
+        "at": "2026-10-28T03:55:00.000Z",
+        "prevHash": "e1d6d6c42a32aacf7bdeb1f4e9b05265f337cd8b5fad992ad5bbd291d99e8072",
+        "hash": "cae700c8818da3c9a9f689d98272fa3e9bbf5561fcaef6268dae3b1606802314"
+      },
+      {
+        "seq": 4,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "BILL",
+        "msgId": "a1e03219-9d14-4348-bc92-0abe07b397c1",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "a1e03219-9d14-4348-bc92-0abe07b397c1",
+          "type": "BILL",
+          "from": "agent:jcb-1",
+          "to": "agent:contractor-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-29T10:05:00.000Z",
+          "expires_at": "2026-10-30T10:05:00.000Z",
+          "body": {
+            "lines": [
+              {
+                "what": "JCB",
+                "hoursTenths": 61,
+                "ratePaise": 120000,
+                "amountPaise": 732000
+              }
+            ],
+            "totalPaise": 732000,
+            "evidence": [
+              {
+                "sha256": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+                "kind": "meter",
+                "readValue": "1234.5",
+                "takenAt": "2026-10-29T02:33:00Z",
+                "sentAt": "2026-10-29T03:05:00.000Z"
+              },
+              {
+                "sha256": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+                "kind": "meter",
+                "readValue": "1240.6",
+                "takenAt": "2026-10-29T08:52:00Z",
+                "sentAt": "2026-10-29T09:25:00.000Z"
+              }
+            ]
+          },
+          "sig": "ed25519:FAs6SlFTDk70JBtl8HXAJKYUABnNW/Fo/foJ/+zyIzUl7SAYnvIiod07nnBBlwqpbOlMq3KE9HErWQ3WXMyyBQ=="
+        },
+        "at": "2026-10-29T10:05:00.000Z",
+        "prevHash": "cae700c8818da3c9a9f689d98272fa3e9bbf5561fcaef6268dae3b1606802314",
+        "hash": "b6d3ec7f4da01bccde08c539e6a1fb411084aaf04837fa309bb70a27e8726b61"
+      },
+      {
+        "seq": 5,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "out",
+        "type": "DISPUTE",
+        "msgId": "4fbedfe4-82ce-43e2-8d29-c90afb74245a",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "4fbedfe4-82ce-43e2-8d29-c90afb74245a",
+          "type": "DISPUTE",
+          "from": "agent:contractor-1",
+          "to": "agent:jcb-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-29T11:40:00.000Z",
+          "expires_at": "2026-10-30T11:40:00.000Z",
+          "body": {
+            "bill": "a1e03219-9d14-4348-bc92-0abe07b397c1",
+            "theirFigure": {
+              "hoursTenths": 55
+            },
+            "reason": "machine stood 36 minutes for the lunch break"
+          },
+          "sig": "ed25519:DFxQGfywjEhx4kktrnA0PjqSqy1lp+5wf5IrB+oGkS96/rEa8FAnx0+tNMZ2iX0GPu99lBVFiU5t52gkZaC+BQ=="
+        },
+        "at": "2026-10-29T11:40:00.000Z",
+        "prevHash": "b6d3ec7f4da01bccde08c539e6a1fb411084aaf04837fa309bb70a27e8726b61",
+        "hash": "c26da3fd5f06fea50c5c1592b47a01f672a920b74193441ec75433268cadbfef"
+      },
+      {
+        "seq": 6,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "RECEIPT",
+        "msgId": "65f0d31f-f188-4068-bbcc-c116a5d8a6b5",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "65f0d31f-f188-4068-bbcc-c116a5d8a6b5",
+          "type": "RECEIPT",
+          "from": "agent:jcb-1",
+          "to": "agent:contractor-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-29T11:40:00.000Z",
+          "expires_at": "2026-10-30T11:40:00.000Z",
+          "body": {
+            "receipt_for": "4fbedfe4-82ce-43e2-8d29-c90afb74245a",
+            "entry_hash": "6b4e48bcf73ba66f5e13f85415ef7a1ee26cc097425787435723e7948826d77b",
+            "chain_head": "6b4e48bcf73ba66f5e13f85415ef7a1ee26cc097425787435723e7948826d77b"
+          },
+          "sig": "ed25519:xxLdhIYtgA2w4/LNBOszX/ESs1p1X5/qs7ay1ct9T3V5AvMLm1KgvcxouuGDiNEiTneIyvxhYTVTruOIYwokDw=="
+        },
+        "at": "2026-10-29T11:40:00.000Z",
+        "prevHash": "c26da3fd5f06fea50c5c1592b47a01f672a920b74193441ec75433268cadbfef",
+        "hash": "e8396ed019480df76c2190359dd5a1a7c0668a135e07a3c6005fb128eb9390ab"
+      },
+      {
+        "seq": 7,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "CORRECTION",
+        "msgId": "828a3f77-0a9e-4057-8c3e-67c8dc7dcf0e",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "828a3f77-0a9e-4057-8c3e-67c8dc7dcf0e",
+          "type": "CORRECTION",
+          "from": "agent:jcb-1",
+          "to": "agent:contractor-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-29T12:10:00.000Z",
+          "expires_at": "2026-10-30T12:10:00.000Z",
+          "body": {
+            "lines": [
+              {
+                "what": "JCB",
+                "hoursTenths": 55,
+                "ratePaise": 120000,
+                "amountPaise": 660000
+              }
+            ],
+            "totalPaise": 660000,
+            "evidence": [
+              {
+                "sha256": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+                "kind": "meter",
+                "readValue": "1234.5",
+                "takenAt": "2026-10-29T02:33:00Z",
+                "sentAt": "2026-10-29T03:05:00.000Z"
+              },
+              {
+                "sha256": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+                "kind": "meter",
+                "readValue": "1240.6",
+                "takenAt": "2026-10-29T08:52:00Z",
+                "sentAt": "2026-10-29T09:25:00.000Z"
+              }
+            ],
+            "replaces": "a1e03219-9d14-4348-bc92-0abe07b397c1"
+          },
+          "sig": "ed25519:teJlplnYOqg0ViM5QM5Wi9ZbO/dONv1DdMCYy4i368rNxzAJuyuGDFXliNIYR/pJcH+fUKQt9PN2VBu5EuUZDA=="
+        },
+        "at": "2026-10-29T12:10:00.000Z",
+        "prevHash": "e8396ed019480df76c2190359dd5a1a7c0668a135e07a3c6005fb128eb9390ab",
+        "hash": "f27d0de57450e34a17a988e9bded191453ae38f6b3dd6387c979153fe48b5d0f"
+      },
+      {
+        "seq": 8,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "out",
+        "type": "ACCEPT",
+        "msgId": "010a24a2-850c-48cd-8ff5-ffbd782ea540",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "010a24a2-850c-48cd-8ff5-ffbd782ea540",
+          "type": "ACCEPT",
+          "from": "agent:contractor-1",
+          "to": "agent:jcb-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-29T12:22:00.000Z",
+          "expires_at": "2026-10-30T12:22:00.000Z",
+          "body": {
+            "bill": "828a3f77-0a9e-4057-8c3e-67c8dc7dcf0e"
+          },
+          "sig": "ed25519:13rW+atkxSJTXzB6CTjT3e0jbXSKmKOy/flYd8e8FGCEvBIZGdll4zIqvwUE8ihngNPYvBupHcBxYmesvBXnBA=="
+        },
+        "at": "2026-10-29T12:22:00.000Z",
+        "prevHash": "f27d0de57450e34a17a988e9bded191453ae38f6b3dd6387c979153fe48b5d0f",
+        "hash": "d5bedf92226377ed06c9c2f3f0239ff1f5f502cdde3eec269b15aab821bc3f02"
+      },
+      {
+        "seq": 9,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "RECEIPT",
+        "msgId": "d841775a-6b2c-4347-a6b9-f904157b1617",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "d841775a-6b2c-4347-a6b9-f904157b1617",
+          "type": "RECEIPT",
+          "from": "agent:jcb-1",
+          "to": "agent:contractor-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-29T12:22:00.000Z",
+          "expires_at": "2026-10-30T12:22:00.000Z",
+          "body": {
+            "receipt_for": "010a24a2-850c-48cd-8ff5-ffbd782ea540",
+            "entry_hash": "bdb514e8b0a2ce2574c39b006938a3426cef1f2e2050439bffe1d5e0dd3120af",
+            "chain_head": "bdb514e8b0a2ce2574c39b006938a3426cef1f2e2050439bffe1d5e0dd3120af"
+          },
+          "sig": "ed25519:WNo5tElNpbB++9JCaoDHlbrqywl2VP1HYXTGQcBLwAxf+bGAHAT8WtVhz2by38xBhvTTSCPY8klJw3nlqbOdCg=="
+        },
+        "at": "2026-10-29T12:22:00.000Z",
+        "prevHash": "d5bedf92226377ed06c9c2f3f0239ff1f5f502cdde3eec269b15aab821bc3f02",
+        "hash": "73436b59fe377d928fd9542f01d542721eace9e177727f762ad29eb847201457"
+      },
+      {
+        "seq": 10,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "out",
+        "type": "PAYMENT_CLAIM",
+        "msgId": "4b224384-0fe5-4544-a3fb-551f7e964ffa",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "4b224384-0fe5-4544-a3fb-551f7e964ffa",
+          "type": "PAYMENT_CLAIM",
+          "from": "agent:contractor-1",
+          "to": "agent:jcb-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-30T08:22:00.000Z",
+          "expires_at": "2026-10-31T08:22:00.000Z",
+          "body": {
+            "bill": "828a3f77-0a9e-4057-8c3e-67c8dc7dcf0e",
+            "amountPaise": 660000,
+            "utr": "000000000001",
+            "paidOn": "2026-10-30",
+            "screenshot": {
+              "sha256": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
+            }
+          },
+          "sig": "ed25519:kyhKJwNF2g/pIsmQvftEELqR3StIMCrAeoKJtyYr2GY0M3zZ+pATGSP6hLTzEpX1vhEL6zPHhPYi8xUtgp3eBw=="
+        },
+        "at": "2026-10-30T08:22:00.000Z",
+        "prevHash": "73436b59fe377d928fd9542f01d542721eace9e177727f762ad29eb847201457",
+        "hash": "748307c3c67399625edccf49cb98c91e1f24ef66b5005a563fe187fe6d64bc2b"
+      },
+      {
+        "seq": 11,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "RECEIPT",
+        "msgId": "4e9d9a36-8ca8-4c77-a66a-0b6dca157fac",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "4e9d9a36-8ca8-4c77-a66a-0b6dca157fac",
+          "type": "RECEIPT",
+          "from": "agent:jcb-1",
+          "to": "agent:contractor-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-30T08:22:00.000Z",
+          "expires_at": "2026-10-31T08:22:00.000Z",
+          "body": {
+            "receipt_for": "4b224384-0fe5-4544-a3fb-551f7e964ffa",
+            "entry_hash": "173240c0bd88e1ba5f03717e6e53c5f64cdcd8bdb2a758d6472d9714714074a7",
+            "chain_head": "173240c0bd88e1ba5f03717e6e53c5f64cdcd8bdb2a758d6472d9714714074a7"
+          },
+          "sig": "ed25519:gYq+PCY0NfoSWO75ItshGJbN8B1VD9j+DWisgWTZjZ6f2NYXHwmsqPemr3rM4+R/iL70FtvdSLeZRGRv7nzFDg=="
+        },
+        "at": "2026-10-30T08:22:00.000Z",
+        "prevHash": "748307c3c67399625edccf49cb98c91e1f24ef66b5005a563fe187fe6d64bc2b",
+        "hash": "8ad10fb5a1d8de316975a9bcbdbd7bd3bb57518cb6c205c54eb18bbf7e2917d9"
+      },
+      {
+        "seq": 12,
+        "orderId": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+        "direction": "in",
+        "type": "SETTLED",
+        "msgId": "f0dfb3a4-a04e-46b5-b1da-39240b5e01a8",
+        "body": {
+          "v": "hb/0.1",
+          "msg_id": "f0dfb3a4-a04e-46b5-b1da-39240b5e01a8",
+          "type": "SETTLED",
+          "from": "agent:jcb-1",
+          "to": "agent:contractor-1",
+          "order_id": "38cac1ed-dcca-419b-9931-7f1153f497c8",
+          "rev": 1,
+          "created_at": "2026-10-30T09:12:00.000Z",
+          "expires_at": "2026-10-31T09:12:00.000Z",
+          "body": {
+            "bill": "828a3f77-0a9e-4057-8c3e-67c8dc7dcf0e",
+            "payment": "4b224384-0fe5-4544-a3fb-551f7e964ffa",
+            "amountPaise": 660000
+          },
+          "sig": "ed25519:Xt705AI7GBDkTXcDMfNBjutWYBcdRqf/EQr0yGAsvhq7GzeTil93y820DXWTWAaUAzBlHVnpy2Xoq0NYmk2TCg=="
+        },
+        "at": "2026-10-30T09:12:00.000Z",
+        "prevHash": "8ad10fb5a1d8de316975a9bcbdbd7bd3bb57518cb6c205c54eb18bbf7e2917d9",
+        "hash": "a27358633c80785d7d9e9f64cb8f5a0e1ed92cc4cace31ea69564310843550cb"
+      }
+    ],
+    "chain": {
+      "ok": true,
+      "events": 12
+    }
+  }
+}
