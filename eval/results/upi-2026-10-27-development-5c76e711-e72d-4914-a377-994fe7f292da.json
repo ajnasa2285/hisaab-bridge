@@ -1,0 +1,156 @@
+{
+  "reader": "upi-v1",
+  "dateIST": "2026-10-27",
+  "partition": "development",
+  "model": "muse-spark-1.3",
+  "status": "scored",
+  "splitFrozen": false,
+  "promptsChangedSinceHeldout": false,
+  "rescored": false,
+  "planned": 9,
+  "notRun": 0,
+  "evaluated": 9,
+  "labeled": 9,
+  "unlabeled": 0,
+  "failures": 0,
+  "confident": 0,
+  "unclear": 9,
+  "notUpi": 0,
+  "exactAccuracy": {
+    "numerator": 0,
+    "denominator": 9,
+    "basisPoints": 0
+  },
+  "classificationAccuracy": {
+    "numerator": 9,
+    "denominator": 9,
+    "basisPoints": 10000
+  },
+  "fieldAccuracy": {
+    "amountPaise": {
+      "numerator": 9,
+      "denominator": 9,
+      "basisPoints": 10000
+    },
+    "date": {
+      "numerator": 9,
+      "denominator": 9,
+      "basisPoints": 10000
+    },
+    "time": {
+      "numerator": 0,
+      "denominator": 0,
+      "basisPoints": null
+    },
+    "utr": {
+      "numerator": 0,
+      "denominator": 9,
+      "basisPoints": 0
+    },
+    "status": {
+      "numerator": 9,
+      "denominator": 9,
+      "basisPoints": 10000
+    },
+    "payeeName": {
+      "numerator": 9,
+      "denominator": 9,
+      "basisPoints": 10000
+    },
+    "payeeVpa": {
+      "numerator": 4,
+      "denominator": 4,
+      "basisPoints": 10000
+    },
+    "payerName": {
+      "numerator": 0,
+      "denominator": 0,
+      "basisPoints": null
+    }
+  },
+  "fieldClaims": {
+    "amountPaise": {
+      "nonNull": 9,
+      "incorrect": 0,
+      "unsupported": 0,
+      "unassessed": 0
+    },
+    "date": {
+      "nonNull": 9,
+      "incorrect": 0,
+      "unsupported": 0,
+      "unassessed": 0
+    },
+    "time": {
+      "nonNull": 0,
+      "incorrect": 0,
+      "unsupported": 0,
+      "unassessed": 0
+    },
+    "utr": {
+      "nonNull": 0,
+      "incorrect": 0,
+      "unsupported": 0,
+      "unassessed": 0
+    },
+    "status": {
+      "nonNull": 9,
+      "incorrect": 0,
+      "unsupported": 0,
+      "unassessed": 0
+    },
+    "payeeName": {
+      "nonNull": 9,
+      "incorrect": 0,
+      "unsupported": 0,
+      "unassessed": 0
+    },
+    "payeeVpa": {
+      "nonNull": 4,
+      "incorrect": 0,
+      "unsupported": 0,
+      "unassessed": 0
+    },
+    "payerName": {
+      "nonNull": 0,
+      "incorrect": 0,
+      "unsupported": 0,
+      "unassessed": 0
+    }
+  },
+  "wrongButConfidentCount": 0,
+  "incorrectButConfidentCount": 0,
+  "unsupportedButConfidentCount": 0,
+  "assessedConfident": 0,
+  "unassessedConfident": 0,
+  "incorrectFieldClaims": 0,
+  "unsupportedFieldClaims": 0,
+  "unassessedFieldClaims": 0,
+  "unsafeFieldClaims": 0,
+  "unclearRate": {
+    "numerator": 9,
+    "denominator": 9,
+    "basisPoints": 10000
+  },
+  "failureRate": {
+    "numerator": 0,
+    "denominator": 9,
+    "basisPoints": 0
+  },
+  "latencyMs": {
+    "count": 9,
+    "total": 85777,
+    "p50": 8893,
+    "p95": 12801
+  },
+  "cost": {
+    "attempts": 9,
+    "knownUsageCalls": 9,
+    "inputTokens": 41391,
+    "outputTokens": 21951,
+    "knownCostNanoUsd": 141700800,
+    "unknownCostCalls": 0,
+    "costIsComplete": true,
+    "pricingDate": "2026-10-27"
+  }
+}

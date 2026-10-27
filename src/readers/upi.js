@@ -157,13 +157,18 @@ export async function readUpi(image) {
   const amountPaise = raw.amount !== null && raw.currency !== null && /^(?:₹|INR|Rs\.?)$/i.test(raw.currency) ? parseUpiAmount(raw.amount) : null;
   const date = raw.date !== null ? parseDate(raw.date) : null;
   const time = parseTime(date, raw.time, raw.timezone);
-  const utr = raw.utr !== null && raw.utrLabel !== null
-    && /^(?:UTR(?:\s+(?:no\.?|number|ID))?|UPI\s+(?:ref(?:erence)?)(?:\s+(?:no\.?|number|ID))?|RRN)$/i.test(raw.utrLabel)
+  // Apps print the label with a trailing colon ("UTR: 1234…"); the colon is punctuation, not part of the label.
+  const utrLabel = raw.utrLabel?.replace(/\s*:$/, '') ?? null;
+  const utr = raw.utr !== null && utrLabel !== null
+    && /^(?:UTR(?:\s+(?:no\.?|number|ID))?|UPI\s+(?:ref(?:erence)?)(?:\s+(?:no\.?|number|ID))?|RRN)$/i.test(utrLabel)
     && /^[A-Za-z0-9-]{6,64}$/.test(raw.utr) ? raw.utr : null;
   const status = raw.status !== null ? parseStatus(raw.status) : null;
   const payeeVpa = raw.payeeVpa !== null && /^[A-Za-z0-9._-]+@[A-Za-z][A-Za-z0-9.-]*$/.test(raw.payeeVpa) ? raw.payeeVpa : null;
+  // A legible clock without seconds or a printed timezone (the usual receipt) has no exact UTC
+  // instant, so time stays null; that alone does not make the receipt doubtful, since a payment
+  // claim needs amount, date, UTR and status, not the minute.
   if (amountPaise === null || status === null || (raw.date !== null && date === null)
-    || (raw.time !== null && time === null) || (raw.utr !== null && utr === null)
+    || (raw.utr !== null && utr === null)
     || (raw.payeeVpa !== null && payeeVpa === null)) clear = false;
   // An ambiguous transaction cannot safely contribute any field to a payment claim.
   if (!v.singleTransaction) return { ok: true, kind: 'upi_payment', amountPaise: null, date: null, time: null,

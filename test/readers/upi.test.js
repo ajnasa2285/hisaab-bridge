@@ -68,11 +68,6 @@ for (const [label, change, missing] of /** @type {[string,object,string][]} */ (
   ['ambiguous date order', { date: field('03/04/2026') }, 'date'],
   ['missing year', { date: field('27 Oct') }, 'date'],
   ['impossible date', { date: field('2026-02-29') }, 'date'],
-  ['missing timezone', { timezone: field(null) }, 'time'],
-  ['unknown timezone offset', { timezone: field('-00:00') }, 'time'],
-  ['missing seconds', { time: field('02:03 PM') }, 'time'],
-  ['ambiguous clock', { time: field('02:03:22') }, 'time'],
-  ['ambiguous timezone abbreviation', { timezone: field('IST') }, 'time'],
   ['unknown status wording', { status: field('Looks good') }, 'status'],
   ['icon-only status', { status: field(null, 'unclear') }, 'status'],
   ['generic transaction ID', { utrLabel: field('Transaction ID') }, 'utr'],
@@ -139,4 +134,35 @@ test('reader only imports the Meta client and has no network or ledger effects',
   const source = readFileSync(new URL('../../src/readers/upi.js', import.meta.url), 'utf8');
   assert.ok(!/\bfetch\s*\(|node:https?|https?:\/\//.test(source));
   assert.deepEqual([...source.matchAll(/from ['"]([^'"]+)/g)].map(m => m[1]), ['../meta/client.js']);
+});
+
+for (const [label, change] of /** @type {[string, object][]} */ ([
+  ['missing timezone', { timezone: field(null) }],
+  ['unknown timezone offset', { timezone: field('-00:00') }],
+  ['missing seconds', { time: field('02:03 PM') }],
+  ['ambiguous clock', { time: field('02:03:22') }],
+  ['ambiguous timezone abbreviation', { timezone: field('IST') }],
+])) {
+  test(`${label}: no exact time is claimed, and the receipt is not doubted for it`, async t => {
+    model(t, { ...inventedReceipt(), ...change });
+    const result = await readUpi(image);
+    assert.ok(result.ok && result.kind === 'upi_payment');
+    if (result.ok && result.kind === 'upi_payment') { assert.equal(result.time, null); assert.equal(result.clear, true); assert.equal(result.amountPaise, 123450); }
+  });
+}
+
+test('an unreadable clock still makes the receipt doubtful', async t => {
+  model(t, { ...inventedReceipt(), time: field(null, 'unclear') });
+  const result = await readUpi(image);
+  assert.ok(result.ok && result.kind === 'upi_payment' && result.clear === false && result.time === null);
+});
+
+test('a UTR label printed with a colon is still the UTR label', async t => {
+  model(t, { ...inventedReceipt(), utrLabel: field('UTR:') });
+  const result = await readUpi(image);
+  assert.ok(result.ok && result.kind === 'upi_payment');
+  if (result.ok && result.kind === 'upi_payment') { assert.equal(result.utr, '123456780099'); assert.equal(result.clear, true); }
+  model(t, { ...inventedReceipt(), utrLabel: field('Transaction ID:') });
+  const generic = await readUpi(image);
+  assert.ok(generic.ok && generic.kind === 'upi_payment' && generic.utr === null && generic.clear === false);
 });
