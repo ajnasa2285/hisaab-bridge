@@ -75,6 +75,7 @@ export const hi = Object.freeze({
   'orchestrator.try_again': 'अभी जवाब नहीं बन पाया। थोड़ी देर में फिर लिखें।',
   'orchestrator.which_job': 'एक से ज़्यादा काम चल रहे हैं। कौन-सा? साइट का नाम या दिन लिखें।',
   'orchestrator.no_job_for_photo': 'मीटर की फ़ोटो मिली, पर अभी कोई तय या चालू काम नहीं है।',
+  'voice.not_understood': 'आवाज़ वाला संदेश समझ नहीं आया। कृपया दोबारा बोलें या लिखकर भेजें।',
 
   // =========================================================================================
   // Fable's own keys: request list, site account and the flows not yet wired by the agents.

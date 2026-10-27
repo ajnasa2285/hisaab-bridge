@@ -71,5 +71,6 @@ Every committing step is read back and runs only after "हाँ". Days arrive 
 | `step.cancelled` | — | the person said no; nothing was sent |
 | `orchestrator.try_again` | — | the model could not be reached; try again shortly |
 | `orchestrator.which_job` | — | more than one job fits; ask for the site or day |
+| `voice.not_understood` | — | a voice note could not be converted or transcribed |
 | `orchestrator.no_job_for_photo` | — | a meter photo came but no job is booked or working |
-| `help.<role>`, `meter.not_meter`, `meter.ask_person` (raw) | | Fable's existing keys, used as written |
+| `help.<role>`, `meter.not_meter`, `meter.ask_person` (raw), `payment.read` (amount, utr, day, status), `payment.retake`, `payment.not_upi`, `payment.amount_differs` (seen, total), `payment.status.*` | | Fable's existing keys, used as written (UPI screenshot flow) |

@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { generateKeys, privateKeyFromPem, publicKeyText } from './protocol/keys.js';
 import { createApp } from './app.js';
-import { museSpark } from './meta/client.js';
+import { museSpark, transcribe } from './meta/client.js';
 import { readMeter } from './readers/meter.js';
 
 /** @typedef {import('./protocol/messages.js').MessageType} MessageType */
@@ -100,7 +100,7 @@ export function loadConfig(env) {
 
 async function main() {
   const cfg = loadConfig(process.env);
-  const app = createApp({ ...cfg, spark: museSpark, readMeter });
+  const app = createApp({ ...cfg, spark: museSpark, readMeter, transcribe });
   const server = createServer((req, res) => {
     app.handle(req, res).catch(() => {
       if (!res.headersSent) res.writeHead(500).end();

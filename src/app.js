@@ -21,6 +21,7 @@ import { openWaStore } from './wa/store.js';
 import { createWa } from './wa/wa.js';
 import { createCloudClient } from './wa/cloud.js';
 import { maskPhone } from './wa/webhook.js';
+import { toWav } from './wa/audio.js';
 import { t } from './i18n/index.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 
@@ -46,6 +47,9 @@ const RETRY_MS = 60 * 1000;
  *   waStoreFile: string,
  *   spark: import('./orchestrator/orchestrator.js').Spark,
  *   readMeter?: import('./agents/conversation.js').MeterReader,
+ *   readUpi?: import('./agents/conversation.js').UpiReader,
+ *   transcribe?: (req: {audio: Uint8Array, mime: string, language?: 'hi'}) => Promise<{ok: true, text: string} | {ok: false, transient: boolean, reason: string}>,
+ *   toWav?: typeof import('./wa/audio.js').toWav,
  *   fetch?: typeof globalThis.fetch,
  *   transport?: (baseUrl: string, m: any) => Promise<unknown>,
  *   exportToken?: string,
@@ -88,6 +92,7 @@ export function createApp(cfg) {
       : createContractorAgent({ agent: core, link, tell, jcbAgentId: /** @type {string} */ (a.jcbAgentId) });
     const talk = createConversation({
       ledger: core.ledger, tools: agent.tools, spark: cfg.spark, readMeter: a.kind === 'jcb' ? cfg.readMeter : undefined,
+      readUpi: a.kind === 'contractor' ? cfg.readUpi : undefined,
       reply: (p, key, params) => sendTo(p, t(key, params)), now,
     });
     const card = agentCardJson({ id: a.id, name: a.title, description: a.title, baseUrl: `${cfg.baseUrl}/agents/${a.name}`, publicKeyText: publicKeyText(a.privateKey) });
@@ -115,7 +120,19 @@ export function createApp(cfg) {
         const media = await /** @type {any} */ (clients.get(person.line)).fetchMedia(msg.mediaId, { expectedSha256: undefined });
         return entry.talk.onImage(person, { mime: media.mimeType, bytes: new Uint8Array(media.bytes), takenAt: null });
       }
-      // Voice notes and documents are not handled yet.
+      if (msg.kind === 'audio' && msg.mediaId && cfg.transcribe) {
+        // A voice note is read as the text it says; the same read-back follows before anything commits.
+        const media = await /** @type {any} */ (clients.get(person.line)).fetchMedia(msg.mediaId);
+        const wav = await (cfg.toWav ?? toWav)(new Uint8Array(media.bytes));
+        if (!wav.ok) {
+          log(`voice from ${person.role} ${maskPhone(person.phone)} not converted: ${wav.reason}`);
+          return sendTo(person, t('voice.not_understood'));
+        }
+        const said = await cfg.transcribe({ audio: wav.wav, mime: 'audio/wav', language: 'hi' });
+        if (!said.ok || !said.text.trim()) return sendTo(person, t('voice.not_understood'));
+        return entry.talk.onText(person, said.text);
+      }
+      // Documents are not handled yet.
       return sendTo(person, t('common.unknown_step'));
     },
   });

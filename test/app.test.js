@@ -21,6 +21,8 @@ test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents
   /** @type {typeof globalThis.fetch} */
   const fakeGraph = async (input, init) => {
     const url = String(input);
+    if (url.endsWith('/media-voice')) return Response.json({ url: 'https://lookaside.example/voice', mime_type: 'audio/ogg', file_size: 3 });
+    if (url === 'https://lookaside.example/voice') return new Response(new Uint8Array([1, 2, 3]));
     const body = JSON.parse(String(init?.body ?? '{}'));
     const line = /\/(line-[a-z]+)\/messages$/.exec(url)?.[1] ?? '?';
     sent.push({ to: body.to, line, text: body.text?.body });
@@ -60,17 +62,20 @@ test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents
     waStoreFile: join(dir, 'wa.db'),
     spark,
     fetch: fakeGraph,
+    toWav: async () => ({ ok: /** @type {const} */ (true), wav: new Uint8Array([0]) }),
+    transcribe: async () => ({ ok: /** @type {const} */ (true), text: 'parso Gwalior JCB chahiye' }),
     exportToken: 'test-export-token',
     log: () => {},
   });
 
   let n = 0;
-  /** @param {string} name @param {string} line @param {string} secret @param {string} from @param {string} text */
-  const say = async (name, line, secret, from, text) => {
+  /** @param {string} name @param {string} line @param {string} secret @param {string} from @param {string} text @param {any} [message] */
+  const say = async (name, line, secret, from, text, message) => {
     n += 1;
+    const m = message ?? { type: 'text', text: { body: text } };
     const body = JSON.stringify({
       object: 'whatsapp_business_account',
-      entry: [{ id: 'w', changes: [{ field: 'messages', value: { metadata: { phone_number_id: line }, messages: [{ from, id: `wamid.in${n}`, timestamp: String(Math.floor(Date.now() / 1000)), type: 'text', text: { body: text } }] } }] }],
+      entry: [{ id: 'w', changes: [{ field: 'messages', value: { metadata: { phone_number_id: line }, messages: [{ from, id: `wamid.in${n}`, timestamp: String(Math.floor(Date.now() / 1000)), ...m }] } }] }],
     });
     const r = await fetch(`${base}/wa/${name}/webhook`, { method: 'POST', headers: { 'x-hub-signature-256': `sha256=${createHmac('sha256', secret).update(body).digest('hex')}` }, body });
     assert.equal(r.status, 200);
@@ -99,6 +104,13 @@ test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents
     const jcb = app.agent('agent:jcb-1');
     const orderId = site.core.ledger.orders()[0].order_id;
     assert.equal(jcb.core.ledger.view(orderId).state, 'requested');
+
+    // A voice note is transcribed and handled like the same words typed: read back before anything goes.
+    nextCalls = [{ name: 'request_jcb', args: { site: 'Gwalior', day: 'day_after', time: null, hours: null } }];
+    const before = sent.length;
+    await say('site', 'line-site', 'secret-site', SUPERVISOR, '', { type: 'audio', audio: { id: 'media-voice', mime_type: 'audio/ogg; codecs=opus', voice: true } });
+    await wait(() => sent.length > before);
+    assert.ok(sent.at(-1)?.text.includes('Gwalior') && sent.at(-1)?.text.includes('हाँ / नहीं'));
 
     // The export for the judge page needs the token.
     assert.equal((await fetch(`${base}/agents/jcb/export`)).status, 404);
