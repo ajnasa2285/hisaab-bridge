@@ -4,7 +4,7 @@
 // is computed by a model.
 
 import { randomUUID } from 'node:crypto';
-import { hours, rupees } from '../i18n/format.js';
+import { tenths as hours, rupees } from '../i18n/format.js';
 import { deliveryResult, isIso, isSha256, isTime, isDay, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
 
 /** @typedef {import('./common.js').Tool} Tool */

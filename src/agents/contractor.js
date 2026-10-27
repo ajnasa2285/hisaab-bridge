@@ -3,7 +3,7 @@
 // order is settled when the JCB owner confirms the money arrived.
 
 import { randomUUID } from 'node:crypto';
-import { hours, rupees } from '../i18n/format.js';
+import { tenths as hours, rupees } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, posInt } from './common.js';
 
 /** @typedef {import('./common.js').Tool} Tool */

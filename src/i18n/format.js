@@ -1,36 +1,96 @@
-// Numbers for people are formatted here, never by a model and never inside the text table:
-// money in rupees with Indian grouping, hours with one decimal, quantities with their unit.
+// Numbers for the texts (docs/CONTRACTS.md section 9): formatted by code, from integers only.
+// Money in paise, hours in tenths, quantities in hundredths; never a float on the way.
 
-/** @param {number} n integer @returns {string} Indian digit grouping: 1234567 → 12,34,567 */
-function group(n) {
-  const s = String(Math.abs(n));
+const MONTHS = ['जनवरी', 'फ़रवरी', 'मार्च', 'अप्रैल', 'मई', 'जून', 'जुलाई', 'अगस्त', 'सितंबर', 'अक्टूबर', 'नवंबर', 'दिसंबर'];
+export const NONE = '—';
+
+/** @param {unknown} n */
+function requireInt(n, what = 'number') {
+  if (!Number.isSafeInteger(n)) throw new TypeError(`format: ${what} must be a safe integer, got ${String(n)}`);
+  return /** @type {number} */ (n);
+}
+
+/**
+ * Indian digit grouping: 1234567 -> "12,34,567".
+ * @param {number} n a non-negative safe integer
+ */
+export function groupIndian(n) {
+  const s = String(requireInt(n));
   if (s.length <= 3) return s;
   const last3 = s.slice(-3);
   const rest = s.slice(0, -3).replace(/\B(?=(\d{2})+(?!\d))/g, ',');
   return `${rest},${last3}`;
 }
 
-/** @param {number} paise @returns {string} ₹7,320 or ₹7,320.50 */
+/**
+ * @param {number} paise
+ * @returns {string} "₹7,320" or "₹7,320.50"; a negative amount keeps its sign: "-₹500"
+ */
 export function rupees(paise) {
-  if (!Number.isInteger(paise)) throw new Error('format: paise must be an integer');
-  const sign = paise < 0 ? '-' : '';
-  const abs = Math.abs(paise);
-  const whole = Math.floor(abs / 100);
+  const p = requireInt(paise, 'paise');
+  const abs = Math.abs(p);
+  const whole = Math.trunc(abs / 100);
   const frac = abs % 100;
-  return `${sign}₹${group(whole)}${frac ? `.${String(frac).padStart(2, '0')}` : ''}`;
+  const sign = p < 0 ? '-' : '';
+  return `${sign}₹${groupIndian(whole)}${frac === 0 ? '' : `.${String(frac).padStart(2, '0')}`}`;
 }
 
-/** @param {number} tenths @returns {string} 6.1 */
+/**
+ * @param {number} tenths
+ * @returns {string} "6.1 घंटे" (61), "6 घंटे" (60)
+ */
 export function hours(tenths) {
-  if (!Number.isInteger(tenths)) throw new Error('format: tenths must be an integer');
-  return `${tenths < 0 ? '-' : ''}${Math.floor(Math.abs(tenths) / 10)}.${Math.abs(tenths) % 10}`;
+  const t = requireInt(tenths, 'tenths');
+  const abs = Math.abs(t);
+  const whole = Math.trunc(abs / 10);
+  const frac = abs % 10;
+  return `${t < 0 ? '-' : ''}${whole}${frac === 0 ? '' : `.${frac}`} घंटे`;
 }
 
-/** @param {number} hundredths @returns {string} 50 or 12.5 */
-export function qty(hundredths) {
-  if (!Number.isInteger(hundredths)) throw new Error('format: hundredths must be an integer');
-  const abs = Math.abs(hundredths);
+/**
+ * @param {number} hundredths
+ * @param {string} unit e.g. "बोरी"
+ * @returns {string} "50 बोरी" (5000), "2.5 ट्रॉली" (250), "1.25 टन" (125)
+ */
+export function qty(hundredths, unit) {
+  const h = requireInt(hundredths, 'hundredths');
+  const abs = Math.abs(h);
+  const whole = Math.trunc(abs / 100);
   const frac = abs % 100;
-  const fracText = frac === 0 ? '' : `.${String(frac).padStart(2, '0').replace(/0$/, '')}`;
-  return `${hundredths < 0 ? '-' : ''}${Math.floor(abs / 100)}${fracText}`;
+  let fracText = '';
+  if (frac !== 0) fracText = frac % 10 === 0 ? `.${frac / 10}` : `.${String(frac).padStart(2, '0')}`;
+  return `${h < 0 ? '-' : ''}${whole}${fracText} ${unit}`;
+}
+
+/**
+ * @param {string} isoDay "YYYY-MM-DD"
+ * @returns {string} "29 अक्टूबर 2026"
+ */
+export function day(isoDay) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDay);
+  if (!m) throw new TypeError(`format: day must be YYYY-MM-DD, got ${String(isoDay)}`);
+  const month = Number(m[2]);
+  if (month < 1 || month > 12) throw new TypeError(`format: bad month in ${isoDay}`);
+  return `${Number(m[3])} ${MONTHS[month - 1]} ${m[1]}`;
+}
+
+/**
+ * A missing value is shown as "—", never as 0 or an invented figure.
+ * @template T
+ * @param {T|null|undefined} value
+ * @param {(v: T) => string} show
+ */
+export function orNone(value, show) {
+  return value === null || value === undefined ? NONE : show(value);
+}
+
+/**
+ * A figure in tenths as a bare number with one decimal, as a meter shows it and as it is carried
+ * on a bill's evidence: "6.1" (61), "6.0" (60), "1240.6" (12406). Texts add the unit themselves.
+ * @param {number} tenths
+ */
+export function tenths(tenths) {
+  const t = requireInt(tenths, 'tenths');
+  const abs = Math.abs(t);
+  return `${t < 0 ? '-' : ''}${Math.trunc(abs / 10)}.${abs % 10}`;
 }
