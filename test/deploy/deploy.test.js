@@ -68,7 +68,8 @@ test('people.json.example is accepted by loadConfig', () => {
     const env = { ...parseEnv(read('hisaab.env.example')), HB_DATA_DIR: dir, HB_BASE_URL: 'https://example.test' };
     for (const k of Object.keys(env)) if (/^HB_WA_(JCB|SITE)_/.test(k)) env[k] = `dummy-${k.toLowerCase()}`;
     const cfg = loadConfig(env);
-    assert.equal(cfg.people.length, 4);
+    assert.equal(cfg.people.length, 5);
+    assert.deepEqual(cfg.people.filter((p) => p.role === 'supplier').map((p) => p.agent), ['agent:supplier-1']);
     assert.ok(cfg.people.every((p) => /^9190000000\d\d$/.test(p.phone)));
   } finally {
     rmSync(dir, { recursive: true, force: true });

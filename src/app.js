@@ -1,7 +1,8 @@
 // The whole service in one process: the WhatsApp lines, the people directory, one conversation per
-// agent, the agents themselves, and each agent's A2A endpoint. The JCB agent and the contractor
-// agent keep separate keys and separate ledgers and talk to each other only over A2A, exactly as
-// they would on two servers.
+// agent, the agents themselves, and each agent's A2A endpoint. The JCB, contractor and supplier
+// agents keep separate keys and separate ledgers and talk to each other only over A2A, exactly as
+// they would on three servers: the contractor's agent with each seller, the sellers never with each
+// other.
 //
 //   /wa/<line>/webhook                              WhatsApp (src/wa/wa.js)
 //   /agents/<name>/.well-known/agent-card.json      Agent Card
@@ -15,6 +16,7 @@ import { publicKeyText } from './protocol/keys.js';
 import { createLink } from './agents/link.js';
 import { createJcbAgent } from './agents/jcb.js';
 import { createContractorAgent } from './agents/contractor.js';
+import { createSupplierAgent } from './agents/supplier.js';
 import { createConversation } from './agents/conversation.js';
 import { createDirectory } from './wa/directory.js';
 import { openWaStore } from './wa/store.js';
@@ -31,9 +33,9 @@ const RETRY_MS = 60 * 1000;
 /** @typedef {import('./wa/directory.js').Person} Person */
 /**
  * @typedef {{
- *   name: string, kind: 'jcb' | 'contractor', id: string, title: string,
+ *   name: string, kind: 'jcb' | 'contractor' | 'supplier', id: string, title: string,
  *   privateKey: import('node:crypto').KeyObject, ledgerFile: string,
- *   peers: Peer[], peerUrls: Record<string, string>, jcbAgentId?: string,
+ *   peers: Peer[], peerUrls: Record<string, string>, jcbAgentId?: string, supplierAgentId?: string,
  * }} AgentConfig
  * @typedef {{name: string, phoneNumberId: string, appSecret: string, verifyToken: string, accessToken: string, graphVersion?: string}} LineConfig
  */
@@ -48,6 +50,7 @@ const RETRY_MS = 60 * 1000;
  *   spark: import('./orchestrator/orchestrator.js').Spark,
  *   readMeter?: import('./agents/conversation.js').MeterReader,
  *   readUpi?: import('./agents/conversation.js').UpiReader,
+ *   readChallan?: import('./agents/conversation.js').ChallanReader,
  *   transcribe?: (req: {audio: Uint8Array, mime: string, language?: 'hi'}) => Promise<{ok: true, text: string} | {ok: false, transient: boolean, reason: string}>,
  *   toWav?: typeof import('./wa/audio.js').toWav,
  *   fetch?: typeof globalThis.fetch,
@@ -89,10 +92,14 @@ export function createApp(cfg) {
     };
     const agent = a.kind === 'jcb'
       ? createJcbAgent({ agent: core, link, tell })
-      : createContractorAgent({ agent: core, link, tell, jcbAgentId: /** @type {string} */ (a.jcbAgentId) });
+      : a.kind === 'supplier'
+        ? createSupplierAgent({ agent: core, link, tell })
+        : createContractorAgent({ agent: core, link, tell, jcbAgentId: /** @type {string} */ (a.jcbAgentId), supplierAgentId: a.supplierAgentId });
+    // Each agent reads only its own kind of photo: meters (JCB), UPI screenshots (contractor), challans (supplier).
     const talk = createConversation({
       ledger: core.ledger, tools: agent.tools, spark: cfg.spark, readMeter: a.kind === 'jcb' ? cfg.readMeter : undefined,
       readUpi: a.kind === 'contractor' ? cfg.readUpi : undefined,
+      readChallan: a.kind === 'supplier' ? cfg.readChallan : undefined,
       reply: (p, key, params) => sendTo(p, t(key, params)), now,
     });
     const card = agentCardJson({ id: a.id, name: a.title, description: a.title, baseUrl: `${cfg.baseUrl}/agents/${a.name}`, publicKeyText: publicKeyText(a.privateKey) });

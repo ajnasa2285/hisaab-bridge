@@ -21,7 +21,7 @@ This guide is for the owner, not for programmers. You will copy and paste a few 
 
    It installs everything, and prints your web address, something like `https://203-0-113-10.sslip.io`. Running it again is safe. It never overwrites your settings file.
 3. Fill in your settings: `sudo nano /etc/hisaab/hisaab.env`. Every empty line has a comment above it saying what goes there. For the two verify tokens, invent any long random text. Save with Ctrl+O, Enter, then leave with Ctrl+X.
-4. Write the list of people: `sudo -u hisaab nano /var/lib/hisaab/people.json`. Copy the shape from `/opt/hisaab-bridge/deploy/aws/people.json.example`. Use `"line": "jcb"` or `"site"`, `"agent": "jcb"` or `"contractor"`, and a role of `jcb_owner`, `operator`, `contractor`, `supervisor` or `supplier`. Phone numbers are digits only, with country code, for example `919000000001`.
+4. Write the list of people: `sudo -u hisaab nano /var/lib/hisaab/people.json`. Copy the shape from `/opt/hisaab-bridge/deploy/aws/people.json.example`. Use `"line": "jcb"` or `"site"`, `"agent": "jcb"`, `"contractor"` or `"supplier"`, and a role of `jcb_owner`, `operator`, `contractor`, `supervisor` or `supplier` (role `supplier` always with agent `supplier`; the supplier usually writes to the JCB line, from a phone not already listed on that line). Phone numbers are digits only, with country code, for example `919000000001`.
 5. Start it: `sudo systemctl restart hisaab`.
 
 ## Connecting each WhatsApp number in the Meta dashboard

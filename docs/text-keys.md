@@ -53,6 +53,63 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `site.payment_claimed` | amount | the payment details were sent to the JCB owner |
 | `site.settled` | site, amount | the JCB owner confirmed the money arrived |
 
+## Material (Build 2; Claude drafted the Hindi, Fable to polish)
+
+Items arrive formatted as `सीमेंट 50 बोरी, रेत 2 ट्रॉली`, rates as `सीमेंट ₹350/बोरी`, bill lines as `सीमेंट 50 बोरी × ₹350 = ₹17,500` (joined by commas). For a material order the contractor side uses the `site.material_*` twin of a JCB key (`keyFor` in `src/agents/contractor.js`).
+
+Contractor side (contractor, supervisor):
+
+| Key | Params | When |
+|---|---|---|
+| `site.no_supplier` | — | no supplier agent is configured |
+| `site.material_requested` | site, day, items | material request sent to the supplier |
+| `site.material_booking_yes` / `_no` / `_other_time` | site, day, time, rates | the supplier's answer, with the rate per item on a yes |
+| `site.delivery_received` | site, items, challan | a DELIVERY arrived: what the challan says; asks for the site's count ("हाँ" = same as the challan, or figures in order) |
+| `site.count_figures` | items | the count needs one figure per delivered item, in order |
+| `site.count_matches` | site, items | the site's count is saved and equals the challan |
+| `site.count_saved_differs` | site, challan, count | to the person who counted: saved, differs from the challan |
+| `site.count_differs` | site, challan, count | to the contractor: the site's count differs from the challan (both figures) |
+| `site.material_bill_received` | site, lines, total, photos | a material bill that follows from the delivery, the agreed rates and the site's count; "हाँ" accepts |
+| `site.material_correction_received` | site, lines, total, photos | a corrected material bill; "हाँ" accepts |
+| `site.material_bill_mismatch` | site, lines, total, expected, expectedTotal | to the contractor: the bill does not equal delivered qty × agreed rates (no "हाँ" offered) |
+| `site.material_bill_count_differs` | site, lines, total, count, siteTotal | to the contractor: the bill follows the challan but the site counted differently (no "हाँ" offered) |
+| `site.material_bill_accepted` / `site.material_bill_disputed` | site | accepted / objection sent to the supplier |
+| `site.material_figure_needed` | — | an objection needs your figure (quantity or amount) |
+| `site.material_payment_claimed` | amount | payment details sent to the supplier |
+| `site.material_settled` | site, amount | the supplier confirmed the money arrived |
+
+Supplier side (`supplier`):
+
+| Key | Params | When |
+|---|---|---|
+| `supplier.order_request` | site, day, time, items | a material order arrived; answer with a rate per item, no, or another day |
+| `supplier.rates_needed` | items | "yes" needs one rate per item, in order |
+| `supplier.reply_sent_yes` / `_no` / `_other_time` | — | the answer went to the contractor |
+| `supplier.item_not_agreed` | item | a delivered item has no agreed rate in this order |
+| `supplier.delivery_sent` | site, items | the delivery (with the challan fingerprint) went to the contractor |
+| `supplier.delivery_missing` | — | no bill before the delivery is recorded |
+| `supplier.bill_sent` | lines, total | bill sent with the challan as evidence |
+| `supplier.bill_accepted` | site | the contractor accepted the bill |
+| `supplier.bill_disputed` | site, their, reason | the contractor disputes; their figure and reason |
+| `supplier.correction_sent` | lines, total | corrected bill sent |
+| `supplier.payment_claimed` | site, amount, utr, day | the contractor says they paid; please check your account ("हाँ" = confirm_payment) |
+| `supplier.settled_sent` | amount | you confirmed receipt; settled |
+| `challan.not_challan` | — | the photo is not a challan |
+| `challan.ask_person` | raw, items | the challan was not read clearly: type the quantities in the order's order (`items` = `सीमेंट (बोरी), रेत (ट्रॉली)`) |
+| `challan.no_order_for_photo` | — | a challan photo came but no order is booked and waiting for delivery |
+
+Read-backs (each ends with "हाँ / नहीं"):
+
+| Key | Params | When |
+|---|---|---|
+| `step.reply_order_yes` / `_no` / `_other_time` | site, day, time, rates | supplier: confirm the answer before it goes |
+| `step.record_delivery` | site, items, challan | supplier: confirm the quantities read from the challan (or typed) |
+| `step.send_material_bill` | site, lines, total | supplier: confirm the bill |
+| `step.send_material_correction` | site, lines, total | supplier: confirm the corrected bill |
+| `step.request_material` | site, day, time, items | contractor/supervisor: confirm the material request |
+| `step.confirm_count` | site, items | supervisor/contractor: confirm the site's count |
+| `step.confirm_payment` | site, amount | (shared with the JCB owner) the supplier confirms the money arrived |
+
 ## Read-back and conversation (Claude drafted the Hindi; Fable to polish)
 
 Every committing step is read back and runs only after "हाँ". Days arrive formatted ("29 अक्टूबर 2026").

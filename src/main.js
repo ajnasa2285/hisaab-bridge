@@ -3,9 +3,11 @@
 // cannot pick up another program's settings on a shared machine.
 //
 // Data folder (HB_DATA_DIR), private to the server:
-//   keys/jcb.pem, keys/contractor.pem   Ed25519 private keys (created on first start, mode 600)
-//   people.json                         who is who: [{line: 'jcb'|'site', phone, agent: 'jcb'|'contractor', role, name}]
-//   jcb.db, contractor.db, wa.db        the ledgers and the WhatsApp store
+//   keys/jcb.pem, keys/contractor.pem, keys/supplier.pem
+//                                       Ed25519 private keys (created on first start, mode 600)
+//   people.json                         who is who: [{line: 'jcb'|'site', phone, agent: 'jcb'|'contractor'|'supplier', role, name}]
+//                                       (a supplier's people have role 'supplier', usually on the shared 'jcb' line)
+//   jcb.db, contractor.db, supplier.db, wa.db   the ledgers and the WhatsApp store
 
 import { createServer } from 'node:http';
 import { createPublicKey } from 'node:crypto';
@@ -20,10 +22,12 @@ import { readUpi } from './readers/upi.js';
 
 /** @typedef {import('./protocol/messages.js').MessageType} MessageType */
 
-/** @type {MessageType[]} */
-const TO_JCB = ['BOOKING_REQUEST', 'ACCEPT', 'DISPUTE', 'PAYMENT_CLAIM', 'RECEIPT', 'REFUSE'];
+/** What a seller (the JCB agent or the supplier agent) accepts from the contractor's agent. @type {MessageType[]} */
+const TO_SELLER = ['BOOKING_REQUEST', 'ACCEPT', 'DISPUTE', 'PAYMENT_CLAIM', 'RECEIPT', 'REFUSE'];
 /** @type {MessageType[]} */
 const TO_CONTRACTOR = ['BOOKING_REPLY', 'BILL', 'CORRECTION', 'SETTLED', 'RECEIPT', 'REFUSE'];
+/** Only the supplier delivers (material, with a challan). @type {MessageType[]} */
+const TO_CONTRACTOR_FROM_SUPPLIER = [...TO_CONTRACTOR, 'DELIVERY'];
 
 /** @param {Record<string, string | undefined>} env @param {string} name */
 function need(env, name) {
@@ -51,8 +55,10 @@ export function loadConfig(env) {
   mkdirSync(join(dataDir, 'keys'), { recursive: true, mode: 0o700 });
   const jcbId = env.HB_JCB_AGENT_ID ?? 'agent:jcb-1';
   const siteId = env.HB_CONTRACTOR_AGENT_ID ?? 'agent:contractor-1';
+  const supId = env.HB_SUPPLIER_AGENT_ID ?? 'agent:supplier-1';
   const jcbKey = loadOrCreateKey(join(dataDir, 'keys', 'jcb.pem'));
   const siteKey = loadOrCreateKey(join(dataDir, 'keys', 'contractor.pem'));
+  const supKey = loadOrCreateKey(join(dataDir, 'keys', 'supplier.pem'));
 
   /** @param {'JCB' | 'SITE'} which @param {string} name */
   const line = (which, name) => ({
@@ -65,14 +71,16 @@ export function loadConfig(env) {
   });
   const lines = [line('JCB', 'jcb'), line('SITE', 'site')];
   const lineIds = { jcb: lines[0].phoneNumberId, site: lines[1].phoneNumberId };
-  const agentIds = { jcb: jcbId, contractor: siteId };
+  const agentIds = { jcb: jcbId, contractor: siteId, supplier: supId };
 
   const raw = JSON.parse(readFileSync(join(dataDir, 'people.json'), 'utf8'));
   if (!Array.isArray(raw)) throw new Error('config: people.json must be a list');
   const people = raw.map((p, i) => {
     const lineId = /** @type {Record<string, string>} */ (lineIds)[p?.line];
     const agent = /** @type {Record<string, string>} */ (agentIds)[p?.agent];
-    if (!lineId || !agent) throw new Error(`config: people.json entry ${i + 1} needs line 'jcb'|'site' and agent 'jcb'|'contractor'`);
+    if (!lineId || !agent) throw new Error(`config: people.json entry ${i + 1} needs line 'jcb'|'site' and agent 'jcb'|'contractor'|'supplier'`);
+    // The supplier agent has one role, and that role belongs to no other agent.
+    if ((p.agent === 'supplier') !== (p.role === 'supplier')) throw new Error(`config: people.json entry ${i + 1}: role 'supplier' goes with agent 'supplier' and only with it`);
     return { line: lineId, phone: String(p.phone), agent, role: p.role, name: String(p.name ?? '') };
   });
 
@@ -88,14 +96,23 @@ export function loadConfig(env) {
     agents: [
       {
         name: 'jcb', kind: /** @type {const} */ ('jcb'), id: jcbId, title: 'JCB Hisaab', privateKey: jcbKey, ledgerFile: join(dataDir, 'jcb.db'),
-        peers: [{ id: siteId, publicKey: createPublicKey(siteKey), mayReceiveFrom: new Set(TO_JCB) }],
+        peers: [{ id: siteId, publicKey: createPublicKey(siteKey), mayReceiveFrom: new Set(TO_SELLER) }],
         peerUrls: { [siteId]: `${baseUrl}/agents/site` },
       },
       {
         name: 'site', kind: /** @type {const} */ ('contractor'), id: siteId, title: 'Site Hisaab', privateKey: siteKey, ledgerFile: join(dataDir, 'contractor.db'),
-        peers: [{ id: jcbId, publicKey: createPublicKey(jcbKey), mayReceiveFrom: new Set(TO_CONTRACTOR) }],
-        peerUrls: { [jcbId]: `${baseUrl}/agents/jcb` },
+        peers: [
+          { id: jcbId, publicKey: createPublicKey(jcbKey), mayReceiveFrom: new Set(TO_CONTRACTOR) },
+          { id: supId, publicKey: createPublicKey(supKey), mayReceiveFrom: new Set(TO_CONTRACTOR_FROM_SUPPLIER) },
+        ],
+        peerUrls: { [jcbId]: `${baseUrl}/agents/jcb`, [supId]: `${baseUrl}/agents/supplier` },
         jcbAgentId: jcbId,
+        supplierAgentId: supId,
+      },
+      {
+        name: 'supplier', kind: /** @type {const} */ ('supplier'), id: supId, title: 'Supplier Hisaab', privateKey: supKey, ledgerFile: join(dataDir, 'supplier.db'),
+        peers: [{ id: siteId, publicKey: createPublicKey(siteKey), mayReceiveFrom: new Set(TO_SELLER) }],
+        peerUrls: { [siteId]: `${baseUrl}/agents/site` },
       },
     ],
   };
@@ -103,6 +120,8 @@ export function loadConfig(env) {
 
 async function main() {
   const cfg = loadConfig(process.env);
+  // readChallan joins here once src/readers/challan.js (branch claude/challan) is merged; until then a
+  // supplier's challan photo is answered with "try again" and nothing is recorded.
   const app = createApp({ ...cfg, spark: museSpark, readMeter, readUpi, transcribe });
   const server = createServer((req, res) => {
     app.handle(req, res).catch(() => {
