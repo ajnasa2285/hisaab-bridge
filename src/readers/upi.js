@@ -71,7 +71,7 @@ export function validUpiTime(value) {
 }
 
 /** @param {string} raw @returns {string|null} */
-function parseDate(raw) {
+export function parseUpiDate(raw) {
   if (validUpiDate(raw)) return raw;
   let match = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(raw);
   if (match) {
@@ -155,7 +155,7 @@ export async function readUpi(image) {
   }
   const raw = Object.fromEntries(FIELDS.map(name => [name, visible(name)]));
   const amountPaise = raw.amount !== null && raw.currency !== null && /^(?:₹|INR|Rs\.?)$/i.test(raw.currency) ? parseUpiAmount(raw.amount) : null;
-  const date = raw.date !== null ? parseDate(raw.date) : null;
+  const date = raw.date !== null ? parseUpiDate(raw.date) : null;
   const time = parseTime(date, raw.time, raw.timezone);
   // Apps print the label with a trailing colon ("UTR: 1234…"); the colon is punctuation, not part of the label.
   const utrLabel = raw.utrLabel?.replace(/\s*:$/, '') ?? null;

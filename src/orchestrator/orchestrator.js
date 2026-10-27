@@ -1,10 +1,12 @@
 // Muse Spark turns one message from a person into one proposed step (docs/CONTRACTS.md section 6).
 // The model only sees the steps this person's role allows, copies figures exactly as written, and
-// names a job by its short reference. Code then converts units, resolves days, picks the job and
-// checks everything again; the model never decides who may do what, never computes, never sends.
+// names a job by its short reference (J-1, P-1). Code then converts units, resolves days, picks the
+// job and checks everything again; the model never decides who may do what, never computes, never
+// sends.
 
 import { parseHundredths, parsePaise, parseTenths, parseTime, resolveDay } from './units.js';
 import { itemsText } from '../agents/material.js';
+import { openRefs, parseRef } from '../ledger/refs.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('../wa/directory.js').Role} Role */
@@ -16,7 +18,7 @@ import { itemsText } from '../agents/material.js';
  *   {kind: 'none', key: string}} Proposal
  */
 
-const ORDER = { type: ['string', 'null'], maxLength: 8, description: 'The job reference like "#1" from the list, or null if the person did not say which.' };
+const ORDER = { type: ['string', 'null'], maxLength: 8, description: 'The job reference like "J-1" or "P-2" from the list, or null if the person did not say which.' };
 const NULLABLE_TEXT = (/** @type {number} */ max, /** @type {string} */ description) => ({ type: ['string', 'null'], maxLength: max, description });
 const FIGURES = (/** @type {boolean} */ nullable, /** @type {string} */ description) => ({
   type: nullable ? ['array', 'null'] : 'array', minItems: 1, maxItems: 20, items: { type: 'string', maxLength: 12 }, description,
@@ -304,8 +306,8 @@ export async function proposeStep(o) {
  */
 export function pickOrder(orders, ref, states) {
   if (typeof ref === 'string' && ref.trim()) {
-    const want = ref.trim().startsWith('#') ? ref.trim() : `#${ref.trim()}`;
-    const named = orders.find((r) => r.ref === want);
+    const want = parseRef(ref);
+    const named = want === null ? undefined : orders.find((r) => r.ref === want);
     return named ?? 'common.no_such_order';
   }
   const fitting = orders.filter((r) => states.includes(r.state));
@@ -314,18 +316,19 @@ export function pickOrder(orders, ref, states) {
 }
 
 /**
- * Short references for the open jobs of a ledger, oldest first: #1, #2, …
+ * The open jobs of a ledger with their stable references (J-1, P-1, …; src/ledger/refs.js), oldest first.
  * @param {ReturnType<typeof import('../ledger/store.js').openLedger>} ledger
  * @returns {OrderRef[]}
  */
 export function orderRefs(ledger) {
+  const refs = openRefs(ledger);
   /** @type {OrderRef[]} */
   const out = [];
   for (const o of /** @type {{order_id: string, site: string, created_at: string}[]} */ (ledger.orders())) {
     const view = ledger.view(o.order_id);
     if (view.state === 'settled' || view.state === 'declined' || view.state === 'none') continue;
     const req = ledger.events(o.order_id).filter((e) => e.type === 'BOOKING_REQUEST').at(-1);
-    const ref = { ref: `#${out.length + 1}`, orderId: o.order_id, site: o.site, day: req?.body.body.day ?? '—', state: view.state };
+    const ref = { ref: refs.refOf(o.order_id) ?? '—', orderId: o.order_id, site: o.site, day: req?.body.body.day ?? '—', state: view.state };
     // A material order shows its items, so rates or a count can be given "in the order of the items".
     out.push(Array.isArray(req?.body.body.items) ? { ...ref, what: itemsText(req.body.body.items) } : ref);
   }

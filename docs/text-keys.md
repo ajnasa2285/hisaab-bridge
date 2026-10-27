@@ -1,6 +1,6 @@
 # Text keys used by the agents
 
-Claude adds a key here when code starts using it; Fable writes the Hindi in `src/i18n/hi.js`. Parameters arrive already formatted by `src/i18n/format.js` (`₹7,320`, `6.1`, `50`); missing values arrive as `—`.
+Claude adds a key here when code starts using it; Fable writes the Hindi in `src/i18n/hi.js`. Parameters arrive already formatted by `src/i18n/format.js` (`₹7,320`, `6.1`, `50`); missing values arrive as `—`. `ref` is the order's short reference on that agent's side (`J-1` JCB, `P-1` material; `src/ledger/refs.js`).
 
 ## Common (both agents)
 
@@ -20,11 +20,11 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 
 | Key | Params | When |
 |---|---|---|
-| `jcb.booking_request` | site, day, time, hours | to owner: a contractor asks for the JCB |
+| `jcb.booking_request` | ref, site, day, time, hours | to owner: a contractor asks for the JCB |
 | `jcb.rate_needed` | — | to owner: "yes" needs the hourly rate |
 | `jcb.day_needed` | — | to owner: "another time" needs a day |
 | `jcb.reply_sent_yes` / `_no` / `_other_time` | — | to owner: the answer went to the contractor |
-| `jcb.job_booked` | site, day, time | to operator: a job is booked |
+| `jcb.job_booked` | ref, site, day, time | to operator: a job is booked |
 | `jcb.meter_start_saved` | reading | to operator: start reading saved |
 | `jcb.meter_end_saved` | reading, hours | to operator: end reading saved, hours worked |
 | `jcb.start_first` | — | to operator: send the start photo first |
@@ -32,67 +32,68 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `jcb.meter_done` | hours | to owner: the job's hours are in |
 | `jcb.readings_missing` | — | to owner: no bill without both meter readings |
 | `jcb.bill_sent` | hours, rate, total | to owner: bill sent with photos |
-| `jcb.bill_accepted` | site | to owner: the contractor accepted the bill |
-| `jcb.bill_disputed` | site, their, reason | to owner: the contractor disputes; their figure and reason |
+| `jcb.bill_accepted` | ref, site | to owner: the contractor accepted the bill |
+| `jcb.bill_disputed` | ref, site, their, reason | to owner: the contractor disputes; their figure and reason |
 | `jcb.correction_sent` | hours, total | to owner: corrected bill sent |
-| `jcb.payment_claimed` | site, amount, utr, day | to owner: the contractor says they paid; please check your account |
+| `jcb.payment_claimed` | ref, site, amount, utr, day | to owner: the contractor says they paid; please check your account |
 | `jcb.settled_sent` | amount | to owner: you confirmed receipt; the job is settled |
 
 ## Contractor side (contractor, supervisor)
 
 | Key | Params | When |
 |---|---|---|
-| `site.jcb_requested` | site, day, time | JCB request sent |
-| `site.booking_yes` / `_no` / `_other_time` | site, day, time, rate | the JCB owner's answer |
-| `site.bill_received` | site, hours, rate, total, photos | a bill arrived (with this many meter photos) |
-| `site.correction_received` | site, hours, rate, total, photos | a corrected bill arrived |
-| `site.bill_accepted` | site | you accepted the bill |
-| `site.bill_disputed` | site | your objection was sent |
+| `site.jcb_requested` | ref, site, day, time | JCB request sent |
+| `site.booking_yes` / `_no` / `_other_time` | ref, site, day, time, rate | the JCB owner's answer |
+| `site.bill_received` | ref, site, hours, rate, total, photos | a bill arrived (with this many meter photos) |
+| `site.correction_received` | ref, site, hours, rate, total, photos | a corrected bill arrived |
+| `site.bill_accepted` | ref, site | you accepted the bill |
+| `site.bill_disputed` | ref, site | your objection was sent |
 | `site.reason_needed` | — | an objection needs a reason |
 | `site.figure_needed` | — | an objection needs your figure (hours or amount) |
 | `site.payment_claimed` | amount | the payment details were sent to the JCB owner |
-| `site.settled` | site, amount | the JCB owner confirmed the money arrived |
+| `site.settled` | ref, site, amount | the JCB owner confirmed the money arrived |
 
 ## Material (Build 2; Claude drafted the Hindi, Fable to polish)
 
-Items arrive formatted as `सीमेंट 50 बोरी, रेत 2 ट्रॉली`, rates as `सीमेंट ₹350/बोरी`, bill lines as `सीमेंट 50 बोरी × ₹350 = ₹17,500` (joined by commas). For a material order the contractor side uses the `site.material_*` twin of a JCB key (`keyFor` in `src/agents/contractor.js`).
+Items arrive formatted as `सीमेंट 50 बोरी, रेत 2 ट्रॉली`, rates as `सीमेंट ₹350/बोरी`, bill lines as `सीमेंट 50 बोरी × ₹350 = ₹17,500` (joined by commas). Every order notice carries `ref` (`P-n` on that agent's side). A line's amount is qty × rate / 100 rounded to the nearest paisa, half a paisa up (`lineAmountPaise`, `src/agents/material.js`). For a material order the contractor side uses the `site.material_*` twin of a JCB key (`keyFor` in `src/agents/contractor.js`).
 
 Contractor side (contractor, supervisor):
 
 | Key | Params | When |
 |---|---|---|
 | `site.no_supplier` | — | no supplier agent is configured |
-| `site.material_requested` | site, day, items | material request sent to the supplier |
-| `site.material_booking_yes` / `_no` / `_other_time` | site, day, time, rates | the supplier's answer, with the rate per item on a yes |
-| `site.delivery_received` | site, items, challan | a DELIVERY arrived: what the challan says; asks for the site's count ("हाँ" = same as the challan, or figures in order) |
+| `site.material_requested` | ref, site, day, items | material request sent to the supplier |
+| `site.material_booking_yes` / `_no` / `_other_time` | ref, site, day, time, rates | the supplier's answer, with the rate per item on a yes |
+| `site.delivery_received` | ref, site, items, challan | a DELIVERY arrived: what the challan says; asks for the site's count ("हाँ" = same as the challan, or figures in order) |
 | `site.count_figures` | items | the count needs one figure per delivered item, in order |
-| `site.count_matches` | site, items | the site's count is saved and equals the challan |
-| `site.count_saved_differs` | site, challan, count | to the person who counted: saved, differs from the challan |
-| `site.count_differs` | site, challan, count | to the contractor: the site's count differs from the challan (both figures) |
-| `site.material_bill_received` | site, lines, total, photos | a material bill that follows from the delivery, the agreed rates and the site's count; "हाँ" accepts |
-| `site.material_correction_received` | site, lines, total, photos | a corrected material bill; "हाँ" accepts |
-| `site.material_bill_mismatch` | site, lines, total, expected, expectedTotal | to the contractor: the bill does not equal delivered qty × agreed rates (no "हाँ" offered) |
-| `site.material_bill_count_differs` | site, lines, total, count, siteTotal | to the contractor: the bill follows the challan but the site counted differently (no "हाँ" offered) |
-| `site.material_bill_accepted` / `site.material_bill_disputed` | site | accepted / objection sent to the supplier |
+| `site.count_matches` | ref, site, items | the site's count is saved and equals the challan |
+| `site.count_saved_differs` | ref, site, challan, count | to the person who counted: saved, differs from the challan |
+| `site.count_differs` | ref, site, challan, count | to the contractor: the site's count differs from the challan (both figures) |
+| `site.material_bill_received` | ref, site, lines, total, photos | a material bill that follows from the delivery, the agreed rates and the site's count; "हाँ" accepts |
+| `site.material_correction_received` | ref, site, lines, total, photos | a corrected material bill; "हाँ" accepts |
+| `site.material_bill_mismatch` | ref, site, lines, total, expected, expectedTotal | to the contractor: the bill does not equal delivered qty × agreed rates (no "हाँ" offered) |
+| `site.material_bill_count_differs` | ref, site, lines, total, count, siteTotal | to the contractor: the bill follows the challan but the site counted differently (no "हाँ" offered) |
+| `site.material_bill_accepted` / `site.material_bill_disputed` | ref, site | accepted / objection sent to the supplier |
 | `site.material_figure_needed` | — | an objection needs your figure (quantity or amount) |
+| `site.material_total_only` | — | a quantity objection on a bill with more than one line: only a total is accepted |
 | `site.material_payment_claimed` | amount | payment details sent to the supplier |
-| `site.material_settled` | site, amount | the supplier confirmed the money arrived |
+| `site.material_settled` | ref, site, amount | the supplier confirmed the money arrived |
 
 Supplier side (`supplier`):
 
 | Key | Params | When |
 |---|---|---|
-| `supplier.order_request` | site, day, time, items | a material order arrived; answer with a rate per item, no, or another day |
+| `supplier.order_request` | ref, site, day, time, items | a material order arrived; answer with a rate per item, no, or another day |
 | `supplier.rates_needed` | items | "yes" needs one rate per item, in order |
 | `supplier.reply_sent_yes` / `_no` / `_other_time` | — | the answer went to the contractor |
 | `supplier.item_not_agreed` | item | a delivered item has no agreed rate in this order |
-| `supplier.delivery_sent` | site, items | the delivery (with the challan fingerprint) went to the contractor |
+| `supplier.delivery_sent` | ref, site, items | the delivery (with the challan fingerprint) went to the contractor |
 | `supplier.delivery_missing` | — | no bill before the delivery is recorded |
 | `supplier.bill_sent` | lines, total | bill sent with the challan as evidence |
-| `supplier.bill_accepted` | site | the contractor accepted the bill |
-| `supplier.bill_disputed` | site, their, reason | the contractor disputes; their figure and reason |
+| `supplier.bill_accepted` | ref, site | the contractor accepted the bill |
+| `supplier.bill_disputed` | ref, site, their, reason | the contractor disputes; their figure and reason |
 | `supplier.correction_sent` | lines, total | corrected bill sent |
-| `supplier.payment_claimed` | site, amount, utr, day | the contractor says they paid; please check your account ("हाँ" = confirm_payment) |
+| `supplier.payment_claimed` | ref, site, amount, utr, day | the contractor says they paid; please check your account ("हाँ" = confirm_payment) |
 | `supplier.settled_sent` | amount | you confirmed receipt; settled |
 | `challan.not_challan` | — | the photo is not a challan |
 | `challan.ask_person` | raw, items | the challan was not read clearly: type the quantities in the order's order (`items` = `सीमेंट (बोरी), रेत (ट्रॉली)`) |
@@ -131,3 +132,26 @@ Every committing step is read back and runs only after "हाँ". Days arrive 
 | `voice.not_understood` | — | a voice note could not be converted or transcribed |
 | `orchestrator.no_job_for_photo` | — | a meter photo came but no job is booked or working |
 | `help.<role>`, `meter.not_meter`, `meter.ask_person` (raw), `payment.read` (amount, utr, day, status), `payment.retake`, `payment.not_upi`, `payment.amount_differs` (seen, total), `payment.status.*` | | Fable's existing keys, used as written (UPI screenshot flow) |
+
+## Site office: approvals with limits, references, exact commands (docs/BUILD2.md 3 and 4; Claude drafted the Hindi)
+
+Commands are parsed by code before the model (`src/agents/office.js`, `parseCommand`): `status <ref>` (स्टेटस, स्थिति, हालत), `pending` (बाक़ी, बाकी, पेंडिंग, लंबित), `stock [item]` (स्टॉक), `ok <ref> [note]` (OK, ओके, हाँ, मंज़ूर), `no <ref> <reason>` (नहीं, ना, नामंज़ूर). Texts show the Devanagari forms; "OK" stays Latin. A command is answered before an open question is looked at and leaves it open (a challan or count question still takes typed figures afterwards); typed figures are never a command.
+
+| Key | Params | When |
+|---|---|---|
+| `office.held` | ref | to the supervisor: the step waits for the contractor's approval |
+| `office.approval_needed` | ref, by, estimate, step | to every contractor: who asks, the estimate, the read-back (without "हाँ / नहीं"), and the reply forms |
+| `office.approved` / `office.approved_note` | ref, by (, note) | to the supervisor: who approved (then the step's own result) |
+| `office.declined` | ref, by, reason | to the supervisor: who declined and why |
+| `office.you_declined` | ref | to the contractor: the "no" is recorded |
+| `office.already_decided` | ref, decision, by | a second ok/no: already decided, by whom (`office.decision.ok` / `.no`) |
+| `office.only_contractor` | — | a supervisor sent ok/no |
+| `office.own_entry` | — | nobody decides on their own entry |
+| `office.no_such_ref` | ref | no order or held step with this reference |
+| `office.reason_needed` | ref | "no" without a reason |
+| `office.status` | ref, what, site, day, state, rate, bill, paid, awaited | `status <ref>` for an order (`what`: `office.what_jcb` hours / `office.what_material` items / `kind.jcb`; `state`: `state.*`; `awaited`: `office.await.buyer.*` on the contractor's agent, `office.await.seller.*` on the others) |
+| `office.status_held` | ref, step, estimate, decision | `status <ref>` for a held step (`office.held_waiting`, `office.held_ok` by, `office.held_no` by, reason) |
+| `office.pending` | lines | `pending`: `office.pending_held` (ref, step, by) and `office.pending_order` (ref, what, site, awaited) lines; `office.pending_none` when empty |
+| `office.stock` | lines | `stock [item]` on the contractor's agent: `office.stock_site` (site), `office.stock_line` (name, qty), `office.stock_line_differs` (name, qty, challan); `office.stock_none` when empty |
+| `office.stock_not_here` | — | `stock` on another agent |
+| `help.contractor`, `help.supervisor`, `help.jcb_owner`, `help.supplier` | — | each now ends with the commands that role can use |

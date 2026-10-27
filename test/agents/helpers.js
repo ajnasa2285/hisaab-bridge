@@ -20,7 +20,7 @@ export const SHA_C = 'c'.repeat(64);
 /** @param {string} role @param {string} agent @returns {Person} */
 export const person = (role, agent) => ({ line: 'line', phone: '919000000001', agent, role: /** @type {any} */ (role), name: role });
 
-/** @param {{onTell?: (side: string, role: string, key: string, params: any, expect: any) => void}} [o] */
+/** @param {{onTell?: (side: string, role: string, key: string, params: any, expect: any) => void, siteLedgerFile?: string}} [o] */
 export async function setup(o = {}) {
   const jk = generateKeys();
   const ck = generateKeys();
@@ -50,7 +50,7 @@ export async function setup(o = {}) {
       ['agent:jcb-1', { id: 'agent:jcb-1', publicKey: pub(jk.publicKey), mayReceiveFrom: new Set(toContractor) }],
       ['agent:supplier-1', { id: 'agent:supplier-1', publicKey: pub(sk.publicKey), mayReceiveFrom: new Set([...toContractor, /** @type {MessageType} */ ('DELIVERY')]) }],
     ]),
-    ledger: openLedger(':memory:'),
+    ledger: openLedger(o.siteLedgerFile ?? ':memory:'),
     now,
   };
 

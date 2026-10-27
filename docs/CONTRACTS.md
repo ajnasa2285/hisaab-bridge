@@ -128,12 +128,12 @@ Signature: Ed25519 over the RFC 8785 canonical JSON of the message without `sig`
 | Type | From → to | Body |
 |---|---|---|
 | `BOOKING_REQUEST` | buyer → seller | `kind: 'jcb_hours'|'material'`, `site`, `day`, `time?`, `hoursTenths?` (JCB), `items?: {name, qtyHundredths, unit}[]` (material), `note?` |
-| `BOOKING_REPLY` | seller → buyer | `answer: 'yes'|'no'|'other_time'`, `day?`, `time?`, `ratePaise?` (per hour or per unit), `note?` |
-| `DELIVERY` | seller → buyer | material only: `items`, `challan: {sha256, readValues}`, `deliveredAt` |
-| `BILL` | seller → buyer | `lines: {what, qtyHundredths?, hoursTenths?, ratePaise, amountPaise}[]`, `totalPaise`, `evidence: {sha256, kind: 'meter'|'challan', readValue, takenAt, sentAt}[]`; `totalPaise` must equal the sum of `amountPaise`; never has `replaces` |
+| `BOOKING_REPLY` | seller → buyer | `answer: 'yes'|'no'|'other_time'`, `day?`, `time?`, `ratePaise?` (JCB: per hour), `rates?: {name, unit, ratePaise}[]` (material: 1–20, one per requested item and unit, never two for the same name+unit, only with `yes`), `note?` |
+| `DELIVERY` | seller → buyer | material only: `items` (as delivered, each with an agreed rate), `challan: {sha256, number?}` (fingerprint of the challan photo, challan number as read and confirmed), `deliveredAt` |
+| `BILL` | seller → buyer | `lines: {what, qtyHundredths?, hoursTenths?, ratePaise, amountPaise}[]`, `totalPaise`, `evidence: {sha256, kind: 'meter'|'challan', readValue, takenAt, sentAt}[]`; `totalPaise` must equal the sum of `amountPaise`; never has `replaces`. A material bill's lines are the DELIVERY's items in the same order, `amountPaise = round(qtyHundredths × ratePaise / 100)` to the nearest paisa, half a paisa up (integers only; `lineAmountPaise` in `src/agents/material.js`), evidence `{kind: 'challan', sha256, readValue: challan number or null, takenAt: null, sentAt: the DELIVERY's created_at}`; the buyer's code checks this before offering the bill for acceptance |
 | `RECEIPT` | receiver → sender | `receipt_for: msg_id`, `entry_hash`, `chain_head` |
 | `ACCEPT` | buyer → seller | `bill: msg_id` |
-| `DISPUTE` | buyer → seller | `bill: msg_id`, `theirFigure: {hoursTenths?|qtyHundredths?|totalPaise}`, `reason` |
+| `DISPUTE` | buyer → seller | `bill: msg_id`, `theirFigure: {hoursTenths?|qtyHundredths?|totalPaise}` (exactly one: hours for a JCB bill, a quantity only for a single-line material bill, else the total), `reason` |
 | `CORRECTION` | seller → buyer | a `BILL` body that always has `replaces: msg_id` (the bill or correction it replaces) |
 | `PAYMENT_CLAIM` | buyer → seller | `bill: msg_id`, `amountPaise`, `utr`, `paidOn`, `screenshot: {sha256}` |
 | `SETTLED` | seller → buyer | `bill: msg_id`, `payment: msg_id`, `amountPaise` |
@@ -148,7 +148,7 @@ One SQLite file per agent. Tables are append-only (triggers refuse UPDATE/DELETE
 - `events(seq INTEGER PRIMARY KEY, order_id, direction 'in'|'out'|'local', type, msg_id UNIQUE, body_json, at, prev_hash, hash)` — every message sent or received (the whole signed message) and every local decision or evidence (`EVIDENCE`, `NOTE`); `hash = sha256(prev_hash + canonical(row))`. API: `src/ledger/store.js` (`openLedger`, `ensureOrder`, `append`, `view`, `fits`, `events`, `verifyChain`).
 - `orders(order_id, kind, counterparty, site, created_at)` — identity only; the state is derived from events.
 
-Order states (derived): `requested → booked | declined → working (jcb) | delivered (material) → billed → accepted | disputed → billed (rev n+1) → payment_claimed → settled`. A message that does not fit the current state is refused with `WRONG_STATE`.
+Order states (derived): `requested → booked | declined → working (jcb) | delivered (material) → billed → accepted | disputed → billed (rev n+1) → payment_claimed → settled`. A message that does not fit the current state is refused with `WRONG_STATE`. A `yes` on a material order must carry `rates`, and a `yes` on a JCB order must not. The site's own count of a delivery is a local `NOTE {kind: 'site_count', items}` on the buyer's ledger only; it never changes the state.
 
 ## 6. Orchestrator (`src/orchestrator/`)
 

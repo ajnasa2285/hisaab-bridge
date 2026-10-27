@@ -1,7 +1,9 @@
 // One person's conversation with their agent. A text becomes one proposed step (Muse Spark, via the
 // orchestrator); a step that commits anything is read back and runs only after the person says yes.
 // A meter photo (or a supplier's challan photo) is read by Muse Spark; the reading is confirmed by the
-// person, or typed by them when the photo is not clear. People decide; the model only proposes.
+// person, or typed by them when the photo is not clear. Exact commands (status, pending, stock, ok,
+// no) are answered by code before the model sees anything, and a confirmed step passes the site
+// office's gate (approvals with limits, src/agents/office.js). People decide; the model only proposes.
 
 import { createHash } from 'node:crypto';
 import { proposeStep, orderRefs, pickOrder } from '../orchestrator/orchestrator.js';
@@ -9,6 +11,7 @@ import { parseHundredthsList } from '../orchestrator/units.js';
 import { meterReadings } from './jcb.js';
 import { challanQuantities, requestedItems } from './material.js';
 import { runTool } from './common.js';
+import { parseCommand } from './office.js';
 import { day as dayName, rupees } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
 
@@ -50,6 +53,7 @@ const norm = (text) => text.trim().toLowerCase().replace(/[।.!]+$/u, '').repla
  *   readChallan?: ChallanReader,
  *   reply: Reply,
  *   now: () => number,
+ *   office?: ReturnType<typeof import('./office.js').createOffice>,
  * }} o
  */
 export function createConversation(o) {
@@ -93,11 +97,18 @@ export function createConversation(o) {
    */
   async function onText(person, text) {
     const said = norm(text);
+    // An exact command is answered first and leaves any open question as it was: a command always
+    // has a command word, so it is never a figure, and typed figures are never a command.
+    const command = o.office ? parseCommand(text) : null;
+    if (command && o.office) {
+      const r = await o.office.command(person, command);
+      if (r) return o.reply(person, r.key, r.params);
+    }
     const p = current(person);
     if (p && p.kind === 'confirm') {
       if (YES.has(said)) {
         pending.delete(keyOf(person));
-        const r = await runTool(o.tools, person, { tool: p.tool, args: p.args });
+        const r = o.office ? await o.office.commit(person, p.tool, p.args) : await runTool(o.tools, person, { tool: p.tool, args: p.args });
         return o.reply(person, r.key, r.params);
       }
       if (NO.has(said)) {

@@ -5,13 +5,14 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { answerFromInput, validAnswer } from './answers.js';
 import { buildUpiAnswer, validUpiAnswer } from './upi-answers.js';
+import { buildChallanAnswer, validChallanAnswer } from './challan-answers.js';
 import { createPrivateData, safeMain } from './private-data.js';
 
 /** @param {string[]} args */
 export function parseAnswerKeyArgs(args) {
   const copy = [...args];
   const kind = copy[0] && !copy[0].startsWith('--') ? copy.shift() : 'meter';
-  if (!['meter', 'upi'].includes(kind ?? '') || copy.some(a => !['--heldout', '--review'].includes(a))
+  if (!['meter', 'upi', 'challan'].includes(kind ?? '') || copy.some(a => !['--heldout', '--review'].includes(a))
     || new Set(copy).size !== copy.length) throw new Error('invalid_arguments');
   return { kind: /** @type {import('./private-data.js').DatasetKind} */ (kind), heldout: copy.includes('--heldout'), review: copy.includes('--review') };
 }
@@ -52,11 +53,43 @@ async function askUpiAnswer(input) {
  * @param {any} answer */
 function showAnswer(answer) {
   if (answer.kind === 'not_meter') { console.log('उत्तर: मीटर नहीं'); return; }
+  if (answer.kind === 'not_challan') { console.log('उत्तर: चालान नहीं'); return; }
+  if (answer.kind === 'challan') {
+    const lines = answer.items.map((/** @type {any} */ i) => `  ${i.name} | ${i.qtyHundredths === null ? 'अज्ञात' : (i.qtyHundredths / 100).toFixed(2)} | ${i.unit ?? 'अज्ञात'}`).join('\n');
+    console.log(`चालान नंबर: ${answer.challanNo ?? 'अज्ञात'} | तारीख: ${answer.date ?? 'अज्ञात'} | गाड़ी: ${answer.vehicle ?? 'अज्ञात'}\n${lines}\nस्पष्ट: ${answer.clear ? 'हाँ' : 'नहीं'}`);
+    return;
+  }
   if (answer.kind === 'not_upi') { console.log('उत्तर: UPI लेनदेन नहीं'); return; }
   if (answer.kind === 'hour_meter') { console.log(`अंक: ${answer.clear ? answer.raw : 'अस्पष्ट'} | घड़ी: ${answer.dashClock ?? 'नहीं दिखती'}`); return; }
   const amount = answer.amountPaise === null ? 'अज्ञात' : `${BigInt(answer.amountPaise) / 100n}.${String(BigInt(answer.amountPaise) % 100n).padStart(2, '0')}`;
   const status = answer.status === 'success' ? 'सफल' : answer.status === 'pending' ? 'लंबित' : answer.status === 'failed' ? 'विफल' : 'अज्ञात';
   console.log(`राशि: ₹${amount} | तारीख: ${answer.date ?? 'अज्ञात'} | UTC समय: ${answer.time ?? 'अज्ञात'}\nUTR: ${answer.utr ?? 'अज्ञात'} | लिखी स्थिति: ${status}\nप्राप्तकर्ता: ${answer.payeeName ?? 'अज्ञात'} | UPI पता: ${answer.payeeVpa ?? 'अज्ञात'} | भेजने वाला: ${answer.payerName ?? 'अज्ञात'}\nस्पष्ट: ${answer.clear ? 'हाँ' : 'नहीं'}`);
+}
+
+/** @param {{question: (p: string) => Promise<string>}} input */
+async function askChallanAnswer(input) {
+  const kind = (await input.question('क्या यह डिलीवरी चालान / बिल / तौल पर्ची है? हाँ (y) / नहीं (n) | बाद में: छोड़ें | रोकें: बंद: ')).trim();
+  if (kind === 'बंद' || kind === 'छोड़ें') return kind;
+  if (kind === 'नहीं') return { kind: /** @type {const} */ ('not_challan'), confirmedBy: /** @type {const} */ ('human') };
+  if (kind !== 'हाँ') return null;
+  console.log('जो नहीं दिखता उसके लिए Enter; जो दिखता है पर अस्पष्ट है उसके लिए ?। अनुमान न लगाएँ।');
+  /** @param {string} prompt */
+  const ask = async prompt => (await input.question(prompt)).trim();
+  const challanNo = await ask('चालान नंबर, केवल लेबल के साथ दिखे तो: ');
+  const date = await ask('चालान की पूरी तारीख YYYY-MM-DD: ');
+  const vehicle = await ask('गाड़ी नंबर: ');
+  /** @type {{name:string,qty:string,unit:string}[]} */
+  const items = [];
+  for (;;) {
+    const line = await ask(`माल ${items.length + 1}: नाम | मात्रा | इकाई (जैसी लिखी है); खत्म: Enter: `);
+    if (line === 'बंद' || line === 'छोड़ें') return line;
+    if (line === '') break;
+    const [name, qty = '', unit = '', ...extra] = line.split('|').map(part => part.trim());
+    if (extra.length || !name) return null;
+    items.push({ name, qty, unit });
+  }
+  const clear = (await ask('क्या भरे हुए सभी विवरण बिना किसी शंका के स्पष्ट हैं? हाँ (y) / नहीं (n): ')) === 'हाँ';
+  return buildChallanAnswer({ kind: 'challan', challanNo, date, vehicle, items, clear });
 }
 
 /** Opens only the selected private photo with the owner's Windows file association.
@@ -77,7 +110,7 @@ export async function labelImages() {
   if (!stdin.isTTY || !stdout.isTTY || process.platform !== 'win32') throw new Error('interactive_windows_terminal_required');
   const { kind, heldout, review } = parseAnswerKeyArgs(process.argv.slice(2));
   const { loadSplit, privatePath, readPrivateJson, writePrivateJson, imageHash } = createPrivateData(kind);
-  const valid = kind === 'meter' ? validAnswer : validUpiAnswer;
+  const valid = kind === 'meter' ? validAnswer : kind === 'challan' ? validChallanAnswer : validUpiAnswer;
   const side = heldout ? 'heldout' : 'development';
   const split = loadSplit();
   const answers = readPrivateJson('answers.json', {});
@@ -107,8 +140,8 @@ export async function labelImages() {
         if (reply === 'हाँ') { answers[name] = draft; writePrivateJson('answers.json', answers); console.log('उत्तर सुरक्षित हो गया।'); continue; }
       }
       for (;;) {
-        if (kind === 'upi') {
-          const answer = await askUpiAnswer(input);
+        if (kind === 'upi' || kind === 'challan') {
+          const answer = kind === 'upi' ? await askUpiAnswer(input) : await askChallanAnswer(input);
           if (answer === 'बंद') return;
           if (answer === 'छोड़ें') break;
           if (!answer) { console.log('उत्तर का रूप सही नहीं है। दोबारा लिखें।'); continue; }

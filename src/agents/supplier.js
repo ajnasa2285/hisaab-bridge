@@ -7,6 +7,7 @@
 import { rupees, day as dayName, qty } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, ofType, posInt } from './common.js';
 import { agreedRates, delivery, itemsText, linesText, materialBillBody, rateFor, ratesText, requestedItems, validItems } from './material.js';
+import { openRefs } from '../ledger/refs.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -25,6 +26,9 @@ const MAX_CHALLAN_NO = 40;
 export function createSupplierAgent(o) {
   const { agent, link, tell } = o;
   const ledger = agent.ledger;
+  const refs = openRefs(ledger);
+  /** The order's short reference for the texts. @param {string} orderId */
+  const refOf = (orderId) => refs.refOf(orderId) ?? '—';
 
   /** @param {string} orderId */
   const counterparty = (orderId) => /** @type {{counterparty: string} | null} */ (ledger.order(orderId))?.counterparty ?? null;
@@ -112,7 +116,7 @@ export function createSupplierAgent(o) {
         const items = /** @type {Item[]} */ (a.items).map((it) => ({ name: it.name, qtyHundredths: it.qtyHundredths, unit: it.unit }));
         const body = { items, challan, deliveredAt: new Date(agent.now()).toISOString() };
         const d = await link.send({ type: 'DELIVERY', to: /** @type {string} */ (counterparty(a.orderId)), orderId: a.orderId, body });
-        return deliveryResult(d, 'supplier.delivery_sent', { site: siteOf(a.orderId), items: itemsText(items) });
+        return deliveryResult(d, 'supplier.delivery_sent', { ref: refOf(a.orderId), site: siteOf(a.orderId), items: itemsText(items) });
       },
     },
 
@@ -197,10 +201,10 @@ export function createSupplierAgent(o) {
     const b = m.body;
     switch (m.type) {
       case 'BOOKING_REQUEST':
-        await tell('supplier', 'supplier.order_request', { site: b.site, day: dayName(b.day), time: b.time ?? '—', items: itemsText(b.items ?? []) || '—' });
+        await tell('supplier', 'supplier.order_request', { ref: refOf(m.order_id), site: b.site, day: dayName(b.day), time: b.time ?? '—', items: itemsText(b.items ?? []) || '—' });
         break;
       case 'ACCEPT':
-        await tell('supplier', 'supplier.bill_accepted', { site: siteOf(m.order_id) });
+        await tell('supplier', 'supplier.bill_accepted', { ref: refOf(m.order_id), site: siteOf(m.order_id) });
         break;
       case 'DISPUTE': {
         // A quantity is shown in the unit of the delivered item when the bill has one line.
@@ -208,6 +212,7 @@ export function createSupplierAgent(o) {
         const unit = d && d.items.length === 1 ? d.items[0].unit : '';
         const f = b.theirFigure ?? {};
         await tell('supplier', 'supplier.bill_disputed', {
+          ref: refOf(m.order_id),
           site: siteOf(m.order_id),
           their: posInt(f.qtyHundredths) ? qty(f.qtyHundredths, unit).trim() : posInt(f.totalPaise) ? rupees(f.totalPaise) : '—',
           reason: b.reason,
@@ -215,7 +220,7 @@ export function createSupplierAgent(o) {
         break;
       }
       case 'PAYMENT_CLAIM':
-        await tell('supplier', 'supplier.payment_claimed', { site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn) }, { tool: 'confirm_payment', args: { orderId: m.order_id } });
+        await tell('supplier', 'supplier.payment_claimed', { ref: refOf(m.order_id), site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn) }, { tool: 'confirm_payment', args: { orderId: m.order_id } });
         break;
       default:
         break;

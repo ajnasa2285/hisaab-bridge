@@ -111,6 +111,10 @@ test('a whole material order, from request to settled, leaves both ledgers in ag
     await settle();
     assert.ok(expects.some(([a, role, key, e]) => a === 'site' && role === 'contractor' && key === 'site.material_bill_received' && e.tool === 'accept_bill'));
 
+    // A quantity names one item: on this two-line bill only a total can be disputed.
+    r = await runTool(s.site.tools, contractor, { tool: 'dispute_bill', args: { orderId, qtyHundredths: 4800, reason: 'site count' } });
+    assert.deepEqual([r.ok, r.key], [false, 'site.material_total_only']);
+    assert.equal(s.supCore.ledger.view(orderId).state, 'billed', 'nothing was sent');
     r = await runTool(s.site.tools, contractor, { tool: 'accept_bill', args: { orderId } });
     assert.deepEqual([r.ok, r.key], [true, 'site.material_bill_accepted']);
     await settle();

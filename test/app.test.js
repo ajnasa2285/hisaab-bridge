@@ -14,6 +14,7 @@ import { t } from '../src/i18n/index.js';
 
 const OWNER = '919000000001';
 const SUPERVISOR = '919000000011';
+const CONTRACTOR = '919000000012';
 
 test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'hb-app-'));
@@ -59,6 +60,7 @@ test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents
     people: [
       { line: 'line-jcb', phone: OWNER, agent: 'agent:jcb-1', role: 'jcb_owner', name: 'Owner' },
       { line: 'line-site', phone: SUPERVISOR, agent: 'agent:contractor-1', role: 'supervisor', name: 'Supervisor' },
+      { line: 'line-site', phone: CONTRACTOR, agent: 'agent:contractor-1', role: 'contractor', name: 'Contractor' },
     ],
     waStoreFile: join(dir, 'wa.db'),
     spark,
@@ -91,12 +93,19 @@ test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents
     // The owner has written today, so notices can reach them.
     await say('jcb', 'line-jcb', 'secret-jcb', OWNER, 'मदद');
     assert.equal(sent.at(-1)?.to, OWNER);
+    await say('site', 'line-site', 'secret-site', CONTRACTOR, 'मदद');
 
     nextCalls = [{ name: 'request_jcb', args: { site: 'Shivpuri', day: 'tomorrow', time: '8', hours: '6' } }];
     await say('site', 'line-site', 'secret-site', SUPERVISOR, 'kal 8 baje Shivpuri JCB 6 ghante');
     assert.deepEqual([sent.at(-1)?.to, sent.at(-1)?.line], [SUPERVISOR, 'line-site']);
     assert.ok(sent.at(-1)?.text.includes('हाँ / नहीं'));
+    // No limit is set, so the supervisor's step waits for the contractor, who approves it by reference.
     await say('site', 'line-site', 'secret-site', SUPERVISOR, 'हाँ');
+    assert.ok(sent.some((s) => s.to === SUPERVISOR && s.text?.includes('J-1') && s.text.includes('मंज़ूरी')));
+    const ask = sent.filter((s) => s.to === CONTRACTOR).at(-1);
+    assert.ok(ask?.text.includes('Shivpuri') && ask.text.includes('"OK J-1"'), 'the contractor sees the step and the reply forms');
+    assert.equal(sent.filter((s) => s.to === OWNER && s.text?.includes('Shivpuri')).length, 0, 'nothing reached the JCB owner yet');
+    await say('site', 'line-site', 'secret-site', CONTRACTOR, 'ok j1');
     await wait(() => sent.some((s) => s.to === OWNER && s.text?.includes('Shivpuri')) && sent.some((s) => s.to === SUPERVISOR && s.text?.includes('JCB की माँग भेजी')));
     const toOwner = sent.filter((s) => s.to === OWNER && s.line === 'line-jcb').at(-1);
     assert.ok(toOwner?.text.includes('Shivpuri'), 'the JCB owner is told on the JCB line');
@@ -182,6 +191,7 @@ test('three agents in one service: a material order goes from the site line to t
       { line: 'line-jcb', phone: OWNER, agent: 'agent:jcb-1', role: 'jcb_owner', name: 'Owner' },
       { line: 'line-jcb', phone: SUPPLIER, agent: 'agent:supplier-1', role: 'supplier', name: 'Supplier' },
       { line: 'line-site', phone: SUPERVISOR, agent: 'agent:contractor-1', role: 'supervisor', name: 'Supervisor' },
+      { line: 'line-site', phone: CONTRACTOR, agent: 'agent:contractor-1', role: 'contractor', name: 'Contractor' },
     ],
     waStoreFile: join(dir, 'wa.db'),
     spark,
@@ -216,12 +226,18 @@ test('three agents in one service: a material order goes from the site line to t
     await supplierSays('मदद');
     assert.deepEqual([lastTo(SUPPLIER)?.line, lastTo(SUPPLIER)?.text], ['line-jcb', t('help.supplier')]);
 
+    await say('site', 'line-site', 'secret-site', CONTRACTOR, 'मदद');
     nextCalls = [{ name: 'request_material', args: { site: 'Shivpuri', day: 'tomorrow', time: null, items: [{ name: 'सीमेंट', quantity: '50', unit: 'बोरी' }] } }];
     await supervisorSays('kal Shivpuri cement 50 bori');
     assert.ok(lastTo(SUPERVISOR)?.text.includes('सीमेंट 50 बोरी') && lastTo(SUPERVISOR)?.text.includes('हाँ / नहीं'));
+    // No limit is set: the supervisor's order waits for the contractor as P-1, who approves it.
     await supervisorSays('हाँ');
+    assert.ok(lastTo(SUPERVISOR)?.text.includes('P-1'));
+    assert.ok(lastTo(CONTRACTOR)?.text.includes('"OK P-1"') && lastTo(CONTRACTOR)?.text.includes('सीमेंट 50 बोरी'));
+    assert.ok(!sent.some((s) => s.to === SUPPLIER && s.text.includes('Shivpuri')), 'nothing reached the supplier yet');
+    await say('site', 'line-site', 'secret-site', CONTRACTOR, 'ok p1');
     await wait(() => sent.some((s) => s.to === SUPPLIER && s.text.includes('Shivpuri')));
-    assert.ok(lastTo(SUPPLIER)?.text.includes('सीमेंट 50 बोरी'), 'the supplier is told the items on the JCB line');
+    assert.ok(lastTo(SUPPLIER)?.text.includes('सीमेंट 50 बोरी') && lastTo(SUPPLIER)?.text.includes('P-1'), 'the supplier is told the items on the JCB line, with its own reference');
     assert.ok(!sent.some((s) => s.to === OWNER && s.text.includes('Shivpuri')), 'the JCB owner hears nothing of it');
 
     nextCalls = [{ name: 'reply_order', args: { order: null, answer: 'yes', rates_rupees: ['350'], day: null, time: null } }];

@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { tenths as hours, rupees, day as dayName, qty } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
 import { agreedRates, billFollows, delivery, itemsText, lineAmountPaise, linesText, materialBillBody, ratesText, sameItems, siteCount, validItems } from './material.js';
+import { openRefs } from '../ledger/refs.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -28,6 +29,9 @@ const UTR_RE = /^[A-Za-z0-9]{6,35}$/;
 export function createContractorAgent(o) {
   const { agent, link, tell } = o;
   const ledger = agent.ledger;
+  const refs = openRefs(ledger);
+  /** The order's short reference for the texts. @param {string} orderId */
+  const refOf = (orderId) => refs.refOf(orderId) ?? '—';
 
   /** @param {string} orderId */
   const known = (orderId) => isUuid(orderId) && ledger.order(orderId) !== null;
@@ -113,7 +117,7 @@ export function createContractorAgent(o) {
         // A new order, or the same order again after the JCB owner offered another time.
         const orderId = a.orderId !== undefined && known(a.orderId) ? a.orderId : randomUUID();
         const d = await link.send({ type: 'BOOKING_REQUEST', to: a.orderId !== undefined && known(a.orderId) ? counterparty(a.orderId) : o.jcbAgentId, orderId, body });
-        return deliveryResult(d, 'site.jcb_requested', { site: body.site, day: dayName(body.day), time: body.time ?? '—' });
+        return deliveryResult(d, 'site.jcb_requested', { ref: refOf(orderId), site: body.site, day: dayName(body.day), time: body.time ?? '—' });
       },
     },
 
@@ -154,7 +158,7 @@ export function createContractorAgent(o) {
         // A new order, or the same order again after the supplier offered another time.
         const orderId = again ? a.orderId : randomUUID();
         const d = await link.send({ type: 'BOOKING_REQUEST', to: again ? counterparty(a.orderId) : /** @type {string} */ (o.supplierAgentId), orderId, body });
-        return deliveryResult(d, 'site.material_requested', { site: body.site, day: dayName(body.day), items: itemsText(items) });
+        return deliveryResult(d, 'site.material_requested', { ref: refOf(orderId), site: body.site, day: dayName(body.day), items: itemsText(items) });
       },
     },
 
@@ -179,9 +183,10 @@ export function createContractorAgent(o) {
         });
         if (stored === null) return no('common.wrong_state');
         const site = siteOf(a.orderId);
-        if (sameItems(items, d.items)) return ok('site.count_matches', { site, items: itemsText(items) });
+        const ref = refOf(a.orderId);
+        if (sameItems(items, d.items)) return ok('site.count_matches', { ref, site, items: itemsText(items) });
         // Code compares; the contractor is told both figures (in the reply, when the contractor counted).
-        const params = { site, challan: itemsText(d.items), count: itemsText(items) };
+        const params = { ref, site, challan: itemsText(d.items), count: itemsText(items) };
         if (person.role !== 'contractor') await tell('contractor', 'site.count_differs', params);
         return ok('site.count_saved_differs', params);
       },
@@ -197,7 +202,7 @@ export function createContractorAgent(o) {
         const view = ledger.view(a.orderId);
         if (view.currentBill === null) return no('common.wrong_state');
         const d = await link.send({ type: 'ACCEPT', to: counterparty(a.orderId), orderId: a.orderId, body: { bill: view.currentBill } });
-        return deliveryResult(d, keyFor(a.orderId, 'site.bill_accepted'), { site: siteOf(a.orderId) });
+        return deliveryResult(d, keyFor(a.orderId, 'site.bill_accepted'), { ref: refOf(a.orderId), site: siteOf(a.orderId) });
       },
     },
 
@@ -223,9 +228,12 @@ export function createContractorAgent(o) {
         if (given.length !== 1 || (given[0] !== measure && given[0] !== 'totalPaise') || !posInt(a[given[0]])) return no(keyFor(a.orderId, 'site.figure_needed'));
         const view = ledger.view(a.orderId);
         if (view.currentBill === null) return no('common.wrong_state');
+        // A quantity names one item: on a bill with several lines only a total is clear.
+        const lines = ledger.eventOfMessage(view.currentBill)?.body.body.lines;
+        if (given[0] === 'qtyHundredths' && (!Array.isArray(lines) || lines.length !== 1)) return no('site.material_total_only');
         const theirFigure = { [given[0]]: a[given[0]] };
         const d = await link.send({ type: 'DISPUTE', to: counterparty(a.orderId), orderId: a.orderId, body: { bill: view.currentBill, theirFigure, reason: a.reason.trim() } });
-        return deliveryResult(d, keyFor(a.orderId, 'site.bill_disputed'), { site: siteOf(a.orderId) });
+        return deliveryResult(d, keyFor(a.orderId, 'site.bill_disputed'), { ref: refOf(a.orderId), site: siteOf(a.orderId) });
       },
     },
 
@@ -255,6 +263,7 @@ export function createContractorAgent(o) {
   async function onMaterialBill(m) {
     const b = m.body;
     const site = siteOf(m.order_id);
+    const ref = refOf(m.order_id);
     const events = ledger.events(m.order_id);
     const d = delivery(events);
     const rates = agreedRates(events);
@@ -262,7 +271,7 @@ export function createContractorAgent(o) {
     const lines = linesText(b.lines, d?.items ?? []);
     if (!d || !rates || !billFollows(/** @type {{lines: any[], totalPaise: number}} */ (b), d.items, rates, { sameQty: m.type === 'BILL' })) {
       const want = d && rates ? materialBillBody(d.items, rates, { sha256: d.sha256, number: d.number, sentAt: d.at }) : null;
-      await tell('contractor', 'site.material_bill_mismatch', { site, lines, total, expected: want && d ? linesText(want.lines, d.items) : '—', expectedTotal: want ? rupees(want.totalPaise) : '—' });
+      await tell('contractor', 'site.material_bill_mismatch', { ref, site, lines, total, expected: want && d ? linesText(want.lines, d.items) : '—', expectedTotal: want ? rupees(want.totalPaise) : '—' });
       return;
     }
     const count = siteCount(events);
@@ -271,10 +280,10 @@ export function createContractorAgent(o) {
     if (count !== null && !sameItems(count, billed)) {
       // What the site's count comes to at the same rates (an item counted as 0 adds nothing).
       const siteTotal = count.reduce((s, it, i) => s + (it.qtyHundredths === 0 ? 0 : lineAmountPaise(it.qtyHundredths, b.lines[i].ratePaise) ?? 0), 0);
-      await tell('contractor', 'site.material_bill_count_differs', { site, lines, total, count: itemsText(count), siteTotal: rupees(siteTotal) });
+      await tell('contractor', 'site.material_bill_count_differs', { ref, site, lines, total, count: itemsText(count), siteTotal: rupees(siteTotal) });
       return;
     }
-    const params = { site, lines, total, photos: Array.isArray(b.evidence) ? b.evidence.length : 0 };
+    const params = { ref, site, lines, total, photos: Array.isArray(b.evidence) ? b.evidence.length : 0 };
     const key = m.type === 'BILL' ? 'site.material_bill_received' : 'site.material_correction_received';
     await tell('contractor', key, params, { tool: 'accept_bill', args: { orderId: m.order_id } });
     await tell('supervisor', key, params);
@@ -287,10 +296,11 @@ export function createContractorAgent(o) {
   async function onApplied(m) {
     const b = m.body;
     const site = siteOf(m.order_id);
+    const ref = refOf(m.order_id);
     switch (m.type) {
       case 'BOOKING_REPLY': {
         /** @type {Record<string, string>} */
-        const params = { site, day: b.day ? dayName(b.day) : '—', time: b.time ?? '—' };
+        const params = { ref, site, day: b.day ? dayName(b.day) : '—', time: b.time ?? '—' };
         if (isMaterial(m.order_id)) params.rates = Array.isArray(b.rates) ? ratesText(b.rates) : '—';
         else params.rate = b.ratePaise ? rupees(b.ratePaise) : '—';
         const key = keyFor(m.order_id, `site.booking_${b.answer}`);
@@ -300,7 +310,7 @@ export function createContractorAgent(o) {
       }
       case 'DELIVERY': {
         // The site is asked for its own count; a plain "हाँ" means "the same as the challan".
-        const params = { site, items: itemsText(b.items), challan: b.challan?.number ?? '—' };
+        const params = { ref, site, items: itemsText(b.items), challan: b.challan?.number ?? '—' };
         const expect = { tool: 'confirm_count', args: { orderId: m.order_id, qtysHundredths: b.items.map((/** @type {Item} */ it) => it.qtyHundredths) } };
         await tell('supervisor', 'site.delivery_received', params, expect);
         await tell('contractor', 'site.delivery_received', params, expect);
@@ -314,6 +324,7 @@ export function createContractorAgent(o) {
         }
         const line = b.lines[0];
         const params = {
+          ref,
           site,
           hours: line.hoursTenths !== undefined ? hours(line.hoursTenths) : '—',
           rate: rupees(line.ratePaise),
@@ -326,7 +337,7 @@ export function createContractorAgent(o) {
         break;
       }
       case 'SETTLED':
-        await tell('contractor', keyFor(m.order_id, 'site.settled'), { site, amount: rupees(b.amountPaise) });
+        await tell('contractor', keyFor(m.order_id, 'site.settled'), { ref, site, amount: rupees(b.amountPaise) });
         break;
       default:
         break;

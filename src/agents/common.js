@@ -8,8 +8,9 @@
 /**
  * A step a person can take. `roles` is checked by code before `run`; the model never decides who may.
  * `describe` gives the read-back the person confirms before a committing step runs. `hold` marks a
- * step an approval limit applies to: which limit, and the step's value in paise estimated from the
- * ledger (null when it cannot be estimated). The tool itself never holds anything.
+ * step a supervisor may take only within a limit (docs/BUILD2.md section 3): which limit, and the
+ * step's estimated value in paise from the ledger (null when it cannot be estimated). The tool itself
+ * never holds anything; the gate is src/agents/office.js.
  * @typedef {{roles: Role[], commits: boolean, run: (person: Person, args: Record<string, any>) => Promise<Said> | Said,
  *   describe?: (args: Record<string, any>) => {key: string, params?: Record<string, string | number>}, hold?: Hold}} Tool
  */

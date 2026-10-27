@@ -7,7 +7,9 @@ const DEVANAGARI = /[ऀ-ॿ]/;
 const LATIN_WORD = /[A-Za-z]+/g;
 const ALLOWED_LATIN = new Set(['JCB', 'UPI', 'UTR', 'OK']);
 // Keys whose text is legitimately without Devanagari.
-const NO_DEVANAGARI_OK = new Set(['account.none', 'kind.jcb', 'bill.line', 'request.list_line', 'account.line', 'account.material', 'explain.wrapper']);
+const NO_DEVANAGARI_OK = new Set(['account.none', 'kind.jcb', 'bill.line', 'request.list_line', 'account.line', 'account.material', 'explain.wrapper', 'office.stock_line', 'office.pending_order']);
+// Order references as written in examples ("J-1", "P-2") are Latin by design (docs/BUILD2.md section 4).
+const REF_EXAMPLE = /\b[JP]-\d+\b/g;
 // AGENTS.md rule 9: status only, never a nudge to pay.
 const CHASING = ['जल्दी', 'तुरंत', 'याद दिला', 'कब दोगे', 'कब देंगे', 'कब देंगी', 'चुकाएँ', 'चुकाओ', 'भुगतान करें', 'भुगतान कीजिए', 'पैसे दो', 'पैसे दें', 'देर हो', 'बकाया चुका', 'reminder', 'overdue'];
 
@@ -22,8 +24,10 @@ const SAMPLE = {
   seen: '₹7,000', state: 'बिल आया', role: 'ठेकेदार', question: 'बिल ₹7,320 ठीक है?', id: 3, neededOn: '30 अक्टूबर 2026',
   by: 'मोहन', estimate: '₹12,000', materials: 'सीमेंट 50 बोरी', billed: '₹7,320', paid: '—', pending: '₹7,320',
   disputes: 0, name: 'सीमेंट', their: '5.5 घंटे', photos: 2,
-  rates: 'सीमेंट ₹350/बोरी', challan: '412', count: 'सीमेंट 48 बोरी', expected: 'सीमेंट 50 बोरी × ₹350 = ₹17,500',
+  rates: 'सीमेंट ₹350/बोरी', count: 'सीमेंट 48 बोरी', expected: 'सीमेंट 50 बोरी × ₹350 = ₹17,500',
   expectedTotal: '₹17,500', siteTotal: '₹16,800', item: 'सरिया (टन)',
+  ref: 'J-1', step: 'शिवपुरी पर 29 अक्टूबर 2026 को 8 बजे से 6 घंटे के लिए JCB माँगें?', note: 'ठीक है', decision: 'मंज़ूर',
+  awaited: 'बिल का इंतज़ार', bill: '₹7,320', challan: '50 बोरी',
 };
 
 test('every key has a non-empty Hindi text and fills with its parameters', () => {
@@ -43,7 +47,7 @@ test('every key has a non-empty Hindi text and fills with its parameters', () =>
 test('no English words except JCB, UPI, UTR, OK', () => {
   const offenders = [];
   for (const key of keys()) {
-    const stripped = hi[key].replace(/\{[a-zA-Z0-9]+\}/g, '');
+    const stripped = hi[key].replace(/\{[a-zA-Z0-9]+\}/g, '').replace(REF_EXAMPLE, '');
     for (const word of stripped.match(LATIN_WORD) ?? []) if (!ALLOWED_LATIN.has(word)) offenders.push(`${key}: ${word}`);
   }
   assert.deepEqual(offenders, []);
@@ -77,17 +81,17 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
   const AGENT_KEYS = {
     'common.unknown_step': [], 'common.not_allowed': [], 'common.bad_args': [], 'common.no_such_order': [], 'common.wrong_state': [],
     'common.pending': [], 'common.refused': [], 'wa.unknown_sender': [],
-    'jcb.booking_request': ['site', 'day', 'time', 'hours'], 'jcb.rate_needed': [], 'jcb.day_needed': [],
+    'jcb.booking_request': ['ref', 'site', 'day', 'time', 'hours'], 'jcb.rate_needed': [], 'jcb.day_needed': [],
     'jcb.reply_sent_yes': [], 'jcb.reply_sent_no': [], 'jcb.reply_sent_other_time': [],
-    'jcb.job_booked': ['site', 'day', 'time'], 'jcb.meter_start_saved': ['reading'], 'jcb.meter_end_saved': ['reading', 'hours'],
+    'jcb.job_booked': ['ref', 'site', 'day', 'time'], 'jcb.meter_start_saved': ['reading'], 'jcb.meter_end_saved': ['reading', 'hours'],
     'jcb.start_first': [], 'jcb.end_not_after_start': ['start'], 'jcb.meter_done': ['hours'], 'jcb.readings_missing': [],
-    'jcb.bill_sent': ['hours', 'rate', 'total'], 'jcb.bill_accepted': ['site'], 'jcb.bill_disputed': ['site', 'their', 'reason'],
-    'jcb.correction_sent': ['hours', 'total'], 'jcb.payment_claimed': ['site', 'amount', 'utr', 'day'], 'jcb.settled_sent': ['amount'],
-    'site.jcb_requested': ['site', 'day', 'time'], 'site.booking_yes': ['site', 'day', 'time', 'rate'],
-    'site.booking_no': ['site', 'day', 'time', 'rate'], 'site.booking_other_time': ['site', 'day', 'time', 'rate'],
-    'site.bill_received': ['site', 'hours', 'rate', 'total', 'photos'], 'site.correction_received': ['site', 'hours', 'rate', 'total', 'photos'],
-    'site.bill_accepted': ['site'], 'site.bill_disputed': ['site'], 'site.reason_needed': [], 'site.figure_needed': [],
-    'site.payment_claimed': ['amount'], 'site.settled': ['site', 'amount'],
+    'jcb.bill_sent': ['hours', 'rate', 'total'], 'jcb.bill_accepted': ['ref', 'site'], 'jcb.bill_disputed': ['ref', 'site', 'their', 'reason'],
+    'jcb.correction_sent': ['hours', 'total'], 'jcb.payment_claimed': ['ref', 'site', 'amount', 'utr', 'day'], 'jcb.settled_sent': ['amount'],
+    'site.jcb_requested': ['ref', 'site', 'day', 'time'], 'site.booking_yes': ['ref', 'site', 'day', 'time', 'rate'],
+    'site.booking_no': ['ref', 'site', 'day', 'time', 'rate'], 'site.booking_other_time': ['ref', 'site', 'day', 'time', 'rate'],
+    'site.bill_received': ['ref', 'site', 'hours', 'rate', 'total', 'photos'], 'site.correction_received': ['ref', 'site', 'hours', 'rate', 'total', 'photos'],
+    'site.bill_accepted': ['ref', 'site'], 'site.bill_disputed': ['ref', 'site'], 'site.reason_needed': [], 'site.figure_needed': [],
+    'site.payment_claimed': ['amount'], 'site.settled': ['ref', 'site', 'amount'],
     'step.reply_booking_yes': ['site', 'day', 'time', 'rate'], 'step.reply_booking_no': ['site', 'day', 'time', 'rate'],
     'step.reply_booking_other_time': ['site', 'day', 'time', 'rate'], 'step.record_meter_start': ['reading'], 'step.record_meter_end': ['reading'],
     'step.send_bill': ['site', 'hours', 'rate', 'total'], 'step.send_correction': ['site', 'hours', 'total'], 'step.confirm_payment': ['site', 'amount'],
@@ -95,26 +99,37 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'step.claim_payment': ['site', 'amount', 'utr'], 'step.cancelled': [],
     'orchestrator.try_again': [], 'orchestrator.which_job': [], 'orchestrator.no_job_for_photo': [],
     // Material: contractor side, supplier side, challan photo, read-backs.
-    'site.no_supplier': [], 'site.material_requested': ['site', 'day', 'items'],
-    'site.material_booking_yes': ['site', 'day', 'time', 'rates'], 'site.material_booking_no': ['site', 'day', 'time', 'rates'],
-    'site.material_booking_other_time': ['site', 'day', 'time', 'rates'], 'site.delivery_received': ['site', 'items', 'challan'],
-    'site.count_figures': ['items'], 'site.count_matches': ['site', 'items'], 'site.count_saved_differs': ['site', 'challan', 'count'],
-    'site.count_differs': ['site', 'challan', 'count'], 'site.material_bill_received': ['site', 'lines', 'total', 'photos'],
-    'site.material_correction_received': ['site', 'lines', 'total', 'photos'],
-    'site.material_bill_mismatch': ['site', 'lines', 'total', 'expected', 'expectedTotal'],
-    'site.material_bill_count_differs': ['site', 'lines', 'total', 'count', 'siteTotal'], 'site.material_bill_accepted': ['site'],
-    'site.material_bill_disputed': ['site'], 'site.material_figure_needed': [], 'site.material_payment_claimed': ['amount'],
-    'site.material_settled': ['site', 'amount'],
-    'supplier.order_request': ['site', 'day', 'time', 'items'], 'supplier.rates_needed': ['items'], 'supplier.reply_sent_yes': [],
+    'site.no_supplier': [], 'site.material_requested': ['ref', 'site', 'day', 'items'],
+    'site.material_booking_yes': ['ref', 'site', 'day', 'time', 'rates'], 'site.material_booking_no': ['ref', 'site', 'day', 'time', 'rates'],
+    'site.material_booking_other_time': ['ref', 'site', 'day', 'time', 'rates'], 'site.delivery_received': ['ref', 'site', 'items', 'challan'],
+    'site.count_figures': ['items'], 'site.count_matches': ['ref', 'site', 'items'], 'site.count_saved_differs': ['ref', 'site', 'challan', 'count'],
+    'site.count_differs': ['ref', 'site', 'challan', 'count'], 'site.material_bill_received': ['ref', 'site', 'lines', 'total', 'photos'],
+    'site.material_correction_received': ['ref', 'site', 'lines', 'total', 'photos'],
+    'site.material_bill_mismatch': ['ref', 'site', 'lines', 'total', 'expected', 'expectedTotal'],
+    'site.material_bill_count_differs': ['ref', 'site', 'lines', 'total', 'count', 'siteTotal'], 'site.material_bill_accepted': ['ref', 'site'],
+    'site.material_bill_disputed': ['ref', 'site'], 'site.material_figure_needed': [], 'site.material_total_only': [], 'site.material_payment_claimed': ['amount'],
+    'site.material_settled': ['ref', 'site', 'amount'],
+    'supplier.order_request': ['ref', 'site', 'day', 'time', 'items'], 'supplier.rates_needed': ['items'], 'supplier.reply_sent_yes': [],
     'supplier.reply_sent_no': [], 'supplier.reply_sent_other_time': [], 'supplier.item_not_agreed': ['item'],
-    'supplier.delivery_sent': ['site', 'items'], 'supplier.delivery_missing': [], 'supplier.bill_sent': ['lines', 'total'],
-    'supplier.bill_accepted': ['site'], 'supplier.bill_disputed': ['site', 'their', 'reason'], 'supplier.correction_sent': ['lines', 'total'],
-    'supplier.payment_claimed': ['site', 'amount', 'utr', 'day'], 'supplier.settled_sent': ['amount'],
+    'supplier.delivery_sent': ['ref', 'site', 'items'], 'supplier.delivery_missing': [], 'supplier.bill_sent': ['lines', 'total'],
+    'supplier.bill_accepted': ['ref', 'site'], 'supplier.bill_disputed': ['ref', 'site', 'their', 'reason'], 'supplier.correction_sent': ['lines', 'total'],
+    'supplier.payment_claimed': ['ref', 'site', 'amount', 'utr', 'day'], 'supplier.settled_sent': ['amount'],
     'challan.not_challan': [], 'challan.ask_person': ['raw', 'items'], 'challan.no_order_for_photo': [],
     'step.reply_order_yes': ['site', 'day', 'time', 'rates'], 'step.reply_order_no': ['site', 'day', 'time', 'rates'],
     'step.reply_order_other_time': ['site', 'day', 'time', 'rates'], 'step.record_delivery': ['site', 'items', 'challan'],
     'step.send_material_bill': ['site', 'lines', 'total'], 'step.send_material_correction': ['site', 'lines', 'total'],
     'step.request_material': ['site', 'day', 'time', 'items'], 'step.confirm_count': ['site', 'items'],
+    'office.held': ['ref'], 'office.approval_needed': ['ref', 'by', 'estimate', 'step'], 'office.approved': ['ref', 'by'],
+    'office.approved_note': ['ref', 'by', 'note'], 'office.declined': ['ref', 'by', 'reason'], 'office.you_declined': ['ref'],
+    'office.already_decided': ['ref', 'decision', 'by'], 'office.decision.ok': [], 'office.decision.no': [],
+    'office.only_contractor': [], 'office.own_entry': [], 'office.no_such_ref': ['ref'], 'office.reason_needed': ['ref'],
+    'office.status': ['ref', 'what', 'site', 'day', 'state', 'rate', 'bill', 'paid', 'awaited'],
+    'office.status_held': ['ref', 'step', 'estimate', 'decision'], 'office.held_waiting': [], 'office.held_ok': ['by'], 'office.held_no': ['by', 'reason'],
+    'office.what_jcb': ['hours'], 'office.what_material': ['items'], 'office.pending': ['lines'], 'office.pending_held': ['ref', 'step', 'by'],
+    'office.pending_order': ['ref', 'what', 'site', 'awaited'], 'office.pending_none': [], 'office.stock': ['lines'], 'office.stock_site': ['site'],
+    'office.stock_line': ['name', 'qty'], 'office.stock_line_differs': ['name', 'qty', 'challan'], 'office.stock_none': [], 'office.stock_not_here': [],
+    ...Object.fromEntries(['buyer', 'seller'].flatMap((side) => ['requested', 'offered', 'declined', 'booked', 'working', 'delivered', 'billed', 'disputed', 'accepted', 'payment_claimed', 'settled']
+      .map((s) => [`office.await.${side}.${s}`, []]))),
   };
   for (const [key, params] of Object.entries(AGENT_KEYS)) {
     assert.ok(hi[key], `missing ${key}`);

@@ -8,6 +8,10 @@
 //   people.json                         who is who: [{line: 'jcb'|'site', phone, agent: 'jcb'|'contractor'|'supplier', role, name}]
 //                                       (a supplier's people have role 'supplier', usually on the shared 'jcb' line)
 //   jcb.db, contractor.db, supplier.db, wa.db   the ledgers and the WhatsApp store
+//
+// Approval limits for the contractor's supervisor (docs/BUILD2.md section 3), whole rupees, optional:
+// HB_LIMIT_PROCUREMENT_RUPEES (JCB and material requests), HB_LIMIT_PAYMENT_RUPEES (payment claims).
+// Unset means every such step of a supervisor waits for the contractor.
 
 import { createServer } from 'node:http';
 import { createPublicKey } from 'node:crypto';
@@ -19,6 +23,7 @@ import { createApp } from './app.js';
 import { listModels, museSpark, transcribe } from './meta/client.js';
 import { readMeter } from './readers/meter.js';
 import { readUpi } from './readers/upi.js';
+import { readChallan } from './readers/challan.js';
 
 /** @typedef {import('./protocol/messages.js').MessageType} MessageType */
 
@@ -34,6 +39,18 @@ function need(env, name) {
   const v = env[name];
   if (!v || !v.trim()) throw new Error(`config: ${name} is not set`);
   return v.trim();
+}
+
+/**
+ * An optional limit in whole rupees, as paise. Anything but digits stops the start.
+ * @param {Record<string, string | undefined>} env @param {string} name
+ * @returns {number | undefined}
+ */
+function limitPaise(env, name) {
+  const v = env[name]?.trim();
+  if (!v) return undefined;
+  if (!/^\d{1,9}$/.test(v)) throw new Error(`config: ${name} must be whole rupees, digits only`);
+  return Number(v) * 100;
 }
 
 /** The agent's private key, created once. @param {string} file */
@@ -70,6 +87,12 @@ export function loadConfig(env) {
     graphVersion: env.HB_WA_GRAPH_VERSION || undefined,
   });
   const lines = [line('JCB', 'jcb'), line('SITE', 'site')];
+  /** @type {import('./agents/office.js').Limits} */
+  const limits = {};
+  const procurementPaise = limitPaise(env, 'HB_LIMIT_PROCUREMENT_RUPEES');
+  const paymentPaise = limitPaise(env, 'HB_LIMIT_PAYMENT_RUPEES');
+  if (procurementPaise !== undefined) limits.procurementPaise = procurementPaise;
+  if (paymentPaise !== undefined) limits.paymentPaise = paymentPaise;
   const lineIds = { jcb: lines[0].phoneNumberId, site: lines[1].phoneNumberId };
   const agentIds = { jcb: jcbId, contractor: siteId, supplier: supId };
 
@@ -108,6 +131,7 @@ export function loadConfig(env) {
         peerUrls: { [jcbId]: `${baseUrl}/agents/jcb`, [supId]: `${baseUrl}/agents/supplier` },
         jcbAgentId: jcbId,
         supplierAgentId: supId,
+        limits,
       },
       {
         name: 'supplier', kind: /** @type {const} */ ('supplier'), id: supId, title: 'Supplier Hisaab', privateKey: supKey, ledgerFile: join(dataDir, 'supplier.db'),
@@ -120,9 +144,7 @@ export function loadConfig(env) {
 
 async function main() {
   const cfg = loadConfig(process.env);
-  // readChallan joins here once src/readers/challan.js (branch claude/challan) is merged; until then a
-  // supplier's challan photo is answered with "try again" and nothing is recorded.
-  const app = createApp({ ...cfg, spark: museSpark, readMeter, readUpi, transcribe });
+  const app = createApp({ ...cfg, spark: museSpark, readMeter, readUpi, readChallan, transcribe });
   const server = createServer((req, res) => {
     app.handle(req, res).catch(() => {
       if (!res.headersSent) res.writeHead(500).end();
