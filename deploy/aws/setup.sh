@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sets up Hisaab Bridge on Ubuntu 24.04 (EC2). Safe to run again.
+# Sets up Hisaab Bridge on Ubuntu 24.04 or newer (EC2). Safe to run again.
 # Usage: sudo bash setup.sh <git-ref> [domain]
 #   git-ref  branch, tag or commit of https://github.com/ajnasa2285/hisaab-bridge
 #   domain   optional; default is <public-ip-with-dashes>.sslip.io
@@ -99,5 +99,5 @@ Next:
   3. Start the service:       sudo systemctl restart hisaab
   4. Check:                   curl https://$DOMAIN/health
 Webhook URLs for Meta: https://$DOMAIN/wa/jcb/webhook and https://$DOMAIN/wa/site/webhook
-Open ports 80 and 443 in the EC2 security group.
+Port 443 must be open in the EC2 security group (80 is optional).
 MSG

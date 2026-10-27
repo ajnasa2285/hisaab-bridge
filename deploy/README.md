@@ -4,14 +4,14 @@ This guide is for the owner, not for programmers. You will copy and paste a few 
 
 ## What you need
 
-- An AWS EC2 instance running Ubuntu 24.04 (a small one is enough). In its security group, open ports 22 (SSH, ideally only from your own address), 80 and 443.
+- An AWS EC2 instance running Ubuntu 24.04 or newer (a small one is enough). In its security group, open port 443. Port 80 is optional (the certificate is fetched over 443). SSH is not needed if the instance has an SSM role: use EC2 → Connect → Session Manager in the AWS console.
 - Two WhatsApp test numbers in one Meta app (one for the JCB side, one for the site side). For each you need the phone number ID, and for the app the app secret and an access token.
 - A Meta Model API key.
 - For each person who will use the system: their phone number with country code, and their role.
 
 ## Steps
 
-1. Log in to the server: `ssh -i your-key.pem ubuntu@<server address>`.
+1. Open a terminal on the server: in the AWS console, EC2 → select the instance → Connect → Session Manager → Connect (or `ssh -i your-key.pem ubuntu@<server address>`). Then type `cd /tmp`.
 2. Download and run the setup script (replace `main` with the version you want):
 
    ```
