@@ -1,0 +1,6 @@
+[
+  { "line": "jcb", "phone": "919000000001", "agent": "jcb", "role": "jcb_owner", "name": "Example Owner" },
+  { "line": "jcb", "phone": "919000000002", "agent": "jcb", "role": "operator", "name": "Example Operator" },
+  { "line": "site", "phone": "919000000011", "agent": "contractor", "role": "supervisor", "name": "Example Supervisor" },
+  { "line": "site", "phone": "919000000012", "agent": "contractor", "role": "contractor", "name": "Example Contractor" }
+]
