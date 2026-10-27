@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { tenths as hours, rupees, day as dayName } from '../i18n/format.js';
 import { deliveryResult, isIso, isSha256, isTime, isDay, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
+import { openRefs } from '../ledger/refs.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -55,6 +56,9 @@ export function jcbBillBody(hoursTenths, ratePaise, readings) {
 export function createJcbAgent(o) {
   const { agent, link, tell } = o;
   const ledger = agent.ledger;
+  const refs = openRefs(ledger);
+  /** The order's short reference for the texts. @param {string} orderId */
+  const refOf = (orderId) => refs.refOf(orderId) ?? '—';
 
   /** @param {string} orderId */
   const counterparty = (orderId) => /** @type {{counterparty: string} | null} */ (ledger.order(orderId))?.counterparty ?? null;
@@ -90,7 +94,7 @@ export function createJcbAgent(o) {
         if (d.ok && a.answer === 'yes') {
           const req = ofType(ledger.events(a.orderId), 'BOOKING_REQUEST', 'in').at(-1)?.body.body;
           const bookedDay = a.day ?? req?.day;
-          await tell('operator', 'jcb.job_booked', { site: req?.site ?? '—', day: isDay(bookedDay) ? dayName(bookedDay) : '—', time: a.time ?? req?.time ?? '—' });
+          await tell('operator', 'jcb.job_booked', { ref: refOf(a.orderId), site: req?.site ?? '—', day: isDay(bookedDay) ? dayName(bookedDay) : '—', time: a.time ?? req?.time ?? '—' });
         }
         return deliveryResult(d, `jcb.reply_sent_${a.answer}`);
       },
@@ -206,20 +210,21 @@ export function createJcbAgent(o) {
     const b = m.body;
     switch (m.type) {
       case 'BOOKING_REQUEST':
-        await tell('jcb_owner', 'jcb.booking_request', { site: b.site, day: dayName(b.day), time: b.time ?? '—', hours: b.hoursTenths ? hours(b.hoursTenths) : '—' });
+        await tell('jcb_owner', 'jcb.booking_request', { ref: refOf(m.order_id), site: b.site, day: dayName(b.day), time: b.time ?? '—', hours: b.hoursTenths ? hours(b.hoursTenths) : '—' });
         break;
       case 'ACCEPT':
-        await tell('jcb_owner', 'jcb.bill_accepted', { site: siteOf(m.order_id) });
+        await tell('jcb_owner', 'jcb.bill_accepted', { ref: refOf(m.order_id), site: siteOf(m.order_id) });
         break;
       case 'DISPUTE':
         await tell('jcb_owner', 'jcb.bill_disputed', {
+          ref: refOf(m.order_id),
           site: siteOf(m.order_id),
           their: b.theirFigure?.hoursTenths !== undefined ? `${hours(b.theirFigure.hoursTenths)} h` : b.theirFigure?.totalPaise !== undefined ? rupees(b.theirFigure.totalPaise) : '—',
           reason: b.reason,
         });
         break;
       case 'PAYMENT_CLAIM':
-        await tell('jcb_owner', 'jcb.payment_claimed', { site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn) }, { tool: 'confirm_payment', args: { orderId: m.order_id } });
+        await tell('jcb_owner', 'jcb.payment_claimed', { ref: refOf(m.order_id), site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn) }, { tool: 'confirm_payment', args: { orderId: m.order_id } });
         break;
       default:
         break;

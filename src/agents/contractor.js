@@ -4,7 +4,8 @@
 
 import { randomUUID } from 'node:crypto';
 import { tenths as hours, rupees, day as dayName } from '../i18n/format.js';
-import { deliveryResult, isDay, isSha256, isTime, isUuid, no, posInt } from './common.js';
+import { deliveryResult, isDay, isSha256, isTime, isUuid, no, ofType, posInt } from './common.js';
+import { openRefs } from '../ledger/refs.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -23,6 +24,9 @@ const UTR_RE = /^[A-Za-z0-9]{6,35}$/;
 export function createContractorAgent(o) {
   const { agent, link, tell } = o;
   const ledger = agent.ledger;
+  const refs = openRefs(ledger);
+  /** The order's short reference for the texts. @param {string} orderId */
+  const refOf = (orderId) => refs.refOf(orderId) ?? '—';
 
   /** @param {string} orderId */
   const known = (orderId) => isUuid(orderId) && ledger.order(orderId) !== null;
@@ -37,6 +41,19 @@ export function createContractorAgent(o) {
     const total = bill ? ledger.eventOfMessage(bill)?.body.body.totalPaise : undefined;
     return posInt(total) ? rupees(total) : '—';
   };
+  /** The hourly rate in the latest "yes" from a JCB owner in our ledger, or null. */
+  const lastJcbRate = () => {
+    /** @type {{seq: number, rate: number} | null} */
+    let last = null;
+    for (const order of /** @type {{order_id: string, kind: string}[]} */ (ledger.orders())) {
+      if (order.kind !== 'jcb_hours') continue;
+      for (const e of ofType(ledger.events(order.order_id), 'BOOKING_REPLY', 'in')) {
+        const b = e.body.body;
+        if (b.answer === 'yes' && posInt(b.ratePaise) && (last === null || e.seq > last.seq)) last = { seq: e.seq, rate: b.ratePaise };
+      }
+    }
+    return last === null ? null : last.rate;
+  };
 
   /** @type {Record<string, Tool>} */
   const tools = {
@@ -44,6 +61,14 @@ export function createContractorAgent(o) {
     request_jcb: {
       roles: ['contractor', 'supervisor'],
       commits: true,
+      // Estimated at the last agreed hourly rate; unknown hours or rate cannot be estimated.
+      hold: {
+        limit: 'procurement',
+        estimatePaise: (a) => {
+          const rate = lastJcbRate();
+          return posInt(a.hoursTenths) && rate !== null ? Math.round((a.hoursTenths * rate) / 10) : null;
+        },
+      },
       describe: (a) => ({ key: 'step.request_jcb', params: { site: typeof a.site === 'string' ? a.site : '—', day: isDay(a.day) ? dayName(a.day) : '—', time: a.time ?? '—', hours: posInt(a.hoursTenths) ? hours(a.hoursTenths) : '—' } }),
       async run(_p, a) {
         if (typeof a.site !== 'string' || !a.site.trim() || a.site.length > 80 || !isDay(a.day)) return no('common.bad_args');
@@ -55,7 +80,7 @@ export function createContractorAgent(o) {
         // A new order, or the same order again after the JCB owner offered another time.
         const orderId = a.orderId !== undefined && known(a.orderId) ? a.orderId : randomUUID();
         const d = await link.send({ type: 'BOOKING_REQUEST', to: a.orderId !== undefined && known(a.orderId) ? counterparty(a.orderId) : o.jcbAgentId, orderId, body });
-        return deliveryResult(d, 'site.jcb_requested', { site: body.site, day: dayName(body.day), time: body.time ?? '—' });
+        return deliveryResult(d, 'site.jcb_requested', { ref: refOf(orderId), site: body.site, day: dayName(body.day), time: body.time ?? '—' });
       },
     },
 
@@ -69,7 +94,7 @@ export function createContractorAgent(o) {
         const view = ledger.view(a.orderId);
         if (view.currentBill === null) return no('common.wrong_state');
         const d = await link.send({ type: 'ACCEPT', to: counterparty(a.orderId), orderId: a.orderId, body: { bill: view.currentBill } });
-        return deliveryResult(d, 'site.bill_accepted', { site: siteOf(a.orderId) });
+        return deliveryResult(d, 'site.bill_accepted', { ref: refOf(a.orderId), site: siteOf(a.orderId) });
       },
     },
 
@@ -91,7 +116,7 @@ export function createContractorAgent(o) {
         if (view.currentBill === null) return no('common.wrong_state');
         const theirFigure = hasHours ? { hoursTenths: a.hoursTenths } : { totalPaise: a.totalPaise };
         const d = await link.send({ type: 'DISPUTE', to: counterparty(a.orderId), orderId: a.orderId, body: { bill: view.currentBill, theirFigure, reason: a.reason.trim() } });
-        return deliveryResult(d, 'site.bill_disputed', { site: siteOf(a.orderId) });
+        return deliveryResult(d, 'site.bill_disputed', { ref: refOf(a.orderId), site: siteOf(a.orderId) });
       },
     },
 
@@ -99,6 +124,7 @@ export function createContractorAgent(o) {
     claim_payment: {
       roles: ['contractor'],
       commits: true,
+      hold: { limit: 'payment', estimatePaise: (a) => (posInt(a.amountPaise) ? a.amountPaise : null) },
       describe: (a) => ({ key: 'step.claim_payment', params: { site: siteOf(a.orderId), amount: posInt(a.amountPaise) ? rupees(a.amountPaise) : '—', utr: typeof a.utr === 'string' ? a.utr : '—' } }),
       async run(_p, a) {
         if (!known(a.orderId)) return no('common.no_such_order');
@@ -119,9 +145,10 @@ export function createContractorAgent(o) {
   async function onApplied(m) {
     const b = m.body;
     const site = siteOf(m.order_id);
+    const ref = refOf(m.order_id);
     switch (m.type) {
       case 'BOOKING_REPLY': {
-        const params = { site, day: b.day ? dayName(b.day) : '—', time: b.time ?? '—', rate: b.ratePaise ? rupees(b.ratePaise) : '—' };
+        const params = { ref, site, day: b.day ? dayName(b.day) : '—', time: b.time ?? '—', rate: b.ratePaise ? rupees(b.ratePaise) : '—' };
         const key = `site.booking_${b.answer}`;
         await tell('contractor', key, params);
         await tell('supervisor', key, params);
@@ -131,6 +158,7 @@ export function createContractorAgent(o) {
       case 'CORRECTION': {
         const line = b.lines[0];
         const params = {
+          ref,
           site,
           hours: line.hoursTenths !== undefined ? hours(line.hoursTenths) : '—',
           rate: rupees(line.ratePaise),
@@ -143,7 +171,7 @@ export function createContractorAgent(o) {
         break;
       }
       case 'SETTLED':
-        await tell('contractor', 'site.settled', { site, amount: rupees(b.amountPaise) });
+        await tell('contractor', 'site.settled', { ref, site, amount: rupees(b.amountPaise) });
         break;
       default:
         break;
