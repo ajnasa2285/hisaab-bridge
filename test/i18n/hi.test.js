@@ -7,7 +7,9 @@ const DEVANAGARI = /[ऀ-ॿ]/;
 const LATIN_WORD = /[A-Za-z]+/g;
 const ALLOWED_LATIN = new Set(['JCB', 'UPI', 'UTR', 'OK']);
 // Keys whose text is legitimately without Devanagari.
-const NO_DEVANAGARI_OK = new Set(['account.none', 'kind.jcb', 'bill.line', 'request.list_line', 'account.line', 'account.material', 'explain.wrapper']);
+const NO_DEVANAGARI_OK = new Set(['account.none', 'kind.jcb', 'bill.line', 'request.list_line', 'account.line', 'account.material', 'explain.wrapper', 'office.stock_line', 'office.pending_order']);
+// Order references as written in examples ("J-1", "P-2") are Latin by design (docs/BUILD2.md section 4).
+const REF_EXAMPLE = /\b[JP]-\d+\b/g;
 // AGENTS.md rule 9: status only, never a nudge to pay.
 const CHASING = ['जल्दी', 'तुरंत', 'याद दिला', 'कब दोगे', 'कब देंगे', 'कब देंगी', 'चुकाएँ', 'चुकाओ', 'भुगतान करें', 'भुगतान कीजिए', 'पैसे दो', 'पैसे दें', 'देर हो', 'बकाया चुका', 'reminder', 'overdue'];
 
@@ -22,6 +24,8 @@ const SAMPLE = {
   seen: '₹7,000', state: 'बिल आया', role: 'ठेकेदार', question: 'बिल ₹7,320 ठीक है?', id: 3, neededOn: '30 अक्टूबर 2026',
   by: 'मोहन', estimate: '₹12,000', materials: 'सीमेंट 50 बोरी', billed: '₹7,320', paid: '—', pending: '₹7,320',
   disputes: 0, name: 'सीमेंट', their: '5.5 घंटे', photos: 2,
+  ref: 'J-1', step: 'शिवपुरी पर 29 अक्टूबर 2026 को 8 बजे से 6 घंटे के लिए JCB माँगें?', note: 'ठीक है', decision: 'मंज़ूर',
+  awaited: 'बिल का इंतज़ार', bill: '₹7,320', challan: '50 बोरी',
 };
 
 test('every key has a non-empty Hindi text and fills with its parameters', () => {
@@ -41,7 +45,7 @@ test('every key has a non-empty Hindi text and fills with its parameters', () =>
 test('no English words except JCB, UPI, UTR, OK', () => {
   const offenders = [];
   for (const key of keys()) {
-    const stripped = hi[key].replace(/\{[a-zA-Z0-9]+\}/g, '');
+    const stripped = hi[key].replace(/\{[a-zA-Z0-9]+\}/g, '').replace(REF_EXAMPLE, '');
     for (const word of stripped.match(LATIN_WORD) ?? []) if (!ALLOWED_LATIN.has(word)) offenders.push(`${key}: ${word}`);
   }
   assert.deepEqual(offenders, []);
@@ -75,23 +79,34 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
   const AGENT_KEYS = {
     'common.unknown_step': [], 'common.not_allowed': [], 'common.bad_args': [], 'common.no_such_order': [], 'common.wrong_state': [],
     'common.pending': [], 'common.refused': [], 'wa.unknown_sender': [],
-    'jcb.booking_request': ['site', 'day', 'time', 'hours'], 'jcb.rate_needed': [], 'jcb.day_needed': [],
+    'jcb.booking_request': ['ref', 'site', 'day', 'time', 'hours'], 'jcb.rate_needed': [], 'jcb.day_needed': [],
     'jcb.reply_sent_yes': [], 'jcb.reply_sent_no': [], 'jcb.reply_sent_other_time': [],
-    'jcb.job_booked': ['site', 'day', 'time'], 'jcb.meter_start_saved': ['reading'], 'jcb.meter_end_saved': ['reading', 'hours'],
+    'jcb.job_booked': ['ref', 'site', 'day', 'time'], 'jcb.meter_start_saved': ['reading'], 'jcb.meter_end_saved': ['reading', 'hours'],
     'jcb.start_first': [], 'jcb.end_not_after_start': ['start'], 'jcb.meter_done': ['hours'], 'jcb.readings_missing': [],
-    'jcb.bill_sent': ['hours', 'rate', 'total'], 'jcb.bill_accepted': ['site'], 'jcb.bill_disputed': ['site', 'their', 'reason'],
-    'jcb.correction_sent': ['hours', 'total'], 'jcb.payment_claimed': ['site', 'amount', 'utr', 'day'], 'jcb.settled_sent': ['amount'],
-    'site.jcb_requested': ['site', 'day', 'time'], 'site.booking_yes': ['site', 'day', 'time', 'rate'],
-    'site.booking_no': ['site', 'day', 'time', 'rate'], 'site.booking_other_time': ['site', 'day', 'time', 'rate'],
-    'site.bill_received': ['site', 'hours', 'rate', 'total', 'photos'], 'site.correction_received': ['site', 'hours', 'rate', 'total', 'photos'],
-    'site.bill_accepted': ['site'], 'site.bill_disputed': ['site'], 'site.reason_needed': [], 'site.figure_needed': [],
-    'site.payment_claimed': ['amount'], 'site.settled': ['site', 'amount'],
+    'jcb.bill_sent': ['hours', 'rate', 'total'], 'jcb.bill_accepted': ['ref', 'site'], 'jcb.bill_disputed': ['ref', 'site', 'their', 'reason'],
+    'jcb.correction_sent': ['hours', 'total'], 'jcb.payment_claimed': ['ref', 'site', 'amount', 'utr', 'day'], 'jcb.settled_sent': ['amount'],
+    'site.jcb_requested': ['ref', 'site', 'day', 'time'], 'site.booking_yes': ['ref', 'site', 'day', 'time', 'rate'],
+    'site.booking_no': ['ref', 'site', 'day', 'time', 'rate'], 'site.booking_other_time': ['ref', 'site', 'day', 'time', 'rate'],
+    'site.bill_received': ['ref', 'site', 'hours', 'rate', 'total', 'photos'], 'site.correction_received': ['ref', 'site', 'hours', 'rate', 'total', 'photos'],
+    'site.bill_accepted': ['ref', 'site'], 'site.bill_disputed': ['ref', 'site'], 'site.reason_needed': [], 'site.figure_needed': [],
+    'site.payment_claimed': ['amount'], 'site.settled': ['ref', 'site', 'amount'],
     'step.reply_booking_yes': ['site', 'day', 'time', 'rate'], 'step.reply_booking_no': ['site', 'day', 'time', 'rate'],
     'step.reply_booking_other_time': ['site', 'day', 'time', 'rate'], 'step.record_meter_start': ['reading'], 'step.record_meter_end': ['reading'],
     'step.send_bill': ['site', 'hours', 'rate', 'total'], 'step.send_correction': ['site', 'hours', 'total'], 'step.confirm_payment': ['site', 'amount'],
     'step.request_jcb': ['site', 'day', 'time', 'hours'], 'step.accept_bill': ['site', 'total'], 'step.dispute_bill': ['site', 'their', 'reason'],
     'step.claim_payment': ['site', 'amount', 'utr'], 'step.cancelled': [],
     'orchestrator.try_again': [], 'orchestrator.which_job': [], 'orchestrator.no_job_for_photo': [],
+    'office.held': ['ref'], 'office.approval_needed': ['ref', 'by', 'estimate', 'step'], 'office.approved': ['ref', 'by'],
+    'office.approved_note': ['ref', 'by', 'note'], 'office.declined': ['ref', 'by', 'reason'], 'office.you_declined': ['ref'],
+    'office.already_decided': ['ref', 'decision', 'by'], 'office.decision.ok': [], 'office.decision.no': [],
+    'office.only_contractor': [], 'office.own_entry': [], 'office.no_such_ref': ['ref'], 'office.reason_needed': ['ref'],
+    'office.status': ['ref', 'what', 'site', 'day', 'state', 'rate', 'bill', 'paid', 'awaited'],
+    'office.status_held': ['ref', 'step', 'estimate', 'decision'], 'office.held_waiting': [], 'office.held_ok': ['by'], 'office.held_no': ['by', 'reason'],
+    'office.what_jcb': ['hours'], 'office.what_material': ['items'], 'office.pending': ['lines'], 'office.pending_held': ['ref', 'step', 'by'],
+    'office.pending_order': ['ref', 'what', 'site', 'awaited'], 'office.pending_none': [], 'office.stock': ['lines'], 'office.stock_site': ['site'],
+    'office.stock_line': ['name', 'qty'], 'office.stock_line_differs': ['name', 'qty', 'challan'], 'office.stock_none': [], 'office.stock_not_here': [],
+    ...Object.fromEntries(['buyer', 'seller'].flatMap((side) => ['requested', 'offered', 'declined', 'booked', 'working', 'delivered', 'billed', 'disputed', 'accepted', 'payment_claimed', 'settled']
+      .map((s) => [`office.await.${side}.${s}`, []]))),
   };
   for (const [key, params] of Object.entries(AGENT_KEYS)) {
     assert.ok(hi[key], `missing ${key}`);

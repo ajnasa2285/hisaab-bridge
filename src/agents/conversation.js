@@ -1,12 +1,15 @@
 // One person's conversation with their agent. A text becomes one proposed step (Muse Spark, via the
 // orchestrator); a step that commits anything is read back and runs only after the person says yes.
 // A meter photo is read by Muse Spark; the reading is confirmed by the person, or typed by them when
-// the photo is not clear. People decide; the model only proposes.
+// the photo is not clear. Exact commands (status, pending, stock, ok, no) are answered by code
+// before the model sees anything, and a confirmed step passes the site office's gate (approvals
+// with limits, src/agents/office.js). People decide; the model only proposes.
 
 import { createHash } from 'node:crypto';
 import { proposeStep, orderRefs, pickOrder } from '../orchestrator/orchestrator.js';
 import { meterReadings } from './jcb.js';
 import { runTool } from './common.js';
+import { parseCommand } from './office.js';
 import { day as dayName, rupees } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
 
@@ -42,6 +45,7 @@ const norm = (text) => text.trim().toLowerCase().replace(/[।.!]+$/u, '').repla
  *   readUpi?: UpiReader,
  *   reply: Reply,
  *   now: () => number,
+ *   office?: ReturnType<typeof import('./office.js').createOffice>,
  * }} o
  */
 export function createConversation(o) {
@@ -89,7 +93,7 @@ export function createConversation(o) {
     if (p && p.kind === 'confirm') {
       if (YES.has(said)) {
         pending.delete(keyOf(person));
-        const r = await runTool(o.tools, person, { tool: p.tool, args: p.args });
+        const r = o.office ? await o.office.commit(person, p.tool, p.args) : await runTool(o.tools, person, { tool: p.tool, args: p.args });
         return o.reply(person, r.key, r.params);
       }
       if (NO.has(said)) {
@@ -119,6 +123,11 @@ export function createConversation(o) {
       pending.delete(keyOf(person));
     }
     if (HELP.has(said)) return o.reply(person, `help.${person.role}`);
+    const command = o.office ? parseCommand(text) : null;
+    if (command && o.office) {
+      const r = await o.office.command(person, command);
+      if (r) return o.reply(person, r.key, r.params);
+    }
 
     const proposal = await proposeStep({ spark: o.spark, person, text, orders: orderRefs(o.ledger), nowMs: o.now() });
     if (proposal.kind === 'help') return o.reply(person, `help.${person.role}`);

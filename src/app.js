@@ -16,6 +16,7 @@ import { createLink } from './agents/link.js';
 import { createJcbAgent } from './agents/jcb.js';
 import { createContractorAgent } from './agents/contractor.js';
 import { createConversation } from './agents/conversation.js';
+import { createOffice } from './agents/office.js';
 import { createDirectory } from './wa/directory.js';
 import { openWaStore } from './wa/store.js';
 import { createWa } from './wa/wa.js';
@@ -34,6 +35,7 @@ const RETRY_MS = 60 * 1000;
  *   name: string, kind: 'jcb' | 'contractor', id: string, title: string,
  *   privateKey: import('node:crypto').KeyObject, ledgerFile: string,
  *   peers: Peer[], peerUrls: Record<string, string>, jcbAgentId?: string,
+ *   limits?: import('./agents/office.js').Limits,
  * }} AgentConfig
  * @typedef {{name: string, phoneNumberId: string, appSecret: string, verifyToken: string, accessToken: string, graphVersion?: string}} LineConfig
  */
@@ -90,10 +92,14 @@ export function createApp(cfg) {
     const agent = a.kind === 'jcb'
       ? createJcbAgent({ agent: core, link, tell })
       : createContractorAgent({ agent: core, link, tell, jcbAgentId: /** @type {string} */ (a.jcbAgentId) });
+    /** @type {import('./agents/conversation.js').Reply} */
+    const reply = (p, key, params) => sendTo(p, t(key, params));
+    // References, exact commands, and (contractor) approvals with this agent's limits.
+    const office = createOffice({ ledger: core.ledger, tools: agent.tools, kind: a.kind, limits: a.limits, tell, reply, now });
     const talk = createConversation({
       ledger: core.ledger, tools: agent.tools, spark: cfg.spark, readMeter: a.kind === 'jcb' ? cfg.readMeter : undefined,
       readUpi: a.kind === 'contractor' ? cfg.readUpi : undefined,
-      reply: (p, key, params) => sendTo(p, t(key, params)), now,
+      reply, now, office,
     });
     const card = agentCardJson({ id: a.id, name: a.title, description: a.title, baseUrl: `${cfg.baseUrl}/agents/${a.name}`, publicKeyText: publicKeyText(a.privateKey) });
     const a2a = createA2AHandler(core, card, {

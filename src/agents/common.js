@@ -7,9 +7,12 @@
 /** @typedef {{ok: boolean, key: string, params?: Record<string, string | number>}} Said */
 /**
  * A step a person can take. `roles` is checked by code before `run`; the model never decides who may.
- * `describe` gives the read-back the person confirms before a committing step runs.
+ * `describe` gives the read-back the person confirms before a committing step runs. `hold` marks a
+ * step a supervisor may take only within a limit (docs/BUILD2.md section 3): which limit, and the
+ * step's estimated value in paise from the ledger (null when it cannot be estimated).
  * @typedef {{roles: Role[], commits: boolean, run: (person: Person, args: Record<string, any>) => Promise<Said> | Said,
- *   describe?: (args: Record<string, any>) => {key: string, params?: Record<string, string | number>}}} Tool
+ *   describe?: (args: Record<string, any>) => {key: string, params?: Record<string, string | number>},
+ *   hold?: {limit: 'procurement' | 'payment', estimatePaise: (args: any) => number | null}}} Tool
  */
 /**
  * Tells everyone in a role. `expect` is the step a plain "yes" from them will mean (the text asks a

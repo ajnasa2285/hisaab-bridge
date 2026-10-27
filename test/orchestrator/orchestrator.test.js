@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parsePaise, parseTenths, parseTime, resolveDay } from '../../src/orchestrator/units.js';
-import { pickOrder, proposeStep } from '../../src/orchestrator/orchestrator.js';
+import { orderRefs, pickOrder, proposeStep } from '../../src/orchestrator/orchestrator.js';
 
 const NOW = Date.parse('2026-10-28T20:00:00Z'); // 29 Oct 01:30 IST
 
@@ -62,25 +62,51 @@ test('a step the role may not take is refused even if the model names it', async
 
 test('the job is the one named, or the only one where the step fits', async () => {
   const orders = [
-    { ref: '#1', orderId: 'o1', site: 'Shivpuri', day: '2026-10-29', state: 'billed' },
-    { ref: '#2', orderId: 'o2', site: 'Gwalior', day: '2026-10-30', state: 'booked' },
+    { ref: 'J-1', orderId: 'o1', site: 'Shivpuri', day: '2026-10-29', state: 'billed' },
+    { ref: 'J-2', orderId: 'o2', site: 'Gwalior', day: '2026-10-30', state: 'booked' },
   ];
   let f = fakeSpark([{ name: 'accept_bill', args: { order: null } }]);
   let p = await proposeStep({ spark: f.spark, person: person('contractor'), text: 'bill sahi hai', orders, nowMs: NOW });
   assert.deepEqual(p, { kind: 'step', tool: 'accept_bill', args: { orderId: 'o1' } });
-  f = fakeSpark([{ name: 'accept_bill', args: { order: '#7' } }]);
+  f = fakeSpark([{ name: 'accept_bill', args: { order: 'J-7' } }]);
   p = await proposeStep({ spark: f.spark, person: person('contractor'), text: 'bill sahi hai', orders, nowMs: NOW });
   assert.deepEqual(p, { kind: 'none', key: 'common.no_such_order' });
-  assert.equal(pickOrder([...orders, { ref: '#3', orderId: 'o3', site: 'X', day: '—', state: 'billed' }], null, ['billed']), 'orchestrator.which_job');
+  assert.equal(pickOrder([...orders, { ref: 'J-3', orderId: 'o3', site: 'X', day: '—', state: 'billed' }], null, ['billed']), 'orchestrator.which_job');
 });
 
 test('a dispute needs exactly one figure; a model failure asks to try again', async () => {
-  const orders = [{ ref: '#1', orderId: 'o1', site: 'S', day: '—', state: 'billed' }];
-  let f = fakeSpark([{ name: 'dispute_bill', args: { order: '#1', their_hours: null, their_total_rupees: null, reason: 'galat' } }]);
+  const orders = [{ ref: 'J-1', orderId: 'o1', site: 'S', day: '—', state: 'billed' }];
+  let f = fakeSpark([{ name: 'dispute_bill', args: { order: 'J-1', their_hours: null, their_total_rupees: null, reason: 'galat' } }]);
   assert.deepEqual(await proposeStep({ spark: f.spark, person: person('contractor'), text: 'galat hai', orders, nowMs: NOW }), { kind: 'none', key: 'common.bad_args' });
-  f = fakeSpark([{ name: 'dispute_bill', args: { order: '#1', their_hours: '5.5', their_total_rupees: null, reason: 'lunch' } }]);
+  f = fakeSpark([{ name: 'dispute_bill', args: { order: 'J-1', their_hours: '5.5', their_total_rupees: null, reason: 'lunch' } }]);
   assert.deepEqual(await proposeStep({ spark: f.spark, person: person('contractor'), text: '5.5 ghante hi chali', orders, nowMs: NOW }),
     { kind: 'step', tool: 'dispute_bill', args: { orderId: 'o1', hoursTenths: 55, reason: 'lunch' } });
   const down = async () => /** @type {const} */ ({ ok: false, transient: true, reason: 'http_503' });
   assert.deepEqual(await proposeStep({ spark: down, person: person('contractor'), text: 'x', orders, nowMs: NOW }), { kind: 'none', key: 'orchestrator.try_again' });
+});
+
+test('jobs carry their stable references; a reference is picked however it is written', async () => {
+  const { openLedger } = await import('../../src/ledger/store.js');
+  const ledger = openLedger(':memory:');
+  const id = (/** @type {number} */ n) => `00000000-0000-4000-8000-00000000000${n}`;
+  const request = (/** @type {number} */ n, /** @type {'jcb_hours' | 'material'} */ kind, /** @type {string} */ site) => {
+    ledger.ensureOrder({ orderId: id(n), kind, counterparty: 'agent:jcb-1', site, at: `2026-10-29T0${n}:00:00Z` });
+    ledger.append({ orderId: id(n), direction: 'out', type: 'BOOKING_REQUEST', msgId: `m${n}`, body: { body: { kind, site, day: '2026-10-30' } }, at: `2026-10-29T0${n}:00:00Z` });
+  };
+  request(1, 'jcb_hours', 'Shivpuri');
+  request(2, 'material', 'Gwalior');
+  request(3, 'jcb_hours', 'Datia');
+  const orders = orderRefs(ledger);
+  assert.deepEqual(orders.map((r) => [r.ref, r.site, r.state]), [['J-1', 'Shivpuri', 'requested'], ['P-1', 'Gwalior', 'requested'], ['J-2', 'Datia', 'requested']]);
+  for (const written of ['J-2', 'j2', 'J 2', ' j - 2 ']) assert.equal(/** @type {any} */ (pickOrder(orders, written, [])).orderId, id(3), written);
+  assert.equal(/** @type {any} */ (pickOrder(orders, 'p1', [])).orderId, id(2));
+  assert.equal(pickOrder(orders, '#1', []), 'common.no_such_order');
+  assert.equal(pickOrder(orders, 'J-9', []), 'common.no_such_order');
+  assert.equal(pickOrder(orders, null, ['requested']), 'orchestrator.which_job');
+  // The model is shown the references.
+  const f = fakeSpark([{ name: 'help', args: {} }]);
+  await proposeStep({ spark: f.spark, person: person('contractor'), text: 'x', orders, nowMs: NOW });
+  assert.match(f.seen[0].system, /J-1 \| site: Shivpuri/);
+  assert.match(f.seen[0].system, /P-1 \| site: Gwalior/);
+  ledger.close();
 });

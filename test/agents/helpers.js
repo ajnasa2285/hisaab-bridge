@@ -18,7 +18,7 @@ export const SHA_C = 'c'.repeat(64);
 /** @param {string} role @param {string} agent @returns {Person} */
 export const person = (role, agent) => ({ line: 'line', phone: '919000000001', agent, role: /** @type {any} */ (role), name: role });
 
-/** @param {{onTell?: (side: string, role: string, key: string, params: any, expect: any) => void}} [o] */
+/** @param {{onTell?: (side: string, role: string, key: string, params: any, expect: any) => void, siteLedgerFile?: string}} [o] */
 export async function setup(o = {}) {
   const jk = generateKeys();
   const ck = generateKeys();
@@ -37,7 +37,7 @@ export async function setup(o = {}) {
   const siteCore = {
     self: { id: 'agent:contractor-1', privateKey: ck.privateKey },
     peers: new Map([['agent:jcb-1', { id: 'agent:jcb-1', publicKey: publicKeyFromText(publicKeyText(jk.publicKey)), mayReceiveFrom: new Set(toContractor) }]]),
-    ledger: openLedger(':memory:'),
+    ledger: openLedger(o.siteLedgerFile ?? ':memory:'),
     now,
   };
 

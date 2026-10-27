@@ -13,6 +13,7 @@ import { createApp } from './../src/app.js';
 
 const OWNER = '919000000001';
 const SUPERVISOR = '919000000011';
+const CONTRACTOR = '919000000012';
 
 test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'hb-app-'));
@@ -58,6 +59,7 @@ test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents
     people: [
       { line: 'line-jcb', phone: OWNER, agent: 'agent:jcb-1', role: 'jcb_owner', name: 'Owner' },
       { line: 'line-site', phone: SUPERVISOR, agent: 'agent:contractor-1', role: 'supervisor', name: 'Supervisor' },
+      { line: 'line-site', phone: CONTRACTOR, agent: 'agent:contractor-1', role: 'contractor', name: 'Contractor' },
     ],
     waStoreFile: join(dir, 'wa.db'),
     spark,
@@ -90,12 +92,19 @@ test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents
     // The owner has written today, so notices can reach them.
     await say('jcb', 'line-jcb', 'secret-jcb', OWNER, 'मदद');
     assert.equal(sent.at(-1)?.to, OWNER);
+    await say('site', 'line-site', 'secret-site', CONTRACTOR, 'मदद');
 
     nextCalls = [{ name: 'request_jcb', args: { site: 'Shivpuri', day: 'tomorrow', time: '8', hours: '6' } }];
     await say('site', 'line-site', 'secret-site', SUPERVISOR, 'kal 8 baje Shivpuri JCB 6 ghante');
     assert.deepEqual([sent.at(-1)?.to, sent.at(-1)?.line], [SUPERVISOR, 'line-site']);
     assert.ok(sent.at(-1)?.text.includes('हाँ / नहीं'));
+    // No limit is set, so the supervisor's step waits for the contractor, who approves it by reference.
     await say('site', 'line-site', 'secret-site', SUPERVISOR, 'हाँ');
+    assert.ok(sent.some((s) => s.to === SUPERVISOR && s.text?.includes('J-1') && s.text.includes('मंज़ूरी')));
+    const ask = sent.filter((s) => s.to === CONTRACTOR).at(-1);
+    assert.ok(ask?.text.includes('Shivpuri') && ask.text.includes('"OK J-1"'), 'the contractor sees the step and the reply forms');
+    assert.equal(sent.filter((s) => s.to === OWNER && s.text?.includes('Shivpuri')).length, 0, 'nothing reached the JCB owner yet');
+    await say('site', 'line-site', 'secret-site', CONTRACTOR, 'ok j1');
     await wait(() => sent.some((s) => s.to === OWNER && s.text?.includes('Shivpuri')) && sent.some((s) => s.to === SUPERVISOR && s.text?.includes('JCB की माँग भेजी')));
     const toOwner = sent.filter((s) => s.to === OWNER && s.line === 'line-jcb').at(-1);
     assert.ok(toOwner?.text.includes('Shivpuri'), 'the JCB owner is told on the JCB line');
