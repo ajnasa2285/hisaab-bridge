@@ -32,7 +32,8 @@ function newJcbOrder() {
   return { L, orderId };
 }
 
-const bill = { lines: [{ what: 'JCB', hoursTenths: 61, ratePaise: 120000, amountPaise: 732000 }], totalPaise: 732000, evidence: [] };
+const meterEvidence = { sha256: 'd'.repeat(64), kind: 'meter', readValue: '3677.7', takenAt: null, sentAt: AT };
+const bill = { lines: [{ what: 'JCB', hoursTenths: 61, ratePaise: 120000, amountPaise: 732000 }], totalPaise: 732000, evidence: [meterEvidence] };
 
 test('a JCB job from request to settled', () => {
   const { L, orderId } = newJcbOrder();
@@ -75,7 +76,7 @@ test('a dispute, a correction naming the bill it replaces, then acceptance of th
   assert.deepEqual(L.events(orderId).filter((e) => e.type === 'BILL' || e.type === 'CORRECTION').map((e) => e.msgId), [b1.msgId, b2.msgId]);
 });
 
-test('a material order needs a delivery before a bill; a JCB order needs a meter photo', () => {
+test('a material order needs a delivery before a bill; a JCB bill must carry meter evidence', () => {
   const L = openLedger(':memory:');
   const orderId = randomUUID();
   L.ensureOrder({ orderId, kind: 'material', counterparty: 'agent:supplier-1', site: 'Shivpuri', at: AT });
@@ -88,7 +89,8 @@ test('a material order needs a delivery before a bill; a JCB order needs a meter
   const j = newJcbOrder();
   put(j.L, j.orderId, 'in', 'BOOKING_REQUEST', msg('BOOKING_REQUEST', { kind: 'jcb_hours' }));
   put(j.L, j.orderId, 'out', 'BOOKING_REPLY', msg('BOOKING_REPLY', { answer: 'yes' }));
-  assert.equal(put(j.L, j.orderId, 'out', 'BILL', msg('BILL', bill)), null, 'no bill before any meter photo');
+  assert.equal(put(j.L, j.orderId, 'out', 'BILL', msg('BILL', { ...bill, evidence: [] })), null, 'no bill without meter evidence');
+  assert.ok(put(j.L, j.orderId, 'out', 'BILL', msg('BILL', bill)), 'the buyer side never sees local photos, only the evidence in the bill');
 });
 
 test('steps out of order are refused and write nothing', () => {

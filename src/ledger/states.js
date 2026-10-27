@@ -47,7 +47,12 @@ export function step(v, e) {
       if (v.state !== 'booked' || v.kind !== 'material') return null;
       return { ...v, state: 'delivered' };
     case 'BILL': {
-      const ready = v.kind === 'jcb_hours' ? v.state === 'working' : v.state === 'delivered';
+      // A JCB bill must carry its meter evidence, so both ledgers can check it: the buyer's ledger
+      // never sees the seller's local photos. A material bill follows the signed DELIVERY.
+      const hasMeterEvidence = Array.isArray(b.evidence) && b.evidence.some((/** @type {any} */ x) => x && x.kind === 'meter');
+      const ready = v.kind === 'jcb_hours'
+        ? (v.state === 'booked' || v.state === 'working') && hasMeterEvidence
+        : v.state === 'delivered';
       if (!ready || e.msg_id === null) return null;
       return { ...v, state: 'billed', currentBill: e.msg_id, billRev: v.billRev + 1 };
     }
