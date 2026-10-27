@@ -10,6 +10,8 @@
   },
   "scripts": {
     "start": "node src/main.js",
+    "eval": "node eval/run.js",
+    "answer-key": "node eval/answer-key.js",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test --test-timeout=60000 \"test/**/*.test.js\""
   },
