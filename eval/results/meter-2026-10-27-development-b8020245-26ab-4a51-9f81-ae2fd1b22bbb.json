@@ -1,0 +1,68 @@
+{
+  "reader": "meter-v1",
+  "dateIST": "2026-10-27",
+  "partition": "development",
+  "model": "muse-spark-1.3",
+  "status": "scored",
+  "splitFrozen": false,
+  "promptsChangedSinceHeldout": false,
+  "rescored": true,
+  "planned": 11,
+  "notRun": 0,
+  "evaluated": 11,
+  "labeled": 11,
+  "unlabeled": 0,
+  "failures": 0,
+  "confident": 9,
+  "unclear": 2,
+  "notMeter": 0,
+  "exactAccuracy": {
+    "numerator": 9,
+    "denominator": 11,
+    "basisPoints": 8182
+  },
+  "valueAccuracy": {
+    "numerator": 9,
+    "denominator": 11,
+    "basisPoints": 8182
+  },
+  "classificationAccuracy": {
+    "numerator": 11,
+    "denominator": 11,
+    "basisPoints": 10000
+  },
+  "dashClockAccuracy": {
+    "numerator": 7,
+    "denominator": 11,
+    "basisPoints": 6364
+  },
+  "wrongButConfidentCount": 0,
+  "assessedConfident": 9,
+  "unassessedConfident": 0,
+  "unclearRate": {
+    "numerator": 2,
+    "denominator": 11,
+    "basisPoints": 1818
+  },
+  "failureRate": {
+    "numerator": 0,
+    "denominator": 11,
+    "basisPoints": 0
+  },
+  "latencyMs": {
+    "count": 11,
+    "total": 84646,
+    "p50": 7045,
+    "p95": 14885
+  },
+  "cost": {
+    "attempts": 11,
+    "knownUsageCalls": 11,
+    "inputTokens": 24914,
+    "outputTokens": 15158,
+    "knownCostNanoUsd": 94503600,
+    "unknownCostCalls": 0,
+    "costIsComplete": true,
+    "pricingDate": "2026-10-27"
+  }
+}
