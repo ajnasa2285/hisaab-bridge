@@ -16,6 +16,7 @@ import { generateKeys, privateKeyFromPem, publicKeyText } from './protocol/keys.
 import { createApp } from './app.js';
 import { listModels, museSpark, transcribe } from './meta/client.js';
 import { readMeter } from './readers/meter.js';
+import { readUpi } from './readers/upi.js';
 
 /** @typedef {import('./protocol/messages.js').MessageType} MessageType */
 
@@ -102,7 +103,7 @@ export function loadConfig(env) {
 
 async function main() {
   const cfg = loadConfig(process.env);
-  const app = createApp({ ...cfg, spark: museSpark, readMeter, transcribe });
+  const app = createApp({ ...cfg, spark: museSpark, readMeter, readUpi, transcribe });
   const server = createServer((req, res) => {
     app.handle(req, res).catch(() => {
       if (!res.headersSent) res.writeHead(500).end();
