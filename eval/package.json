@@ -1,0 +1,9 @@
+{
+  "name": "hisaab-reader-evaluation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "eval": "node run.js",
+    "answer-key": "node answer-key.js"
+  }
+}
