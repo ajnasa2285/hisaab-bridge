@@ -30,6 +30,7 @@ Do this once for each number, in the Meta app dashboard under WhatsApp, Configur
 
 - JCB number: callback URL `https://<your address>/wa/jcb/webhook`
 - Site number: callback URL `https://<your address>/wa/site/webhook`
+- Supplier number (optional, only when the `HB_WA_SUPPLIER_*` lines are filled): callback URL `https://<your address>/wa/supplier/webhook`, verify token `HB_WA_SUPPLIER_VERIFY_TOKEN`
 - Verify token: the same text you put in `HB_WA_JCB_VERIFY_TOKEN` (or `HB_WA_SITE_VERIFY_TOKEN`) in the settings file.
 - Press Verify and save, then under webhook fields subscribe to `messages`.
 

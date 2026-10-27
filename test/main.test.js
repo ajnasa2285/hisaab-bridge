@@ -81,3 +81,21 @@ test('three agents: the contractor has two peers, each seller one; the supplier 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('the supplier can have its own WhatsApp line; without it, line "supplier" is unknown', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hb-main-'));
+  try {
+    writeFileSync(join(dir, 'people.json'), JSON.stringify([
+      { line: 'supplier', phone: '919000000021', agent: 'supplier', role: 'supplier', name: 'Supplier' },
+    ]));
+    assert.throws(() => loadConfig(env(dir)), /line 'jcb'\|'site' and agent/);
+    const own = { HB_WA_SUPPLIER_PHONE_NUMBER_ID: 'line-sup', HB_WA_SUPPLIER_APP_SECRET: 's3', HB_WA_SUPPLIER_VERIFY_TOKEN: 'v3', HB_WA_SUPPLIER_ACCESS_TOKEN: 'a3' };
+    const a = loadConfig({ ...env(dir), ...own });
+    assert.deepEqual(a.lines.map((l) => [l.name, l.phoneNumberId]), [['jcb', 'line-jcb'], ['site', 'line-site'], ['supplier', 'line-sup']]);
+    assert.deepEqual(a.people.map((p) => [p.line, p.agent]), [['line-sup', 'agent:supplier-1']]);
+    // A half-filled supplier line is a start-up error, not a silent fallback.
+    assert.throws(() => loadConfig({ ...env(dir), ...own, HB_WA_SUPPLIER_APP_SECRET: '' }), /HB_WA_SUPPLIER_APP_SECRET/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

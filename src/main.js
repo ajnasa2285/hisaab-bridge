@@ -5,8 +5,9 @@
 // Data folder (HB_DATA_DIR), private to the server:
 //   keys/jcb.pem, keys/contractor.pem, keys/supplier.pem
 //                                       Ed25519 private keys (created on first start, mode 600)
-//   people.json                         who is who: [{line: 'jcb'|'site', phone, agent: 'jcb'|'contractor'|'supplier', role, name}]
-//                                       (a supplier's people have role 'supplier', usually on the shared 'jcb' line)
+//   people.json                         who is who: [{line: 'jcb'|'site'|'supplier', phone, agent: 'jcb'|'contractor'|'supplier', role, name}]
+//                                       (a supplier's people have role 'supplier', on the supplier's own line when
+//                                       HB_WA_SUPPLIER_* is set, otherwise on a shared line)
 //   jcb.db, contractor.db, supplier.db, wa.db   the ledgers and the WhatsApp store
 //
 // Approval limits for the contractor's supervisor (docs/BUILD2.md section 3), whole rupees, optional:
@@ -77,7 +78,7 @@ export function loadConfig(env) {
   const siteKey = loadOrCreateKey(join(dataDir, 'keys', 'contractor.pem'));
   const supKey = loadOrCreateKey(join(dataDir, 'keys', 'supplier.pem'));
 
-  /** @param {'JCB' | 'SITE'} which @param {string} name */
+  /** @param {'JCB' | 'SITE' | 'SUPPLIER'} which @param {string} name */
   const line = (which, name) => ({
     name,
     phoneNumberId: need(env, `HB_WA_${which}_PHONE_NUMBER_ID`),
@@ -87,21 +88,24 @@ export function loadConfig(env) {
     graphVersion: env.HB_WA_GRAPH_VERSION || undefined,
   });
   const lines = [line('JCB', 'jcb'), line('SITE', 'site')];
+  // The supplier's own number is optional; without it the supplier's people share another line.
+  if (env.HB_WA_SUPPLIER_PHONE_NUMBER_ID) lines.push(line('SUPPLIER', 'supplier'));
   /** @type {import('./agents/office.js').Limits} */
   const limits = {};
   const procurementPaise = limitPaise(env, 'HB_LIMIT_PROCUREMENT_RUPEES');
   const paymentPaise = limitPaise(env, 'HB_LIMIT_PAYMENT_RUPEES');
   if (procurementPaise !== undefined) limits.procurementPaise = procurementPaise;
   if (paymentPaise !== undefined) limits.paymentPaise = paymentPaise;
-  const lineIds = { jcb: lines[0].phoneNumberId, site: lines[1].phoneNumberId };
+  /** @type {Record<string, string>} */
+  const lineIds = Object.fromEntries(lines.map((l) => [l.name, l.phoneNumberId]));
   const agentIds = { jcb: jcbId, contractor: siteId, supplier: supId };
 
   const raw = JSON.parse(readFileSync(join(dataDir, 'people.json'), 'utf8'));
   if (!Array.isArray(raw)) throw new Error('config: people.json must be a list');
   const people = raw.map((p, i) => {
-    const lineId = /** @type {Record<string, string>} */ (lineIds)[p?.line];
+    const lineId = Object.hasOwn(lineIds, p?.line) ? lineIds[p.line] : undefined;
     const agent = /** @type {Record<string, string>} */ (agentIds)[p?.agent];
-    if (!lineId || !agent) throw new Error(`config: people.json entry ${i + 1} needs line 'jcb'|'site' and agent 'jcb'|'contractor'|'supplier'`);
+    if (!lineId || !agent) throw new Error(`config: people.json entry ${i + 1} needs line ${Object.keys(lineIds).map((n) => `'${n}'`).join('|')} and agent 'jcb'|'contractor'|'supplier'`);
     // The supplier agent has one role, and that role belongs to no other agent.
     if ((p.agent === 'supplier') !== (p.role === 'supplier')) throw new Error(`config: people.json entry ${i + 1}: role 'supplier' goes with agent 'supplier' and only with it`);
     return { line: lineId, phone: String(p.phone), agent, role: p.role, name: String(p.name ?? '') };
