@@ -109,7 +109,7 @@ test('a supervisor\'s material order is held as P-n; the contractor\'s "OK P-n" 
   }
 });
 
-test('commands leave an open challan or count question open; typed figures never swallow "ok P-n" or "status P-n"', async () => {
+test('commands leave an open challan or count question open; the first count closes the others; a recorded count changes only by typed figures', async () => {
   const d = await desks({ procurementPaise: 100000 });
   try {
     // The contractor orders (never held), the supplier agrees.
@@ -150,18 +150,70 @@ test('commands leave an open challan or count question open; typed figures never
     assert.equal(d.last('supervisor')[1], 'site.count_saved_differs');
     assert.ok(d.said.some(([to, key, , p]) => to === 'site:contractor' && key === 'site.count_differs' && p.ref === 'P-1'));
 
-    // The contractor's own count question is open too; "ok P-2" decides the held step and the
-    // contractor's "हाँ" afterwards still answers the count question.
-    await d.site(supervisor, 'Gwalior cement 10 bori', materialCall('Gwalior', [{ name: 'सीमेंट', quantity: '10', unit: 'बोरी' }]));
-    await d.site(supervisor, 'हाँ');
-    assert.deepEqual([d.last('supervisor')[1], d.last('supervisor')[3].ref], ['office.held', 'P-2']);
-    await d.site(contractor, 'ok P-2');
-    assert.equal(d.last('contractor')[1], 'site.material_requested');
+    // The supervisor's count closed the contractor's count question: a bare "हाँ" changes nothing.
+    const countNow = () => d.s.siteCore.ledger.events(orderId).filter((e) => e.type === 'NOTE').at(-1)?.body.items.map((/** @type {any} */ i) => i.qtyHundredths);
     await d.site(contractor, 'हाँ');
-    assert.equal(d.last('contractor')[1], 'site.count_matches', 'the open count question (same as the challan) was answered');
+    assert.equal(d.last('contractor')[1], 'common.unknown_step', 'no open question: the normal path');
+    assert.deepEqual(countNow(), [4800, 200]);
+    // Even a stale "same as the challan" never replaces a recorded count.
+    const stale = await runTool(d.s.site.tools, contractor, { tool: 'confirm_count', args: { orderId, qtysHundredths: [5000, 200], sameAsChallan: true } });
+    assert.deepEqual([stale.ok, stale.key], [false, 'site.count_already']);
+    assert.deepEqual(countNow(), [4800, 200]);
+    // A deliberate change with typed figures is recorded, with the old and new figures.
+    await d.site(contractor, 'P-1 me 50 bori aur 2 trolley aayi', { name: 'confirm_count', args: { order: 'P-1', quantities: ['50', '2'] } });
+    assert.equal(d.last('contractor')[1], 'step.confirm_count');
+    await d.site(contractor, 'हाँ');
+    assert.equal(d.last('contractor')[1], 'site.count_changed');
+    assert.deepEqual([d.last('contractor')[3].old, d.last('contractor')[3].count], ['सीमेंट 48 बोरी, रेत 2 ट्रॉली', 'सीमेंट 50 बोरी, रेत 2 ट्रॉली']);
+    assert.deepEqual(countNow(), [5000, 200]);
+    // The supervisor changing it again tells the contractor both figures.
+    await d.site(supervisor, 'x', { name: 'confirm_count', args: { order: 'P-1', quantities: ['49', '2'] } });
+    await d.site(supervisor, 'हाँ');
+    assert.equal(d.last('supervisor')[1], 'site.count_changed');
+    const toldContractor = d.said.filter(([to, key]) => to === 'site:contractor' && key === 'site.count_changed').at(-1);
+    assert.deepEqual([toldContractor?.[3].old, toldContractor?.[3].count], ['सीमेंट 50 बोरी, रेत 2 ट्रॉली', 'सीमेंट 49 बोरी, रेत 2 ट्रॉली']);
     // After the count, the delivered order no longer waits for the contractor.
     await d.site(contractor, 'बाक़ी');
     assert.ok(!d.last('contractor')[2].includes('P-1'));
+  } finally {
+    await d.s.close();
+  }
+});
+
+test('"ok <ref>" ends the decider\'s open yes/no question: a following "हाँ" does not accept an older bill', async () => {
+  const d = await desks(undefined);
+  try {
+    const owner = person('jcb_owner', 'agent:jcb-1');
+    const operator = person('operator', 'agent:jcb-1');
+    // The contractor's own JCB request (J-1) is billed: the contractor is asked "ठीक हो तो हाँ".
+    await d.site(contractor, 'x', { name: 'request_jcb', args: { site: 'Shivpuri', day: '30-10', time: '8', hours: '6' } });
+    await d.site(contractor, 'हाँ');
+    const jcbOrder = /** @type {{order_id: string}} */ (d.s.siteCore.ledger.orders()[0]).order_id;
+    await runTool(d.s.jcb.tools, owner, { tool: 'reply_booking', args: { orderId: jcbOrder, answer: 'yes', ratePaise: 120000 } });
+    await runTool(d.s.jcb.tools, operator, { tool: 'record_meter', args: { orderId: jcbOrder, which: 'start', valueTenths: 100, sha256: 'a'.repeat(64) } });
+    await runTool(d.s.jcb.tools, operator, { tool: 'record_meter', args: { orderId: jcbOrder, which: 'end', valueTenths: 160, sha256: 'b'.repeat(64) } });
+    await runTool(d.s.jcb.tools, owner, { tool: 'send_bill', args: { orderId: jcbOrder } });
+    await settle();
+    assert.equal(d.last('site:contractor')[1], 'site.bill_received');
+
+    // Meanwhile a supervisor's request is held as J-2; the contractor approves it by reference.
+    await d.site(supervisor, 'x', { name: 'request_jcb', args: { site: 'Gwalior', day: '31-10', time: '8', hours: '4' } });
+    await d.site(supervisor, 'हाँ');
+    assert.deepEqual([d.last('supervisor')[1], d.last('supervisor')[3].ref], ['office.held', 'J-2']);
+    await d.site(contractor, 'ok J-2');
+    assert.equal(d.last('contractor')[1], 'site.jcb_requested');
+
+    // The approval ended the open bill question: this "हाँ" accepts nothing.
+    await d.site(contractor, 'हाँ');
+    assert.equal(d.last('contractor')[1], 'common.unknown_step');
+    assert.equal(d.s.siteCore.ledger.view(jcbOrder).state, 'billed');
+
+    // A status check, by contrast, leaves an open question open (the bill question is set again here).
+    d.talks.site.expect(contractor, 'accept_bill', { orderId: jcbOrder });
+    await d.site(contractor, 'status J-1');
+    assert.equal(d.last('contractor')[1], 'office.status');
+    await d.site(contractor, 'हाँ');
+    assert.equal(d.last('contractor')[1], 'site.bill_accepted');
   } finally {
     await d.s.close();
   }

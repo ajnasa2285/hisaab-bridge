@@ -64,11 +64,13 @@ Contractor side (contractor, supervisor):
 | `site.no_supplier` | — | no supplier agent is configured |
 | `site.material_requested` | ref, site, day, items | material request sent to the supplier |
 | `site.material_booking_yes` / `_no` / `_other_time` | ref, site, day, time, rates | the supplier's answer, with the rate per item on a yes |
-| `site.delivery_received` | ref, site, items, challan | a DELIVERY arrived: what the challan says; asks for the site's count ("हाँ" = same as the challan, or figures in order) |
+| `site.delivery_received` | ref, site, items, challan | a DELIVERY arrived: what the challan says; asks for the site's count ("हाँ" = same as the challan, or figures in order). The first count recorded closes everyone else's question |
 | `site.count_figures` | items | the count needs one figure per delivered item, in order |
 | `site.count_matches` | ref, site, items | the site's count is saved and equals the challan |
 | `site.count_saved_differs` | ref, site, challan, count | to the person who counted: saved, differs from the challan |
 | `site.count_differs` | ref, site, challan, count | to the contractor: the site's count differs from the challan (both figures) |
+| `site.count_already` | ref, count | a one-word "हाँ" to the delivery notice after a count is already recorded: nothing changes (type figures to change it) |
+| `site.count_changed` | ref, site, old, count, challan | a recorded count changed by typed figures; to the person and to the contractor (old and new) |
 | `site.material_bill_received` | ref, site, lines, total, photos | a material bill that follows from the delivery, the agreed rates and the site's count; "हाँ" accepts |
 | `site.material_correction_received` | ref, site, lines, total, photos | a corrected material bill; "हाँ" accepts |
 | `site.material_bill_mismatch` | ref, site, lines, total, expected, expectedTotal | to the contractor: the bill does not equal delivered qty × agreed rates (no "हाँ" offered) |

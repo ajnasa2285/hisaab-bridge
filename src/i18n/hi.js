@@ -68,6 +68,8 @@ export const hi = Object.freeze({
   'site.count_figures': 'हर चीज़ की गिनती क्रम से लिखें: {items}।',
   'site.count_matches': '{ref}: {site} की गिनती दर्ज: {items}। चालान से मेल खाती है।',
   'site.count_saved_differs': '{ref}: {site} की गिनती दर्ज: {count}। चालान में: {challan}। बिल आने पर दोनों मिलाए जाएँगे।',
+  'site.count_already': '{ref} की गिनती पहले ही दर्ज है: {count}। बदलनी हो तो नई गिनती क्रम से लिखें।',
+  'site.count_changed': '{ref}: {site} की साइट गिनती बदली गई। पहले: {old}। अब: {count}। चालान: {challan}।',
   'site.count_differs': '{ref}: {site} पर सामान की गिनती चालान से अलग है। चालान: {challan}। साइट की गिनती: {count}। बिल आने पर आपत्ति कर सकते हैं।',
   'site.material_bill_received': '{ref}: {site} का सामान का बिल आया: {lines}, कुल {total}, चालान की {photos} फ़ोटो के साथ। ठीक हो तो "हाँ" लिखें, नहीं तो अपना आँकड़ा और कारण लिखें।',
   'site.material_correction_received': '{ref}: {site} का सुधरा बिल आया: {lines}, कुल {total}। ठीक हो तो "हाँ" लिखें।',

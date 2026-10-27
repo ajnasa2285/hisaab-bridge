@@ -94,7 +94,7 @@ test('a whole material order, from request to settled, leaves both ledgers in ag
     // The site is asked for its own count; a plain "हाँ" means "the same as the challan".
     assert.ok(s.told.some(([a, role, key, p]) => a === 'site' && role === 'supervisor' && key === 'site.delivery_received' && p.challan === '412'));
     const ask = expects.find(([a, role, key]) => a === 'site' && role === 'supervisor' && key === 'site.delivery_received');
-    assert.deepEqual(ask?.[3], { tool: 'confirm_count', args: { orderId, qtysHundredths: [5000, 200] } });
+    assert.deepEqual(ask?.[3], { tool: 'confirm_count', args: { orderId, qtysHundredths: [5000, 200], sameAsChallan: true } });
     r = await runTool(s.site.tools, supervisor, ask?.[3]);
     assert.deepEqual([r.ok, r.key], [true, 'site.count_matches']);
     assert.equal(s.supCore.ledger.events(orderId).filter((e) => e.type === 'NOTE').length, 0, 'the site count stays on the site side');

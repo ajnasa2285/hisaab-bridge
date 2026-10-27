@@ -164,6 +164,8 @@ export function createContractorAgent(o) {
 
     // The site's own count of a delivery, one figure per delivered item in the challan's order. It is
     // kept on our side only (a local NOTE); code compares it with the challan and later with the bill.
+    // `sameAsChallan` marks the one-word "हाँ" to the delivery notice: it records a first count only.
+    // A count already recorded changes only with typed figures, and the contractor is told both.
     confirm_count: {
       roles: ['supervisor', 'contractor'],
       commits: true,
@@ -177,6 +179,8 @@ export function createContractorAgent(o) {
         if (d === null) return no('common.wrong_state');
         const items = countedItems(a.orderId, a.qtysHundredths);
         if (items === null) return no('site.count_figures', { items: itemsText(d.items) });
+        const before = siteCount(ledger.events(a.orderId));
+        if (before !== null && a.sameAsChallan === true) return no('site.count_already', { ref: refOf(a.orderId), count: itemsText(before) });
         const stored = ledger.append({
           orderId: a.orderId, direction: 'local', type: 'NOTE', msgId: randomUUID(),
           body: { kind: 'site_count', items }, at: new Date(agent.now()).toISOString(),
@@ -184,6 +188,12 @@ export function createContractorAgent(o) {
         if (stored === null) return no('common.wrong_state');
         const site = siteOf(a.orderId);
         const ref = refOf(a.orderId);
+        if (before !== null) {
+          if (sameItems(before, items)) return ok('site.count_matches', { ref, site, items: itemsText(items) });
+          const changed = { ref, site, old: itemsText(before), count: itemsText(items), challan: itemsText(d.items) };
+          if (person.role !== 'contractor') await tell('contractor', 'site.count_changed', changed);
+          return ok('site.count_changed', changed);
+        }
         if (sameItems(items, d.items)) return ok('site.count_matches', { ref, site, items: itemsText(items) });
         // Code compares; the contractor is told both figures (in the reply, when the contractor counted).
         const params = { ref, site, challan: itemsText(d.items), count: itemsText(items) };
@@ -311,7 +321,7 @@ export function createContractorAgent(o) {
       case 'DELIVERY': {
         // The site is asked for its own count; a plain "हाँ" means "the same as the challan".
         const params = { ref, site, items: itemsText(b.items), challan: b.challan?.number ?? '—' };
-        const expect = { tool: 'confirm_count', args: { orderId: m.order_id, qtysHundredths: b.items.map((/** @type {Item} */ it) => it.qtyHundredths) } };
+        const expect = { tool: 'confirm_count', args: { orderId: m.order_id, qtysHundredths: b.items.map((/** @type {Item} */ it) => it.qtyHundredths), sameAsChallan: true } };
         await tell('supervisor', 'site.delivery_received', params, expect);
         await tell('contractor', 'site.delivery_received', params, expect);
         break;

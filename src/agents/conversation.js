@@ -102,13 +102,21 @@ export function createConversation(o) {
     const command = o.office ? parseCommand(text) : null;
     if (command && o.office) {
       const r = await o.office.command(person, command);
-      if (r) return o.reply(person, r.key, r.params);
+      if (r) {
+        // A decision ends the decider's open yes/no question, so a later "हाँ" cannot answer it by accident.
+        if (command.cmd === 'ok' || command.cmd === 'no') pending.delete(keyOf(person));
+        return o.reply(person, r.key, r.params);
+      }
     }
     const p = current(person);
     if (p && p.kind === 'confirm') {
       if (YES.has(said)) {
         pending.delete(keyOf(person));
         const r = o.office ? await o.office.commit(person, p.tool, p.args) : await runTool(o.tools, person, { tool: p.tool, args: p.args });
+        // Once the site's count is recorded, nobody else's count question on that order stays open.
+        if (r.ok && p.tool === 'confirm_count') {
+          for (const [k, q] of pending) if (q.kind === 'confirm' && q.tool === 'confirm_count' && q.args.orderId === p.args.orderId) pending.delete(k);
+        }
         return o.reply(person, r.key, r.params);
       }
       if (NO.has(said)) {
@@ -129,7 +137,7 @@ export function createConversation(o) {
       }
       if (figures && p.tool === 'confirm_count') {
         pending.delete(keyOf(person));
-        return propose(person, 'confirm_count', { ...p.args, qtysHundredths: figures });
+        return propose(person, 'confirm_count', { orderId: p.args.orderId, qtysHundredths: figures });
       }
       // Anything else: the question lapses and the message is read as a new one.
       pending.delete(keyOf(person));
