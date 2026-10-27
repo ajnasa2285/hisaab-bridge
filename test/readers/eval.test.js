@@ -79,3 +79,14 @@ test('capture groups and identical bytes cannot cross partitions; new files fail
   split.files['invented-b.png'].sha256 = 'a'.repeat(64);
   assert.throws(() => validateSplit(split, names));
 });
+
+test('the answer tool takes y/n for the Hindi control words and leaves answers alone', async () => {
+  const { normalizeWord } = await import('../../eval/answer-key.js');
+  assert.equal(normalizeWord(' Y '), 'हाँ');
+  assert.equal(normalizeWord('haan'), 'हाँ');
+  assert.equal(normalizeWord('हां'), 'हाँ');
+  assert.equal(normalizeWord('n'), 'नहीं');
+  assert.equal(normalizeWord('stop'), 'बंद');
+  assert.equal(normalizeWord('1000'), '1000');
+  assert.equal(normalizeWord('Nihal Nigam'), 'Nihal Nigam');
+});

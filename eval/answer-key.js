@@ -16,9 +16,19 @@ export function parseAnswerKeyArgs(args) {
   return { kind: /** @type {import('./private-data.js').DatasetKind} */ (kind), heldout: copy.includes('--heldout'), review: copy.includes('--review') };
 }
 
-/** @param {import('node:readline/promises').Interface} input */
+/** Latin shortcuts for the Hindi control words, so the owner need not switch keyboards. */
+const WORDS = new Map([['y', 'हाँ'], ['yes', 'हाँ'], ['ha', 'हाँ'], ['haan', 'हाँ'], ['han', 'हाँ'], ['हां', 'हाँ'],
+  ['n', 'नहीं'], ['no', 'नहीं'], ['nahi', 'नहीं'], ['nahin', 'नहीं'], ['skip', 'छोड़ें'], ['stop', 'बंद'], ['band', 'बंद']]);
+
+/** @param {string} text */
+export function normalizeWord(text) {
+  const t = text.trim();
+  return WORDS.get(t.toLowerCase()) ?? t;
+}
+
+/** @param {{question: (p: string) => Promise<string>}} input */
 async function askUpiAnswer(input) {
-  const kind = (await input.question('क्या यह UPI लेनदेन की रसीद है? हाँ / नहीं | बाद में: छोड़ें | रोकें: बंद: ')).trim();
+  const kind = (await input.question('क्या यह UPI लेनदेन की रसीद है? हाँ (y) / नहीं (n) | बाद में: छोड़ें | रोकें: बंद: ')).trim();
   if (kind === 'बंद' || kind === 'छोड़ें') return kind;
   if (kind === 'नहीं') return { kind: /** @type {const} */ ('not_upi'), confirmedBy: /** @type {const} */ ('human') };
   if (kind !== 'हाँ') return null;
@@ -34,7 +44,7 @@ async function askUpiAnswer(input) {
   const payeeName = await ask('प्राप्तकर्ता का पूरा दिखाई दे रहा नाम: ');
   const payeeVpa = await ask('प्राप्तकर्ता का दिखाई दे रहा UPI पता: ');
   const payerName = await ask('भेजने वाले का पूरा दिखाई दे रहा नाम: ');
-  const clear = (await ask('क्या भरे हुए सभी विवरण बिना किसी शंका के स्पष्ट हैं? हाँ / नहीं: ')) === 'हाँ';
+  const clear = (await ask('क्या भरे हुए सभी विवरण बिना किसी शंका के स्पष्ट हैं? हाँ (y) / नहीं (n): ')) === 'हाँ';
   return buildUpiAnswer({ kind: 'upi_payment', amount, date, time, utr, status, payeeName, payeeVpa, payerName, clear });
 }
 
@@ -71,7 +81,10 @@ export async function labelImages() {
   const side = heldout ? 'heldout' : 'development';
   const split = loadSplit();
   const answers = readPrivateJson('answers.json', {});
-  const input = createInterface({ input: stdin, output: stdout });
+  // Drafts read by Claude from the screenshots; nothing is saved until the owner confirms each one against the photo.
+  const drafts = kind === 'upi' ? readPrivateJson('drafts.json', { answers: {} }).answers ?? {} : {};
+  const rl = createInterface({ input: stdin, output: stdout });
+  const input = { question: async (/** @type {string} */ p) => normalizeWord(await rl.question(p)) };
   try {
     const files = Object.entries(split.files).filter(([, v]) => v.side === side);
     for (let index = 0; index < files.length; index++) {
@@ -82,7 +95,16 @@ export async function labelImages() {
       console.log(`फोटो ${index + 1}/${files.length}`);
       if (valid(answers[name])) {
         showAnswer(answers[name]);
-        if ((await input.question('यही सही है? हाँ / नहीं: ')).trim() === 'हाँ') continue;
+        if ((await input.question('यही सही है? हाँ (y) / नहीं (n): ')).trim() === 'हाँ') continue;
+      }
+      const draft = drafts[name] && { ...drafts[name], confirmedBy: 'human', prefilledBy: 'claude' };
+      if (!valid(answers[name]) && valid(draft)) {
+        console.log('Claude ने फोटो से यह पढ़ा:');
+        showAnswer(draft);
+        const reply = await input.question('फोटो से मिलाएँ। सही: y | गलत, खुद भरें: n | बाद में: skip | रोकें: stop: ');
+        if (reply === 'बंद') return;
+        if (reply === 'छोड़ें') continue;
+        if (reply === 'हाँ') { answers[name] = draft; writePrivateJson('answers.json', answers); console.log('उत्तर सुरक्षित हो गया।'); continue; }
       }
       for (;;) {
         if (kind === 'upi') {
@@ -91,7 +113,7 @@ export async function labelImages() {
           if (answer === 'छोड़ें') break;
           if (!answer) { console.log('उत्तर का रूप सही नहीं है। दोबारा लिखें।'); continue; }
           showAnswer(answer);
-          if ((await input.question('फोटो देखकर इस उत्तर की पुष्टि करें: हाँ / नहीं: ')).trim() !== 'हाँ') continue;
+          if ((await input.question('फोटो देखकर इस उत्तर की पुष्टि करें: हाँ (y) / नहीं (n): ')).trim() !== 'हाँ') continue;
           answers[name] = answer; writePrivateJson('answers.json', answers);
           console.log('उत्तर सुरक्षित हो गया।'); break;
         }
@@ -101,14 +123,14 @@ export async function labelImages() {
         const clock = raw === 'नहीं' ? '' : (await input.question('अलग डैशबोर्ड घड़ी HH:MM; न दिखे तो Enter: ')).trim();
         const answer = answerFromInput(raw, clock);
         if (!answer) { console.log('उत्तर का रूप सही नहीं है। दोबारा लिखें।'); continue; }
-        if ((await input.question('फोटो देखकर इस उत्तर की पुष्टि करें: हाँ / नहीं: ')).trim() !== 'हाँ') continue;
+        if ((await input.question('फोटो देखकर इस उत्तर की पुष्टि करें: हाँ (y) / नहीं (n): ')).trim() !== 'हाँ') continue;
         answers[name] = answer;
         writePrivateJson('answers.json', answers);
         console.log('उत्तर सुरक्षित हो गया।');
         break;
       }
     }
-  } finally { input.close(); }
+  } finally { rl.close(); }
 }
 
 export async function labelMeters() { await labelImages(); }
