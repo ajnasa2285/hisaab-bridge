@@ -6,13 +6,13 @@ import { fileURLToPath } from 'node:url';
 export const REPO = resolve(fileURLToPath(new URL('../', import.meta.url)));
 export const METER_DATA = resolve(REPO, '../hisaab-data/meters');
 
-/** @typedef {'meter'|'upi'} DatasetKind */
+/** @typedef {'meter'|'upi'|'challan'} DatasetKind */
 
 /** Dataset-scoped storage; CLI callers cannot supply arbitrary directories.
  * @param {DatasetKind} kind */
 export function createPrivateData(kind) {
-  if (!['meter', 'upi'].includes(kind)) throw new Error('invalid_dataset');
-  const directory = resolve(REPO, `../hisaab-data/${kind === 'meter' ? 'meters' : 'upi'}`);
+  if (!['meter', 'upi', 'challan'].includes(kind)) throw new Error('invalid_dataset');
+  const directory = resolve(REPO, `../hisaab-data/${kind === 'meter' ? 'meters' : kind === 'challan' ? 'challans' : 'upi'}`);
 
   /** Resolve only a direct, non-symlink child of this private dataset.
    * @param {string} name @param {boolean} [mustExist] */

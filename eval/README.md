@@ -1,6 +1,6 @@
 # Reader labeling and evaluation
 
-Run with Node 24. No additional dependencies. `meter` uses private `hisaab-data/meters`; `upi` uses private `hisaab-data/upi`. Evidence, answer keys, split membership, hashes, detailed predictions and cost logs stay in those folders. Only aggregate reports go in `eval/results/`. Evaluation never prints private filenames or readings; the interactive answer tool displays human-entered answers locally.
+Run with Node 24. No additional dependencies. `meter` uses private `hisaab-data/meters`; `upi` uses private `hisaab-data/upi`; `challan` uses private `hisaab-data/challans`. Evidence, answer keys, split membership, hashes, detailed predictions and cost logs stay in those folders. Only aggregate reports go in `eval/results/`. Evaluation never prints private filenames or readings; the interactive answer tool displays human-entered answers locally.
 
 ## Configure the confirmed Meta endpoint
 
@@ -104,3 +104,7 @@ All automated tests use invented values and mocked responses. Passing those test
 UPI reports keep the same top-level counts, rates, latency and cost structure. `exactAccuracy` compares all expected fields on human-marked clear UPI receipts; failure, wrong classification or abstention stays in the denominator. `fieldAccuracy` uses only non-null human truth for each field, so absent/unclear fields cannot inflate accuracy with null/null matches. Equivalent UTC timestamp spellings compare by instant.
 
 Every returned non-null field is also assessed separately, even when overall `clear:false`: incorrect known values, unsupported claims against human-null/negative evidence, and unassessed claims are separate counts. `wrongButConfidentCount` conservatively includes either an incorrect or unsupported claim on a clear result; separate `incorrectButConfidentCount` and `unsupportedButConfidentCount` distinguish them. Unsupported means not established by the human answer, not necessarily proven false. Without labels, error counts remain unknown (`null`) and unassessed counts remain visible. No receipt status is a ledger settlement.
+
+## Challan
+
+Dataset kind `challan` works like `upi` (`npm run answer-key -- challan`, `npm run eval -- challan [--check|--heldout|--score-latest]`, split commands with `challan`). The answer tool asks challan yes/no (`y`/`n` accepted), number, date, vehicle, then one line per material as `name | quantity | unit` exactly as printed; `?` marks a doubtful value and disables overall confidence. Quantities become integer hundredths and units are normalised by the reader's own code. `exactAccuracy` needs every field and the whole ordered item list to match on human-marked clear challans; `itemListAccuracy` scores the item list alone; any wrong or unsupported claim on a confident reading counts as wrong-but-confident. Reports hold aggregate numbers only.
