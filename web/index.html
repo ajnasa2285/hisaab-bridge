@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hisaab Bridge</title>
+  <link rel="stylesheet" href="judge.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1 data-t="title">हिसाब ब्रिज — जज पेज</h1>
+      <p class="sub" data-t="subtitle"></p>
+    </div>
+    <div class="controls">
+      <label class="btn"><span data-t="load"></span><input id="file" type="file" accept="application/json" hidden></label>
+      <button id="lang" class="btn" type="button"></button>
+    </div>
+  </header>
+
+  <p id="notice" class="notice" hidden></p>
+
+  <section id="summary" class="summary" hidden>
+    <div class="cell"><span class="k" data-t="order"></span><span id="order"></span></div>
+    <div class="cell"><span class="k" data-t="exported_at"></span><span id="exported"></span></div>
+  </section>
+
+  <main class="ledgers">
+    <section class="ledger" id="ledger-jcb">
+      <h2 data-t="ledger_jcb"></h2>
+      <dl class="meta"></dl>
+      <ol class="events"></ol>
+    </section>
+    <section class="ledger" id="ledger-contractor">
+      <h2 data-t="ledger_contractor"></h2>
+      <dl class="meta"></dl>
+      <ol class="events"></ol>
+    </section>
+  </main>
+
+  <section class="results">
+    <h2 data-t="results"></h2>
+    <p class="hint" data-t="results_hint"></p>
+    <div id="results-body">—</div>
+  </section>
+
+  <script type="module" src="judge.js"></script>
+</body>
+</html>
