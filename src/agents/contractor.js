@@ -3,7 +3,7 @@
 // order is settled when the JCB owner confirms the money arrived.
 
 import { randomUUID } from 'node:crypto';
-import { tenths as hours, rupees } from '../i18n/format.js';
+import { tenths as hours, rupees, day as dayName } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, posInt } from './common.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
@@ -29,7 +29,14 @@ export function createContractorAgent(o) {
   /** @param {string} orderId */
   const counterparty = (orderId) => /** @type {{counterparty: string}} */ (ledger.order(orderId)).counterparty;
   /** @param {string} orderId */
-  const siteOf = (orderId) => /** @type {{site: string} | null} */ (ledger.order(orderId))?.site ?? '—';
+  const siteOf = (orderId) => (isUuid(orderId) ? /** @type {{site: string} | null} */ (ledger.order(orderId))?.site : null) ?? '—';
+  /** The total of the bill in force, as the read-back shows it. @param {string} orderId */
+  const billTotal = (orderId) => {
+    if (!known(orderId)) return '—';
+    const bill = ledger.view(orderId).currentBill;
+    const total = bill ? ledger.eventOfMessage(bill)?.body.body.totalPaise : undefined;
+    return posInt(total) ? rupees(total) : '—';
+  };
 
   /** @type {Record<string, Tool>} */
   const tools = {
@@ -37,6 +44,7 @@ export function createContractorAgent(o) {
     request_jcb: {
       roles: ['contractor', 'supervisor'],
       commits: true,
+      describe: (a) => ({ key: 'step.request_jcb', params: { site: typeof a.site === 'string' ? a.site : '—', day: isDay(a.day) ? dayName(a.day) : '—', time: a.time ?? '—', hours: posInt(a.hoursTenths) ? hours(a.hoursTenths) : '—' } }),
       async run(_p, a) {
         if (typeof a.site !== 'string' || !a.site.trim() || a.site.length > 80 || !isDay(a.day)) return no('common.bad_args');
         if ((a.time !== undefined && !isTime(a.time)) || (a.hoursTenths !== undefined && !posInt(a.hoursTenths))) return no('common.bad_args');
@@ -47,7 +55,7 @@ export function createContractorAgent(o) {
         // A new order, or the same order again after the JCB owner offered another time.
         const orderId = a.orderId !== undefined && known(a.orderId) ? a.orderId : randomUUID();
         const d = await link.send({ type: 'BOOKING_REQUEST', to: a.orderId !== undefined && known(a.orderId) ? counterparty(a.orderId) : o.jcbAgentId, orderId, body });
-        return deliveryResult(d, 'site.jcb_requested', { site: body.site, day: body.day, time: body.time ?? '—' });
+        return deliveryResult(d, 'site.jcb_requested', { site: body.site, day: dayName(body.day), time: body.time ?? '—' });
       },
     },
 
@@ -55,6 +63,7 @@ export function createContractorAgent(o) {
     accept_bill: {
       roles: ['contractor'],
       commits: true,
+      describe: (a) => ({ key: 'step.accept_bill', params: { site: siteOf(a.orderId), total: billTotal(a.orderId) } }),
       async run(_p, a) {
         if (!known(a.orderId)) return no('common.no_such_order');
         const view = ledger.view(a.orderId);
@@ -68,6 +77,10 @@ export function createContractorAgent(o) {
     dispute_bill: {
       roles: ['contractor'],
       commits: true,
+      describe: (a) => ({
+        key: 'step.dispute_bill',
+        params: { site: siteOf(a.orderId), their: posInt(a.hoursTenths) ? hours(a.hoursTenths) : posInt(a.totalPaise) ? rupees(a.totalPaise) : '—', reason: typeof a.reason === 'string' ? a.reason : '—' },
+      }),
       async run(_p, a) {
         if (!known(a.orderId)) return no('common.no_such_order');
         if (typeof a.reason !== 'string' || !a.reason.trim() || a.reason.length > 500) return no('site.reason_needed');
@@ -86,6 +99,7 @@ export function createContractorAgent(o) {
     claim_payment: {
       roles: ['contractor'],
       commits: true,
+      describe: (a) => ({ key: 'step.claim_payment', params: { site: siteOf(a.orderId), amount: posInt(a.amountPaise) ? rupees(a.amountPaise) : '—', utr: typeof a.utr === 'string' ? a.utr : '—' } }),
       async run(_p, a) {
         if (!known(a.orderId)) return no('common.no_such_order');
         if (!posInt(a.amountPaise) || typeof a.utr !== 'string' || !UTR_RE.test(a.utr) || !isDay(a.paidOn) || !isSha256(a.screenshotSha256)) return no('common.bad_args');
@@ -107,7 +121,7 @@ export function createContractorAgent(o) {
     const site = siteOf(m.order_id);
     switch (m.type) {
       case 'BOOKING_REPLY': {
-        const params = { site, day: b.day ?? '—', time: b.time ?? '—', rate: b.ratePaise ? rupees(b.ratePaise) : '—' };
+        const params = { site, day: b.day ? dayName(b.day) : '—', time: b.time ?? '—', rate: b.ratePaise ? rupees(b.ratePaise) : '—' };
         const key = `site.booking_${b.answer}`;
         await tell('contractor', key, params);
         await tell('supervisor', key, params);
@@ -124,7 +138,7 @@ export function createContractorAgent(o) {
           photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
         };
         const key = m.type === 'BILL' ? 'site.bill_received' : 'site.correction_received';
-        await tell('contractor', key, params);
+        await tell('contractor', key, params, { tool: 'accept_bill', args: { orderId: m.order_id } });
         await tell('supervisor', key, params);
         break;
       }

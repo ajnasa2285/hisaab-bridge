@@ -7,9 +7,15 @@
 /** @typedef {{ok: boolean, key: string, params?: Record<string, string | number>}} Said */
 /**
  * A step a person can take. `roles` is checked by code before `run`; the model never decides who may.
- * @typedef {{roles: Role[], commits: boolean, run: (person: Person, args: Record<string, any>) => Promise<Said> | Said}} Tool
+ * `describe` gives the read-back the person confirms before a committing step runs.
+ * @typedef {{roles: Role[], commits: boolean, run: (person: Person, args: Record<string, any>) => Promise<Said> | Said,
+ *   describe?: (args: Record<string, any>) => {key: string, params?: Record<string, string | number>}}} Tool
  */
-/** @typedef {(role: Role, key: string, params?: Record<string, string | number>) => Promise<void> | void} Tell */
+/**
+ * Tells everyone in a role. `expect` is the step a plain "yes" from them will mean (the text asks a
+ * yes/no question), so they answer once instead of being asked again.
+ * @typedef {(role: Role, key: string, params?: Record<string, string | number>, expect?: {tool: string, args: Record<string, any>}) => Promise<void> | void} Tell
+ */
 /** @typedef {import('../ledger/store.js').LedgerEvent} LedgerEvent */
 
 /** @param {string} key @param {Record<string, string | number>} [params] @returns {Said} */

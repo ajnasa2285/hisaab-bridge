@@ -4,7 +4,7 @@
 // is computed by a model.
 
 import { randomUUID } from 'node:crypto';
-import { tenths as hours, rupees } from '../i18n/format.js';
+import { tenths as hours, rupees, day as dayName } from '../i18n/format.js';
 import { deliveryResult, isIso, isSha256, isTime, isDay, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
@@ -71,6 +71,10 @@ export function createJcbAgent(o) {
     reply_booking: {
       roles: ['jcb_owner'],
       commits: true,
+      describe: (a) => ({
+        key: `step.reply_booking_${a.answer}`,
+        params: { site: siteOf(a.orderId), day: isDay(a.day) ? dayName(a.day) : '—', time: a.time ?? '—', rate: posInt(a.ratePaise) ? rupees(a.ratePaise) : '—' },
+      }),
       async run(_p, a) {
         if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
         if (!['yes', 'no', 'other_time'].includes(a.answer)) return no('common.bad_args');
@@ -85,7 +89,8 @@ export function createJcbAgent(o) {
         const d = await link.send({ type: 'BOOKING_REPLY', to: /** @type {string} */ (counterparty(a.orderId)), orderId: a.orderId, body });
         if (d.ok && a.answer === 'yes') {
           const req = ofType(ledger.events(a.orderId), 'BOOKING_REQUEST', 'in').at(-1)?.body.body;
-          await tell('operator', 'jcb.job_booked', { site: req?.site ?? '—', day: a.day ?? req?.day ?? '—', time: a.time ?? req?.time ?? '—' });
+          const bookedDay = a.day ?? req?.day;
+          await tell('operator', 'jcb.job_booked', { site: req?.site ?? '—', day: isDay(bookedDay) ? dayName(bookedDay) : '—', time: a.time ?? req?.time ?? '—' });
         }
         return deliveryResult(d, `jcb.reply_sent_${a.answer}`);
       },
@@ -95,6 +100,7 @@ export function createJcbAgent(o) {
     record_meter: {
       roles: ['operator', 'jcb_owner'],
       commits: true,
+      describe: (a) => ({ key: `step.record_meter_${a.which}`, params: { reading: nonNegInt(a.valueTenths) ? hours(a.valueTenths) : '—' } }),
       async run(_p, a) {
         if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
         if ((a.which !== 'start' && a.which !== 'end') || !nonNegInt(a.valueTenths) || !isSha256(a.sha256)) return no('common.bad_args');
@@ -124,6 +130,16 @@ export function createJcbAgent(o) {
     send_bill: {
       roles: ['jcb_owner'],
       commits: true,
+      describe: (a) => {
+        const events = isUuid(a.orderId) ? ledger.events(a.orderId) : [];
+        const { start, end } = meterReadings(events);
+        const rate = agreedRate(events);
+        const h = start && end ? end.valueTenths - start.valueTenths : null;
+        return {
+          key: 'step.send_bill',
+          params: { site: siteOf(a.orderId), hours: h === null ? '—' : hours(h), rate: rate === null ? '—' : rupees(rate), total: h === null || rate === null ? '—' : rupees(Math.round((h * rate) / 10)) },
+        };
+      },
       async run(_p, a) {
         if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
         const events = ledger.events(a.orderId);
@@ -141,6 +157,11 @@ export function createJcbAgent(o) {
     send_correction: {
       roles: ['jcb_owner'],
       commits: true,
+      describe: (a) => {
+        const rate = isUuid(a.orderId) ? agreedRate(ledger.events(a.orderId)) : null;
+        const ok = posInt(a.hoursTenths);
+        return { key: 'step.send_correction', params: { site: siteOf(a.orderId), hours: ok ? hours(a.hoursTenths) : '—', total: ok && rate !== null ? rupees(Math.round((a.hoursTenths * rate) / 10)) : '—' } };
+      },
       async run(_p, a) {
         if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
         if (!posInt(a.hoursTenths)) return no('common.bad_args');
@@ -159,6 +180,11 @@ export function createJcbAgent(o) {
     confirm_payment: {
       roles: ['jcb_owner'],
       commits: true,
+      describe: (a) => {
+        const view = isUuid(a.orderId) && ledger.order(a.orderId) ? ledger.view(a.orderId) : null;
+        const amount = view?.payment ? ledger.eventOfMessage(view.payment)?.body.body.amountPaise : undefined;
+        return { key: 'step.confirm_payment', params: { site: siteOf(a.orderId), amount: posInt(amount) ? rupees(amount) : '—' } };
+      },
       async run(_p, a) {
         if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
         const view = ledger.view(a.orderId);
@@ -180,7 +206,7 @@ export function createJcbAgent(o) {
     const b = m.body;
     switch (m.type) {
       case 'BOOKING_REQUEST':
-        await tell('jcb_owner', 'jcb.booking_request', { site: b.site, day: b.day, time: b.time ?? '—', hours: b.hoursTenths ? hours(b.hoursTenths) : '—' });
+        await tell('jcb_owner', 'jcb.booking_request', { site: b.site, day: dayName(b.day), time: b.time ?? '—', hours: b.hoursTenths ? hours(b.hoursTenths) : '—' });
         break;
       case 'ACCEPT':
         await tell('jcb_owner', 'jcb.bill_accepted', { site: siteOf(m.order_id) });
@@ -193,7 +219,7 @@ export function createJcbAgent(o) {
         });
         break;
       case 'PAYMENT_CLAIM':
-        await tell('jcb_owner', 'jcb.payment_claimed', { site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: b.paidOn });
+        await tell('jcb_owner', 'jcb.payment_claimed', { site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn) }, { tool: 'confirm_payment', args: { orderId: m.order_id } });
         break;
       default:
         break;

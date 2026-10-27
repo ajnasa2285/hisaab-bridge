@@ -52,3 +52,24 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `site.figure_needed` | — | an objection needs your figure (hours or amount) |
 | `site.payment_claimed` | amount | the payment details were sent to the JCB owner |
 | `site.settled` | site, amount | the JCB owner confirmed the money arrived |
+
+## Read-back and conversation (Claude drafted the Hindi; Fable to polish)
+
+Every committing step is read back and runs only after "हाँ". Days arrive formatted ("29 अक्टूबर 2026").
+
+| Key | Params | When |
+|---|---|---|
+| `step.reply_booking_yes` / `_no` / `_other_time` | site, day, time, rate | owner: confirm the answer before it goes |
+| `step.record_meter_start` / `_end` | reading | operator: confirm the reading read from the photo (or typed) |
+| `step.send_bill` | site, hours, rate, total | owner: confirm the bill |
+| `step.send_correction` | site, hours, total | owner: confirm the corrected bill |
+| `step.confirm_payment` | site, amount | owner: has the money arrived? (also the meaning of "हाँ" after `jcb.payment_claimed`) |
+| `step.request_jcb` | site, day, time, hours | contractor/supervisor: confirm the JCB request |
+| `step.accept_bill` | site, total | contractor: confirm acceptance (also the meaning of "हाँ" after `site.bill_received`) |
+| `step.dispute_bill` | site, their, reason | contractor: confirm the objection |
+| `step.claim_payment` | site, amount, utr | contractor: confirm the payment details |
+| `step.cancelled` | — | the person said no; nothing was sent |
+| `orchestrator.try_again` | — | the model could not be reached; try again shortly |
+| `orchestrator.which_job` | — | more than one job fits; ask for the site or day |
+| `orchestrator.no_job_for_photo` | — | a meter photo came but no job is booked or working |
+| `help.<role>`, `meter.not_meter`, `meter.ask_person` (raw) | | Fable's existing keys, used as written |

@@ -58,6 +58,24 @@ export const hi = Object.freeze({
   'site.payment_claimed': '{amount} के भुगतान की जानकारी JCB मालिक को भेजी। उनकी पुष्टि आते ही बताया जाएगा।',
   'site.settled': 'JCB मालिक ने {amount} मिलना पक्का किया। {site} का यह हिसाब पूरा।',
 
+  // --- Read-back before a step runs, and the conversation (drafted by Claude; Fable to polish) ---
+  'step.reply_booking_yes': '{site} के लिए हाँ भेजें, दर {rate} प्रति घंटा? हाँ / नहीं',
+  'step.reply_booking_no': '{site} के लिए मना भेजें? हाँ / नहीं',
+  'step.reply_booking_other_time': '{site} के लिए दूसरा समय भेजें: {day}, {time} बजे? हाँ / नहीं',
+  'step.record_meter_start': 'शुरू का मीटर {reading} पढ़ा है। सही है? हाँ / नहीं',
+  'step.record_meter_end': 'अंत का मीटर {reading} पढ़ा है। सही है? हाँ / नहीं',
+  'step.send_bill': '{site} का बिल भेजें: {hours} घंटे × {rate} = {total}, मीटर की फ़ोटो के साथ? हाँ / नहीं',
+  'step.send_correction': '{site} का सुधरा बिल भेजें: {hours} घंटे, कुल {total}? हाँ / नहीं',
+  'step.confirm_payment': 'क्या {site} के {amount} आपके खाते में आ गए हैं? हाँ / नहीं',
+  'step.request_jcb': 'JCB माँगें: {site}, {day}, {time} बजे से, {hours} घंटे? हाँ / नहीं',
+  'step.accept_bill': '{site} का बिल {total} मंज़ूर करें? हाँ / नहीं',
+  'step.dispute_bill': '{site} के बिल पर आपत्ति भेजें: आपका आँकड़ा {their}, कारण: {reason}? हाँ / नहीं',
+  'step.claim_payment': '{site} के लिए {amount} के भुगतान की जानकारी भेजें, UTR {utr}? हाँ / नहीं',
+  'step.cancelled': 'ठीक है, कुछ नहीं भेजा गया।',
+  'orchestrator.try_again': 'अभी पढ़ नहीं पाए। थोड़ी देर में फिर भेजें।',
+  'orchestrator.which_job': 'कौन-सा काम? साइट का नाम या दिन भी लिखें।',
+  'orchestrator.no_job_for_photo': 'अभी कोई तय काम नहीं है जिसके लिए मीटर दर्ज हो।',
+
   // =========================================================================================
   // Fable's own keys: request list, site account and the flows not yet wired by the agents.
   // =========================================================================================
