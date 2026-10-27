@@ -68,6 +68,11 @@ const isIso = (s) => typeof s === 'string' && s.length <= 40 && !Number.isNaN(Da
 const item = (it) => it && typeof it === 'object' && text(it.name) && pos(it.qtyHundredths) && text(it.unit);
 /** @param {any} items */
 const items = (items) => Array.isArray(items) && items.length > 0 && items.length <= 20 && items.every(item);
+/** @param {any} r */
+const rate = (r) => r && typeof r === 'object' && text(r.name) && text(r.unit) && pos(r.ratePaise);
+/** A material "yes": one rate per item and unit, never two for the same pair. @param {any} rates */
+const rates = (rates) => Array.isArray(rates) && rates.length > 0 && rates.length <= 20 && rates.every(rate)
+  && new Set(rates.map((/** @type {any} */ r) => JSON.stringify([r.name, r.unit]))).size === rates.length;
 /** @param {any} e */
 const evidence = (e) => e && typeof e === 'object' && typeof e.sha256 === 'string' && SHA256_RE.test(e.sha256)
   && (e.kind === 'meter' || e.kind === 'challan') && (e.readValue === null || typeof e.readValue === 'string')
@@ -89,6 +94,7 @@ const BODY_OK = {
       : items(b.items) && b.hoursTenths === undefined),
   BOOKING_REPLY: (b) => ['yes', 'no', 'other_time'].includes(b.answer) && (b.day === undefined || isDay(b.day))
     && (b.time === undefined || TIME_RE.test(b.time)) && (b.ratePaise === undefined || nat(b.ratePaise)) && optText(b.note)
+    && (b.rates === undefined || (b.answer === 'yes' && rates(b.rates)))
     && (b.answer !== 'other_time' || isDay(b.day)),
   DELIVERY: (b) => items(b.items) && b.challan && typeof b.challan.sha256 === 'string' && SHA256_RE.test(b.challan.sha256)
     && isIso(b.deliveredAt),

@@ -81,13 +81,15 @@ test('a material order needs a delivery before a bill; a JCB bill must carry met
   const orderId = randomUUID();
   L.ensureOrder({ orderId, kind: 'material', counterparty: 'agent:supplier-1', site: 'Shivpuri', at: AT });
   put(L, orderId, 'out', 'BOOKING_REQUEST', msg('BOOKING_REQUEST', { kind: 'material' }));
-  put(L, orderId, 'in', 'BOOKING_REPLY', msg('BOOKING_REPLY', { answer: 'yes' }));
+  assert.equal(put(L, orderId, 'in', 'BOOKING_REPLY', msg('BOOKING_REPLY', { answer: 'yes' })), null, 'a material yes needs its rates');
+  put(L, orderId, 'in', 'BOOKING_REPLY', msg('BOOKING_REPLY', { answer: 'yes', rates: [{ name: 'सीमेंट', unit: 'बोरी', ratePaise: 35000 }] }));
   assert.equal(put(L, orderId, 'in', 'BILL', msg('BILL', bill)), null, 'no bill before delivery');
   assert.ok(put(L, orderId, 'in', 'DELIVERY', msg('DELIVERY', {})));
   assert.ok(put(L, orderId, 'in', 'BILL', msg('BILL', bill)));
 
   const j = newJcbOrder();
   put(j.L, j.orderId, 'in', 'BOOKING_REQUEST', msg('BOOKING_REQUEST', { kind: 'jcb_hours' }));
+  assert.equal(put(j.L, j.orderId, 'out', 'BOOKING_REPLY', msg('BOOKING_REPLY', { answer: 'yes', rates: [{ name: 'JCB', unit: 'घंटा', ratePaise: 1 }] })), null, 'a JCB yes has no item rates');
   put(j.L, j.orderId, 'out', 'BOOKING_REPLY', msg('BOOKING_REPLY', { answer: 'yes' }));
   assert.equal(put(j.L, j.orderId, 'out', 'BILL', msg('BILL', { ...bill, evidence: [] })), null, 'no bill without meter evidence');
   assert.ok(put(j.L, j.orderId, 'out', 'BILL', msg('BILL', bill)), 'the buyer side never sees local photos, only the evidence in the bill');

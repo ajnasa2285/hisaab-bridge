@@ -36,6 +36,8 @@ export function step(v, e) {
       return { ...v, state: 'requested', kind: b.kind };
     case 'BOOKING_REPLY':
       if (v.state !== 'requested') return null;
+      // A material "yes" carries the rates the bill will be built from; a JCB "yes" never does.
+      if (b.answer === 'yes' && (v.kind === 'material') !== Array.isArray(b.rates)) return null;
       if (b.answer === 'yes') return { ...v, state: 'booked' };
       if (b.answer === 'no') return { ...v, state: 'declined' };
       return { ...v, state: 'offered' };

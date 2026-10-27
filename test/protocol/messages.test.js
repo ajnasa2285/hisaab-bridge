@@ -113,6 +113,16 @@ test('body rules: integers only, totals must add up, a correction names what it 
   assert.equal(bodyIsValid('BOOKING_REQUEST', { kind: 'material', site: 'S', day: '2026-10-29', items: [{ name: 'सीमेंट', qtyHundredths: 5000, unit: 'बोरी' }] }), true);
   assert.equal(bodyIsValid('BOOKING_REQUEST', { kind: 'material', site: 'S', day: '2026-10-29' }), false, 'material needs items');
   assert.equal(bodyIsValid('BOOKING_REPLY', { answer: 'other_time' }), false, 'another time needs a day');
+  const rates = [{ name: 'सीमेंट', unit: 'बोरी', ratePaise: 35000 }, { name: 'रेत', unit: 'ट्रॉली', ratePaise: 400000 }];
+  assert.equal(bodyIsValid('BOOKING_REPLY', { answer: 'yes', rates }), true);
+  assert.equal(bodyIsValid('BOOKING_REPLY', { answer: 'no', rates }), false, 'rates only come with a yes');
+  assert.equal(bodyIsValid('BOOKING_REPLY', { answer: 'yes', rates: [] }), false, 'at least one rate');
+  assert.equal(bodyIsValid('BOOKING_REPLY', { answer: 'yes', rates: Array.from({ length: 21 }, (_, i) => ({ name: `i${i}`, unit: 'u', ratePaise: 1 })) }), false, 'at most 20 rates');
+  assert.equal(bodyIsValid('BOOKING_REPLY', { answer: 'yes', rates: [{ ...rates[0], ratePaise: 350.5 }] }), false, 'integer paise');
+  assert.equal(bodyIsValid('BOOKING_REPLY', { answer: 'yes', rates: [{ ...rates[0], ratePaise: 0 }] }), false, 'a rate is never zero');
+  assert.equal(bodyIsValid('BOOKING_REPLY', { answer: 'yes', rates: [{ name: 'सीमेंट', ratePaise: 35000 }] }), false, 'a rate names its unit');
+  assert.equal(bodyIsValid('BOOKING_REPLY', { answer: 'yes', rates: [rates[0], { ...rates[0], ratePaise: 36000 }] }), false, 'one rate per item and unit');
+  assert.equal(bodyIsValid('BOOKING_REPLY', { answer: 'yes', rates: 'सीमेंट 350' }), false);
   assert.equal(bodyIsValid('DISPUTE', { bill: randomUUID(), reason: 'diary says 5.5', theirFigure: { hoursTenths: 55 } }), true);
   assert.equal(bodyIsValid('DISPUTE', { bill: randomUUID(), reason: 'x', theirFigure: {} }), false);
   assert.equal(bodyIsValid('PAYMENT_CLAIM', { bill: randomUUID(), amountPaise: 732000, utr: '4321', paidOn: '2026-10-30', screenshot: { sha256: 'b'.repeat(64) } }), true);

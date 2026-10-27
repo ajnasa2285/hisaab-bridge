@@ -22,6 +22,8 @@ const SAMPLE = {
   seen: '₹7,000', state: 'बिल आया', role: 'ठेकेदार', question: 'बिल ₹7,320 ठीक है?', id: 3, neededOn: '30 अक्टूबर 2026',
   by: 'मोहन', estimate: '₹12,000', materials: 'सीमेंट 50 बोरी', billed: '₹7,320', paid: '—', pending: '₹7,320',
   disputes: 0, name: 'सीमेंट', their: '5.5 घंटे', photos: 2,
+  rates: 'सीमेंट ₹350/बोरी', challan: '412', count: 'सीमेंट 48 बोरी', expected: 'सीमेंट 50 बोरी × ₹350 = ₹17,500',
+  expectedTotal: '₹17,500', siteTotal: '₹16,800', item: 'सरिया (टन)',
 };
 
 test('every key has a non-empty Hindi text and fills with its parameters', () => {
@@ -92,6 +94,27 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'step.request_jcb': ['site', 'day', 'time', 'hours'], 'step.accept_bill': ['site', 'total'], 'step.dispute_bill': ['site', 'their', 'reason'],
     'step.claim_payment': ['site', 'amount', 'utr'], 'step.cancelled': [],
     'orchestrator.try_again': [], 'orchestrator.which_job': [], 'orchestrator.no_job_for_photo': [],
+    // Material: contractor side, supplier side, challan photo, read-backs.
+    'site.no_supplier': [], 'site.material_requested': ['site', 'day', 'items'],
+    'site.material_booking_yes': ['site', 'day', 'time', 'rates'], 'site.material_booking_no': ['site', 'day', 'time', 'rates'],
+    'site.material_booking_other_time': ['site', 'day', 'time', 'rates'], 'site.delivery_received': ['site', 'items', 'challan'],
+    'site.count_figures': ['items'], 'site.count_matches': ['site', 'items'], 'site.count_saved_differs': ['site', 'challan', 'count'],
+    'site.count_differs': ['site', 'challan', 'count'], 'site.material_bill_received': ['site', 'lines', 'total', 'photos'],
+    'site.material_correction_received': ['site', 'lines', 'total', 'photos'],
+    'site.material_bill_mismatch': ['site', 'lines', 'total', 'expected', 'expectedTotal'],
+    'site.material_bill_count_differs': ['site', 'lines', 'total', 'count', 'siteTotal'], 'site.material_bill_accepted': ['site'],
+    'site.material_bill_disputed': ['site'], 'site.material_figure_needed': [], 'site.material_payment_claimed': ['amount'],
+    'site.material_settled': ['site', 'amount'],
+    'supplier.order_request': ['site', 'day', 'time', 'items'], 'supplier.rates_needed': ['items'], 'supplier.reply_sent_yes': [],
+    'supplier.reply_sent_no': [], 'supplier.reply_sent_other_time': [], 'supplier.item_not_agreed': ['item'],
+    'supplier.delivery_sent': ['site', 'items'], 'supplier.delivery_missing': [], 'supplier.bill_sent': ['lines', 'total'],
+    'supplier.bill_accepted': ['site'], 'supplier.bill_disputed': ['site', 'their', 'reason'], 'supplier.correction_sent': ['lines', 'total'],
+    'supplier.payment_claimed': ['site', 'amount', 'utr', 'day'], 'supplier.settled_sent': ['amount'],
+    'challan.not_challan': [], 'challan.ask_person': ['raw', 'items'], 'challan.no_order_for_photo': [],
+    'step.reply_order_yes': ['site', 'day', 'time', 'rates'], 'step.reply_order_no': ['site', 'day', 'time', 'rates'],
+    'step.reply_order_other_time': ['site', 'day', 'time', 'rates'], 'step.record_delivery': ['site', 'items', 'challan'],
+    'step.send_material_bill': ['site', 'lines', 'total'], 'step.send_material_correction': ['site', 'lines', 'total'],
+    'step.request_material': ['site', 'day', 'time', 'items'], 'step.confirm_count': ['site', 'items'],
   };
   for (const [key, params] of Object.entries(AGENT_KEYS)) {
     assert.ok(hi[key], `missing ${key}`);
@@ -105,4 +128,9 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
   assert.match(claimed, /कहना है/);
   assert.match(claimed, /खाता/);
   assert.doesNotMatch(claimed, /आ गया|मिल गया|मिला/);
+  // The same for the supplier.
+  const toSupplier = t('supplier.payment_claimed', SAMPLE);
+  assert.match(toSupplier, /कहना है/);
+  assert.match(toSupplier, /खाता/);
+  assert.doesNotMatch(toSupplier, /आ गया|मिल गया|मिला/);
 });

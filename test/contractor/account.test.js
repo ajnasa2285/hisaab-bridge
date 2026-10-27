@@ -99,7 +99,7 @@ test('materials come from signed deliveries, added up by name and unit', () => {
   const orderId = randomUUID();
   L.ensureOrder({ orderId, kind: 'material', counterparty: 'agent:supplier-1', site: SITE, at: AT });
   put(L, orderId, 'out', msg('BOOKING_REQUEST', { kind: 'material', site: SITE, day: '2026-10-29', items: [{ name: 'सीमेंट', qtyHundredths: 5000, unit: 'बोरी' }] }));
-  put(L, orderId, 'in', msg('BOOKING_REPLY', { answer: 'yes' }));
+  put(L, orderId, 'in', msg('BOOKING_REPLY', { answer: 'yes', rates: [{ name: 'सीमेंट', unit: 'बोरी', ratePaise: 35000 }] }));
   let a = siteAccount(L, { site: SITE });
   assert.deepEqual(a.materials, [], 'nothing received yet');
   assert.equal(a.lines[0].what, 'सीमेंट');
