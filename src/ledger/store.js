@@ -105,8 +105,13 @@ export function openLedger(file) {
 
   /** @param {string} orderId */
   function view(orderId) {
+    const all = events(orderId);
+    // A message we sent that the other side refused never happened for either ledger: it stays in
+    // our history (with the refusal) but does not count in our state.
+    const refused = new Set(all.filter((e) => e.direction === 'in' && e.type === 'REFUSE').map((e) => e.body.body.refers_to));
     let v = emptyView();
-    for (const e of events(orderId)) {
+    for (const e of all) {
+      if (e.direction === 'out' && refused.has(e.msgId)) continue;
       const next = step(v, stepEvent(e));
       if (next === null) throw new Error(`ledger: stored history of ${orderId} does not fit at seq ${e.seq}`);
       v = next;

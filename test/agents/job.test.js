@@ -75,7 +75,7 @@ async function setup() {
     servers.push(server);
   }
   return {
-    jcb, site, jcbCore, siteCore, told, net, siteLink,
+    jcb, site, jcbCore, siteCore, told, net, siteLink, jcbLink,
     advance: (/** @type {number} */ ms) => { nowMs += ms; },
     close: () => Promise.all(servers.map((s) => new Promise((r) => s.close(() => r(undefined))))),
   };
@@ -192,6 +192,44 @@ test('steps that do not fit are refused before anything is signed', async () => 
     assert.equal((await runTool(s.jcb.tools, owner, { tool: 'drop_tables', args: {} })).key, 'common.unknown_step');
     assert.equal((await runTool(s.site.tools, contractor, { tool: 'dispute_bill', args: { orderId, reason: 'x' } })).key, 'site.figure_needed');
     assert.equal(s.jcbCore.ledger.events(orderId).length, before);
+  } finally {
+    await s.close();
+  }
+});
+
+test('a message the other side refuses does not count in our own state, and nothing is signed on top of a waiting one', async () => {
+  const s = await setup();
+  try {
+    await runTool(s.site.tools, contractor, { tool: 'request_jcb', args: { site: 'Shivpuri', day: '2026-10-29' } });
+    const orderId = /** @type {{order_id: string}} */ (s.siteCore.ledger.orders()[0]).order_id;
+    await runTool(s.jcb.tools, owner, { tool: 'reply_booking', args: { orderId, answer: 'yes', ratePaise: 120000 } });
+    await runTool(s.jcb.tools, operator, { tool: 'record_meter', args: { orderId, which: 'start', valueTenths: 100, sha256: SHA_A } });
+    await runTool(s.jcb.tools, operator, { tool: 'record_meter', args: { orderId, which: 'end', valueTenths: 160, sha256: SHA_B } });
+
+    // The bill waits while the contractor's agent is down; a correction cannot be signed on top of it.
+    s.net.up = false;
+    assert.equal((await runTool(s.jcb.tools, owner, { tool: 'send_bill', args: { orderId } })).key, 'common.pending');
+    assert.equal((await runTool(s.jcb.tools, owner, { tool: 'send_correction', args: { orderId, hoursTenths: 50 } })).key, 'common.busy');
+    s.net.up = true;
+    await s.jcbLink.retryPending();
+    assert.equal(s.siteCore.ledger.view(orderId).state, 'billed');
+
+    // The contractor's acceptance comes back refused: it stays in the contractor's history with the
+    // refusal, but the contractor's state goes back to where the JCB side is.
+    const { prepare, recordAnswer } = await import('../../src/protocol/exchange.js');
+    const { buildMessage } = await import('../../src/protocol/messages.js');
+    const accept = prepare(s.siteCore, { type: 'ACCEPT', to: 'agent:jcb-1', orderId, body: { bill: s.siteCore.ledger.view(orderId).currentBill } });
+    assert.ok(accept);
+    assert.equal(s.siteCore.ledger.view(orderId).state, 'accepted');
+    const refusal = buildMessage({ type: 'REFUSE', from: 'agent:jcb-1', to: 'agent:contractor-1', orderId, body: { refers_to: accept.msg_id, code: 'WRONG_STATE' }, privateKey: s.jcbCore.self.privateKey, nowMs: Date.parse('2026-10-29T02:30:00Z') });
+    assert.deepEqual(recordAnswer(s.siteCore, refusal), { ok: true, kind: 'refuse', code: 'WRONG_STATE' });
+    assert.equal(s.siteCore.ledger.view(orderId).state, 'billed');
+    assert.ok(s.siteCore.ledger.events(orderId).some((e) => e.msgId === accept.msg_id), 'the refused message stays in history');
+    assert.equal(s.siteCore.ledger.verifyChain().ok, true);
+    // And the contractor can accept again, this time for real.
+    const r = await runTool(s.site.tools, contractor, { tool: 'accept_bill', args: { orderId } });
+    assert.equal(r.ok, true);
+    assert.equal(s.jcbCore.ledger.view(orderId).state, 'accepted');
   } finally {
     await s.close();
   }

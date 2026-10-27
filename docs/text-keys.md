@@ -13,6 +13,7 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `common.wrong_state` | — | the step does not fit where the job is now |
 | `common.pending` | — | saved on our side; the other side is not reachable, will be sent again automatically |
 | `common.refused` | — | the other side's agent refused it |
+| `common.busy` | — | an earlier message on this job is still waiting to reach the other side; try after it goes |
 | `wa.unknown_sender` | — | someone not registered wrote to the number |
 
 ## JCB side (owner `jcb_owner`, operator)

@@ -8,7 +8,7 @@ import { sendToAgent } from '../transport/a2a.js';
 /** @typedef {import('../protocol/messages.js').Message} Message */
 /** @typedef {Parameters<typeof recordAnswer>[0]} Agent */
 /**
- * @typedef {{ok: true, message: Message} | {ok: false, reason: 'wrong_state'} |
+ * @typedef {{ok: true, message: Message} | {ok: false, reason: 'wrong_state' | 'busy'} |
  *   {ok: false, reason: 'unreachable' | 'bad_answer' | 'no_address', message: Message} |
  *   {ok: false, reason: 'refused', code: string, message: Message}} Delivery
  */
@@ -58,6 +58,9 @@ export function createLink(agent, o) {
      * @returns {Promise<Delivery>}
      */
     async send(msg) {
+      // One message in flight per order: nothing new is signed on top of a message the other side
+      // has not answered yet, so a later refusal can never leave our history out of order.
+      if (pending().some((p) => p.order_id === msg.orderId)) return { ok: false, reason: 'busy' };
       const m = prepare(agent, msg);
       if (m === null) return { ok: false, reason: 'wrong_state' };
       return deliver(m);

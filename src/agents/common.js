@@ -42,6 +42,7 @@ export function deliveryResult(d, okKey, params) {
   if (d.ok) return ok(okKey, params);
   if (d.reason === 'wrong_state') return no('common.wrong_state');
   if (d.reason === 'refused') return no('common.refused');
+  if (d.reason === 'busy') return no('common.busy');
   // Written on our side and kept; it is delivered again later, unchanged.
   return no('common.pending');
 }
