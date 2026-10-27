@@ -7,7 +7,7 @@
 //
 // What a message means is decided by the agents (src/agents/), never here.
 
-import { handshake, maskPhone, parseInbound, signatureIsValid } from './webhook.js';
+import { handshake, maskPhone, parseFailedStatuses, parseInbound, signatureIsValid } from './webhook.js';
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
@@ -124,6 +124,7 @@ export function createWa(o) {
     }
     // Answer Meta first so it does not re-deliver while we work; repeats are dropped by msg id anyway.
     res.writeHead(200).end();
+    for (const f of parseFailedStatuses(payload)) log(`wa ${line.name}: delivery to ${maskPhone(f.recipient)} failed: ${f.code ?? '-'} ${f.title}`);
     for (const msg of parseInbound(payload)) await dispatch(line, msg);
     return true;
   }

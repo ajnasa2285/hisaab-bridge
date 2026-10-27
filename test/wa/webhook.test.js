@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { handshake, maskPhone, parseInbound, signatureIsValid } from '../../src/wa/webhook.js';
+import { handshake, maskPhone, parseFailedStatuses, parseInbound, signatureIsValid } from '../../src/wa/webhook.js';
 import { createDirectory } from '../../src/wa/directory.js';
 import { openWaStore, WINDOW_MS } from '../../src/wa/store.js';
 
@@ -98,4 +98,20 @@ test('the store handles each message id once and keeps the 24-hour window', () =
   assert.equal(s.windowOpen('line-jcb', '919000000001', t0 + WINDOW_MS), false);
   assert.equal(s.windowOpen('line-site', '919000000001', t0), false);
   s.close();
+});
+
+test('failed delivery notices are kept with Meta\'s code; other statuses are ignored', () => {
+  const payload = {
+    object: 'whatsapp_business_account',
+    entry: [{ changes: [{ field: 'messages', value: { statuses: [
+      { status: 'sent', recipient_id: '919000000001' },
+      { status: 'failed', recipient_id: '919000000001', errors: [{ code: 131042, title: 'Business eligibility payment issue' }] },
+      { status: 'failed', recipient_id: '919000000002' },
+    ] } }] }],
+  };
+  assert.deepEqual(parseFailedStatuses(payload), [
+    { recipient: '919000000001', code: 131042, title: 'Business eligibility payment issue' },
+    { recipient: '919000000002', code: null, title: 'unknown' },
+  ]);
+  assert.deepEqual(parseFailedStatuses({ object: 'page' }), []);
 });

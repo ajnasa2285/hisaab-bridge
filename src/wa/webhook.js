@@ -108,6 +108,31 @@ export function parseInbound(payload) {
 }
 
 /**
+ * Meta accepts a send and reports later, on the same webhook, when delivery failed. Only failures
+ * are kept, with Meta's error code and title, so a silent line can be explained from the log.
+ * @param {unknown} payload
+ * @returns {{recipient: string, code: number | null, title: string}[]}
+ */
+export function parseFailedStatuses(payload) {
+  if (!isObj(payload) || payload.object !== 'whatsapp_business_account') return [];
+  /** @type {{recipient: string, code: number | null, title: string}[]} */
+  const out = [];
+  for (const entry of arr(payload.entry)) {
+    for (const change of arr(isObj(entry) ? entry.changes : undefined)) {
+      if (!isObj(change) || change.field !== 'messages' || !isObj(change.value)) continue;
+      for (const s of arr(change.value.statuses)) {
+        if (!isObj(s) || s.status !== 'failed') continue;
+        const err = arr(s.errors).find(isObj);
+        const code = err && Number.isSafeInteger(err.code) ? /** @type {number} */ (err.code) : null;
+        const title = (err && (str(err.title) ?? str(err.message))) ?? 'unknown';
+        out.push({ recipient: str(s.recipient_id) ?? '', code, title: title.slice(0, 160) });
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * A phone as it may appear in logs: the last four digits only.
  * @param {string} phone
  */
