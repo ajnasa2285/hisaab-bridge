@@ -9,6 +9,7 @@
     "node": ">=24"
   },
   "scripts": {
+    "start": "node src/main.js",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test --test-timeout=60000 \"test/**/*.test.js\""
   },

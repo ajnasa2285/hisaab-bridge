@@ -60,6 +60,7 @@ test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents
     waStoreFile: join(dir, 'wa.db'),
     spark,
     fetch: fakeGraph,
+    exportToken: 'test-export-token',
     log: () => {},
   });
 
@@ -98,6 +99,12 @@ test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents
     const jcb = app.agent('agent:jcb-1');
     const orderId = site.core.ledger.orders()[0].order_id;
     assert.equal(jcb.core.ledger.view(orderId).state, 'requested');
+
+    // The export for the judge page needs the token.
+    assert.equal((await fetch(`${base}/agents/jcb/export`)).status, 404);
+    assert.equal((await fetch(`${base}/agents/jcb/export`, { headers: { authorization: 'Bearer wrong' } })).status, 404);
+    const side = await (await fetch(`${base}/agents/jcb/export`, { headers: { authorization: 'Bearer test-export-token' } })).json();
+    assert.deepEqual([side.agentId, side.chain.ok, side.events[0].type], ['agent:jcb-1', true, 'BOOKING_REQUEST']);
   } finally {
     app.close();
     await new Promise((r) => server.close(() => r(undefined)));

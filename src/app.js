@@ -6,6 +6,7 @@
 //   /wa/<line>/webhook                              WhatsApp (src/wa/wa.js)
 //   /agents/<name>/.well-known/agent-card.json      Agent Card
 //   /agents/<name>/a2a                              A2A JSON-RPC
+//   /agents/<name>/export                           one side of the ledgers for the judge page (token only)
 //   /health                                         "ok"
 
 import { openLedger } from './ledger/store.js';
@@ -21,6 +22,7 @@ import { createWa } from './wa/wa.js';
 import { createCloudClient } from './wa/cloud.js';
 import { maskPhone } from './wa/webhook.js';
 import { t } from './i18n/index.js';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 const RETRY_MS = 60 * 1000;
 
@@ -46,6 +48,7 @@ const RETRY_MS = 60 * 1000;
  *   readMeter?: import('./agents/conversation.js').MeterReader,
  *   fetch?: typeof globalThis.fetch,
  *   transport?: (baseUrl: string, m: any) => Promise<unknown>,
+ *   exportToken?: string,
  *   now?: () => number,
  *   log?: (line: string) => void,
  * }} cfg
@@ -140,8 +143,26 @@ export function createApp(cfg) {
     if (await wa.handle(req, res)) return;
     const m = /^\/agents\/([a-z0-9-]{1,32})\//.exec(path);
     const entry = m ? [...agents.values()].find((x) => x.cfg.name === m[1]) : undefined;
+    if (entry && req.method === 'GET' && path === `/agents/${entry.cfg.name}/export`) {
+      // Real pilot data: only with the export token, and never at all when no token is configured.
+      const auth = req.headers.authorization ?? '';
+      if (!cfg.exportToken || !safeEqual(auth, `Bearer ${cfg.exportToken}`)) {
+        res.writeHead(404).end();
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(exportSide(entry)));
+      return;
+    }
     if (entry && (await entry.a2a(req, res))) return;
     res.writeHead(404).end();
+  }
+
+  /** One side in the judge page's `hb-export/0.1` shape (web/README.md). @param {any} entry */
+  function exportSide(entry) {
+    const ledger = entry.core.ledger;
+    const orders = ledger.orders();
+    const events = orders.flatMap((/** @type {{order_id: string}} */ o) => ledger.events(o.order_id)).sort((/** @type {any} */ a, /** @type {any} */ b) => a.seq - b.seq);
+    return { v: 'hb-export/0.1', exportedAt: new Date(now()).toISOString(), agentId: entry.cfg.id, publicKey: publicKeyText(entry.cfg.privateKey), orders, events, chain: ledger.verifyChain() };
   }
 
   return {
@@ -154,4 +175,10 @@ export function createApp(cfg) {
       store.close();
     },
   };
+}
+
+/** Constant-time comparison of two strings of any length. @param {string} a @param {string} b */
+function safeEqual(a, b) {
+  const h = (/** @type {string} */ x) => createHash('sha256').update(x).digest();
+  return timingSafeEqual(h(a), h(b));
 }
