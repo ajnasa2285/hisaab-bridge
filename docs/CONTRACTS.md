@@ -145,7 +145,7 @@ Transport: the official A2A JavaScript SDK, `message/send` with the message abov
 
 One SQLite file per agent. Tables are append-only (triggers refuse UPDATE/DELETE on history):
 
-- `events(seq INTEGER PRIMARY KEY, order_id, type, msg_id, body_json, at, prev_hash, hash)` — every message sent or received and every local decision; `hash = sha256(prev_hash + canonical(row))`.
+- `events(seq INTEGER PRIMARY KEY, order_id, direction 'in'|'out'|'local', type, msg_id UNIQUE, body_json, at, prev_hash, hash)` — every message sent or received (the whole signed message) and every local decision or evidence (`EVIDENCE`, `NOTE`); `hash = sha256(prev_hash + canonical(row))`. API: `src/ledger/store.js` (`openLedger`, `ensureOrder`, `append`, `view`, `fits`, `events`, `verifyChain`).
 - `orders(order_id, kind, counterparty, site, created_at)` — identity only; the state is derived from events.
 
 Order states (derived): `requested → booked | declined → working (jcb) | delivered (material) → billed → accepted | disputed → billed (rev n+1) → payment_claimed → settled`. A message that does not fit the current state is refused with `WRONG_STATE`.
