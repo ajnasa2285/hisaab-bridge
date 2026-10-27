@@ -66,6 +66,12 @@ export const TEXTS = {
     results_hint: 'सिर्फ़ कुल आँकड़े; असली फ़ोटो या उनके नाम कभी नहीं।',
     no_export: 'निर्यात नहीं मिला। web/sample/export.json बनाएँ: node web/sample/make-sample.js',
     exported_at: 'निर्यात',
+    result: {
+      planned: 'जाँचे / तय', labeled: 'उत्तर-कुंजी वाले', unlabeled: 'बिना कुंजी', confident: 'पक्के पढ़े', unclear: 'अस्पष्ट',
+      not_meter: 'मीटर नहीं', failures: 'विफल', exact: 'अंक ज्यों के त्यों सही', value: 'मान सही', classification: 'वर्ग सही',
+      dash_clock: 'घड़ी सही', wrong_confident: 'पक्के पर ग़लत', assessed: 'जाँचे', unassessed: 'बिना जाँच', latency: 'समय',
+      tokens: 'टोकन', in: 'अंदर', out: 'बाहर', cost: 'लागत', split: 'बँटवारा जमा', prompts_changed: 'संकेत बदले', rescored: 'दोबारा अंक',
+    },
     states: {
       none: '—', requested: 'पूछा है', offered: 'दूसरा दिन सुझाया', declined: 'मना', booked: 'तय', working: 'काम चालू',
       delivered: 'पहुँचा', billed: 'बिल आया', disputed: 'आपत्ति', accepted: 'मंज़ूर', payment_claimed: 'भुगतान बताया', settled: 'हिसाब पूरा',
@@ -139,6 +145,12 @@ export const TEXTS = {
     results_hint: 'Aggregate numbers only; never real images or their names.',
     no_export: 'No export found. Make web/sample/export.json with: node web/sample/make-sample.js',
     exported_at: 'Exported',
+    result: {
+      planned: 'Evaluated / planned', labeled: 'With answer key', unlabeled: 'without', confident: 'Read confidently', unclear: 'Unclear',
+      not_meter: 'Not a meter', failures: 'Failures', exact: 'Exact digits correct', value: 'Value correct', classification: 'Classification correct',
+      dash_clock: 'Dash clock correct', wrong_confident: 'Wrong but confident', assessed: 'assessed', unassessed: 'unassessed', latency: 'Latency',
+      tokens: 'Tokens', in: 'in', out: 'out', cost: 'Cost', split: 'Split frozen', prompts_changed: 'prompts changed since held-out', rescored: 'rescored',
+    },
     states: {
       none: '—', requested: 'requested', offered: 'another day offered', declined: 'declined', booked: 'booked', working: 'working',
       delivered: 'delivered', billed: 'billed', disputed: 'disputed', accepted: 'accepted', payment_claimed: 'payment claimed', settled: 'settled',

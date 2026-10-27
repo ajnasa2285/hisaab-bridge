@@ -363,6 +363,48 @@ async function render(x) {
 
 // --- Results panel: eval/results/*.json when the server lists them, else "—" -----------------
 
+/** @param {unknown} r a {numerator, denominator, basisPoints} ratio */
+function ratio(r) {
+  const x = /** @type {any} */ (r);
+  if (!x || !Number.isSafeInteger(x.numerator) || !Number.isSafeInteger(x.denominator)) return '—';
+  const pct = Number.isSafeInteger(x.basisPoints) ? ` (${Math.trunc(x.basisPoints / 100)}.${String(x.basisPoints % 100).padStart(2, '0')}%)` : '';
+  return `${x.numerator} / ${x.denominator}${pct}`;
+}
+/** @param {unknown} v */
+const count = (v) => (Number.isSafeInteger(v) ? String(v) : '—');
+
+/**
+ * The rows of one results file, in the shape Astra's eval writes (aggregate numbers only).
+ * Fields the page does not know are listed after, as they are.
+ * @param {Record<string, any>} d
+ * @param {Texts} t
+ * @returns {[string, string][]}
+ */
+function resultRows(d, t) {
+  const r = t.result;
+  /** @type {[string, string][]} */
+  const rows = [
+    [r.planned, `${count(d.evaluated)} / ${count(d.planned)}`],
+    [r.labeled, `${count(d.labeled)} (${r.unlabeled} ${count(d.unlabeled)})`],
+    [r.confident, count(d.confident)],
+    [r.unclear, ratio(d.unclearRate)],
+    [r.not_meter, count(d.notMeter)],
+    [r.failures, ratio(d.failureRate)],
+    [r.exact, ratio(d.exactAccuracy)],
+    [r.value, ratio(d.valueAccuracy)],
+    [r.classification, ratio(d.classificationAccuracy)],
+    [r.dash_clock, ratio(d.dashClockAccuracy)],
+    [r.wrong_confident, d.wrongButConfidentCount === null || d.wrongButConfidentCount === undefined ? `— (${r.assessed} ${count(d.assessedConfident)}, ${r.unassessed} ${count(d.unassessedConfident)})` : count(d.wrongButConfidentCount)],
+    [r.latency, d.latencyMs ? `p50 ${count(d.latencyMs.p50)} ms · p95 ${count(d.latencyMs.p95)} ms · n ${count(d.latencyMs.count)}` : '—'],
+    [r.tokens, d.cost ? `${count(d.cost.inputTokens)} ${r.in} · ${count(d.cost.outputTokens)} ${r.out}` : '—'],
+    [r.cost, d.cost && Number.isSafeInteger(d.cost.knownCostNanoUsd) ? `$${(d.cost.knownCostNanoUsd / 1e9).toFixed(4)}${d.cost.costIsComplete ? '' : ' +?'} (${d.cost.pricingDate ?? '—'})` : '—'],
+    [r.split, `${d.splitFrozen ? t.yes : t.no} · ${r.prompts_changed} ${d.promptsChangedSinceHeldout ? t.yes : t.no} · ${r.rescored} ${d.rescored ? t.yes : t.no}`],
+  ];
+  const known = new Set(['reader', 'dateIST', 'partition', 'model', 'status', 'splitFrozen', 'promptsChangedSinceHeldout', 'rescored', 'planned', 'notRun', 'evaluated', 'labeled', 'unlabeled', 'failures', 'confident', 'unclear', 'notMeter', 'exactAccuracy', 'valueAccuracy', 'classificationAccuracy', 'dashClockAccuracy', 'wrongButConfidentCount', 'assessedConfident', 'unassessedConfident', 'unclearRate', 'failureRate', 'latencyMs', 'cost']);
+  for (const [k, v] of Object.entries(d)) if (!known.has(k)) rows.push([k, typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v)]);
+  return rows;
+}
+
 async function renderResults() {
   const t = T();
   const host = /** @type {HTMLElement} */ (document.getElementById('results-body'));
@@ -373,11 +415,11 @@ async function renderResults() {
     for (const name of list.filter((n) => typeof n === 'string' && n.endsWith('.json'))) {
       const data = await fetch(`../eval/results/${name}`).then((r) => (r.ok ? r.json() : null));
       if (!data || typeof data !== 'object') continue;
-      host.append(el('h3', undefined, name));
+      host.append(el('h3', undefined, `${data.reader ?? name} · ${data.dateIST ?? '—'} · ${data.partition ?? '—'} · ${data.model ?? '—'} · ${data.status ?? '—'}`));
       const table = el('table');
-      for (const [k, v] of Object.entries(data)) {
+      for (const [label, value] of resultRows(data, t)) {
         const tr = el('tr');
-        tr.append(el('th', undefined, k), el('td', undefined, typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v)));
+        tr.append(el('th', undefined, label), el('td', undefined, value));
         table.append(tr);
       }
       host.append(table);

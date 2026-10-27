@@ -86,12 +86,20 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'site.bill_received': ['site', 'hours', 'rate', 'total', 'photos'], 'site.correction_received': ['site', 'hours', 'rate', 'total', 'photos'],
     'site.bill_accepted': ['site'], 'site.bill_disputed': ['site'], 'site.reason_needed': [], 'site.figure_needed': [],
     'site.payment_claimed': ['amount'], 'site.settled': ['site', 'amount'],
+    'step.reply_booking_yes': ['site', 'day', 'time', 'rate'], 'step.reply_booking_no': ['site', 'day', 'time', 'rate'],
+    'step.reply_booking_other_time': ['site', 'day', 'time', 'rate'], 'step.record_meter_start': ['reading'], 'step.record_meter_end': ['reading'],
+    'step.send_bill': ['site', 'hours', 'rate', 'total'], 'step.send_correction': ['site', 'hours', 'total'], 'step.confirm_payment': ['site', 'amount'],
+    'step.request_jcb': ['site', 'day', 'time', 'hours'], 'step.accept_bill': ['site', 'total'], 'step.dispute_bill': ['site', 'their', 'reason'],
+    'step.claim_payment': ['site', 'amount', 'utr'], 'step.cancelled': [],
+    'orchestrator.try_again': [], 'orchestrator.which_job': [], 'orchestrator.no_job_for_photo': [],
   };
   for (const [key, params] of Object.entries(AGENT_KEYS)) {
     assert.ok(hi[key], `missing ${key}`);
     // The text may leave a listed parameter out (e.g. a rate on a "no"), but never needs one not listed.
     for (const p of paramsOf(key)) assert.ok(params.includes(p), `${key} uses {${p}}, which the agents do not pass`);
   }
+  // A read-back ends with the two answers it accepts.
+  for (const key of Object.keys(AGENT_KEYS)) if (key.startsWith('step.') && key !== 'step.cancelled') assert.ok(hi[key].endsWith('हाँ / नहीं'), `${key} must end with हाँ / नहीं`);
   // Goes to the JCB owner: the contractor *says* they paid; the owner checks. Never "the money arrived".
   const claimed = t('jcb.payment_claimed', SAMPLE);
   assert.match(claimed, /कहना है/);
