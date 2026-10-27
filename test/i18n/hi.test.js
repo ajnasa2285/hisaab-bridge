@@ -21,7 +21,7 @@ const SAMPLE = {
   explanation: 'बिल 6.1 घंटे का है।', figures: '3671.6, 3677.7, ₹1,200', utr: '123456789012', status: 'सफल',
   seen: '₹7,000', state: 'बिल आया', role: 'ठेकेदार', question: 'बिल ₹7,320 ठीक है?', id: 3, neededOn: '30 अक्टूबर 2026',
   by: 'मोहन', estimate: '₹12,000', materials: 'सीमेंट 50 बोरी', billed: '₹7,320', paid: '—', pending: '₹7,320',
-  disputes: 0, name: 'सीमेंट',
+  disputes: 0, name: 'सीमेंट', their: '5.5 घंटे', photos: 2,
 };
 
 test('every key has a non-empty Hindi text and fills with its parameters', () => {
@@ -68,4 +68,33 @@ test('t is strict: unknown key and missing parameter throw', () => {
   assert.throws(() => t('booking.booked', { site: 'शिवपुरी', day: '29 अक्टूबर' }), /needs \{what\}/);
   assert.equal(t('request.done', { id: 7 }), 'माँग #7 पूरी हुई।');
   assert.deepEqual(paramsOf('request.decide_prompt'), ['by', 'id', 'what', 'site', 'neededOn', 'estimate']);
+});
+
+test('every key the agents use (docs/text-keys.md on main) exists, with its parameters', () => {
+  /** @type {Record<string, string[]>} */
+  const AGENT_KEYS = {
+    'common.unknown_step': [], 'common.not_allowed': [], 'common.bad_args': [], 'common.no_such_order': [], 'common.wrong_state': [],
+    'common.pending': [], 'common.refused': [], 'wa.unknown_sender': [],
+    'jcb.booking_request': ['site', 'day', 'time', 'hours'], 'jcb.rate_needed': [], 'jcb.day_needed': [],
+    'jcb.reply_sent_yes': [], 'jcb.reply_sent_no': [], 'jcb.reply_sent_other_time': [],
+    'jcb.job_booked': ['site', 'day', 'time'], 'jcb.meter_start_saved': ['reading'], 'jcb.meter_end_saved': ['reading', 'hours'],
+    'jcb.start_first': [], 'jcb.end_not_after_start': ['start'], 'jcb.meter_done': ['hours'], 'jcb.readings_missing': [],
+    'jcb.bill_sent': ['hours', 'rate', 'total'], 'jcb.bill_accepted': ['site'], 'jcb.bill_disputed': ['site', 'their', 'reason'],
+    'jcb.correction_sent': ['hours', 'total'], 'jcb.payment_claimed': ['site', 'amount', 'utr', 'day'], 'jcb.settled_sent': ['amount'],
+    'site.jcb_requested': ['site', 'day', 'time'], 'site.booking_yes': ['site', 'day', 'time', 'rate'],
+    'site.booking_no': ['site', 'day', 'time', 'rate'], 'site.booking_other_time': ['site', 'day', 'time', 'rate'],
+    'site.bill_received': ['site', 'hours', 'rate', 'total', 'photos'], 'site.correction_received': ['site', 'hours', 'rate', 'total', 'photos'],
+    'site.bill_accepted': ['site'], 'site.bill_disputed': ['site'], 'site.reason_needed': [], 'site.figure_needed': [],
+    'site.payment_claimed': ['amount'], 'site.settled': ['site', 'amount'],
+  };
+  for (const [key, params] of Object.entries(AGENT_KEYS)) {
+    assert.ok(hi[key], `missing ${key}`);
+    // The text may leave a listed parameter out (e.g. a rate on a "no"), but never needs one not listed.
+    for (const p of paramsOf(key)) assert.ok(params.includes(p), `${key} uses {${p}}, which the agents do not pass`);
+  }
+  // Goes to the JCB owner: the contractor *says* they paid; the owner checks. Never "the money arrived".
+  const claimed = t('jcb.payment_claimed', SAMPLE);
+  assert.match(claimed, /कहना है/);
+  assert.match(claimed, /खाता/);
+  assert.doesNotMatch(claimed, /आ गया|मिल गया|मिला/);
 });

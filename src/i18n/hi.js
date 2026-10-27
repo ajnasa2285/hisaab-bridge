@@ -6,6 +6,61 @@
 
 /** @type {Readonly<Record<string, string>>} */
 export const hi = Object.freeze({
+  // =========================================================================================
+  // Keys the agents use (docs/text-keys.md on main). Parameters arrive formatted: ₹7,320, 6.1, 50;
+  // a missing value arrives as "—". These come first; the keys further down are Fable's own.
+  // =========================================================================================
+
+  // --- Common, both agents ---------------------------------------------------------------------
+  'common.unknown_step': 'समझ नहीं आया कि क्या करना है। "मदद" लिखें।',
+  'common.not_allowed': 'यह कदम आपकी भूमिका में नहीं है।',
+  'common.bad_args': 'कोई बात छूट गई या समझ नहीं आई। कृपया फिर से, साफ़ लिखें।',
+  'common.no_such_order': 'ऐसा कोई काम दर्ज नहीं है।',
+  'common.wrong_state': 'यह कदम अभी नहीं हो सकता, काम उस जगह पर नहीं है।',
+  'common.pending': 'हमारी ओर दर्ज हो गया। दूसरी ओर अभी पहुँच नहीं है, अपने आप फिर भेजा जाएगा।',
+  'common.refused': 'दूसरी ओर ने इसे नहीं माना।',
+  // The one reply to a number not in the list (CONTRACTS section 7); nothing is stored.
+  'wa.unknown_sender': 'नमस्ते। यह नंबर सिर्फ़ दर्ज साइट और JCB वालों के लिए है, इसलिए यहाँ कुछ दर्ज नहीं हो सका।',
+
+  // --- JCB side: owner and operator ------------------------------------------------------------
+  'jcb.booking_request': '{site} के लिए {day} को {time} बजे से JCB चाहिए, {hours} घंटे। हाँ, नहीं या दूसरा दिन लिखें।',
+  'jcb.rate_needed': 'हाँ के साथ प्रति घंटा दर भी लिखें, जैसे "हाँ 1200"।',
+  'jcb.day_needed': 'दूसरे दिन के लिए तारीख़ लिखें, जैसे "30-10"।',
+  'jcb.reply_sent_yes': 'हाँ का जवाब ठेकेदार को भेज दिया।',
+  'jcb.reply_sent_no': 'नहीं का जवाब ठेकेदार को भेज दिया।',
+  'jcb.reply_sent_other_time': 'दूसरे दिन का सुझाव ठेकेदार को भेज दिया।',
+  'jcb.job_booked': 'काम तय: {site}, {day}, {time} बजे से। शुरू और अंत में मीटर की फ़ोटो भेजें।',
+  'jcb.meter_start_saved': 'शुरू का मीटर दर्ज: {reading}।',
+  'jcb.meter_end_saved': 'अंत का मीटर दर्ज: {reading}। काम: {hours} घंटे।',
+  'jcb.start_first': 'पहले शुरू के मीटर की फ़ोटो भेजें।',
+  'jcb.end_not_after_start': 'अंत का मीटर शुरू ({start}) से ज़्यादा होना चाहिए। कृपया फ़ोटो जाँचकर दोबारा भेजें।',
+  'jcb.meter_done': 'काम के घंटे आ गए: {hours} घंटे। "बिल" लिखें तो बिल भेजा जाएगा।',
+  'jcb.readings_missing': 'दोनों मीटर पढ़ाई (शुरू और अंत) के बिना बिल नहीं बन सकता।',
+  'jcb.bill_sent': 'बिल भेजा: {hours} घंटे × {rate} = {total}, मीटर की फ़ोटो के साथ।',
+  'jcb.bill_accepted': '{site} का बिल ठेकेदार ने मंज़ूर किया।',
+  'jcb.bill_disputed': '{site} के बिल पर ठेकेदार सहमत नहीं। उनका आँकड़ा: {their}। कारण: {reason}।',
+  'jcb.correction_sent': 'सुधरा बिल भेजा: {hours} घंटे, कुल {total}।',
+  'jcb.payment_claimed': 'ठेकेदार का कहना है कि {site} के लिए {amount} का भुगतान {day} को किया, UTR {utr}। कृपया अपना खाता देखें; आया हो तो "हाँ" लिखें, नहीं तो "नहीं"।',
+  'jcb.settled_sent': 'आपने {amount} मिलना पक्का किया। काम का हिसाब पूरा।',
+
+  // --- Contractor side: contractor and supervisor ------------------------------------------
+  'site.jcb_requested': 'JCB की माँग भेजी: {site}, {day}, {time} बजे से। जवाब आते ही बताया जाएगा।',
+  'site.booking_yes': 'JCB मालिक ने हाँ कहा: {site}, {day}, {time} बजे से, दर {rate} प्रति घंटा।',
+  'site.booking_no': 'JCB मालिक {site} के लिए {day} को नहीं आ सकते। चाहें तो दूसरे दिन के लिए पूछें।',
+  'site.booking_other_time': 'JCB मालिक {site} के लिए {day} को {time} बजे आ सकते हैं, दर {rate}। ठीक हो तो "हाँ" लिखें।',
+  'site.bill_received': '{site} का बिल आया: {hours} घंटे × {rate} = {total}, मीटर की {photos} फ़ोटो के साथ। ठीक हो तो "हाँ" लिखें, नहीं तो अपना आँकड़ा और कारण लिखें।',
+  'site.correction_received': '{site} का सुधरा बिल आया: {hours} घंटे × {rate} = {total}, मीटर की {photos} फ़ोटो के साथ। ठीक हो तो "हाँ" लिखें।',
+  'site.bill_accepted': '{site} का बिल मंज़ूर किया, JCB मालिक को बता दिया।',
+  'site.bill_disputed': '{site} के बिल पर आपकी आपत्ति JCB मालिक को भेज दी।',
+  'site.reason_needed': 'आपत्ति के साथ कारण भी लिखें।',
+  'site.figure_needed': 'आपत्ति के साथ अपना आँकड़ा लिखें: घंटे या रक़म।',
+  'site.payment_claimed': '{amount} के भुगतान की जानकारी JCB मालिक को भेजी। उनकी पुष्टि आते ही बताया जाएगा।',
+  'site.settled': 'JCB मालिक ने {amount} मिलना पक्का किया। {site} का यह हिसाब पूरा।',
+
+  // =========================================================================================
+  // Fable's own keys: request list, site account and the flows not yet wired by the agents.
+  // =========================================================================================
+
   // --- Booking: questions and answers ---------------------------------------------------------
   'booking.ask_jcb': '{site} पर {day} को JCB चाहिए, {hours}। आ सकेंगे? हाँ / नहीं / दूसरा दिन',
   'booking.ask_jcb_time': '{site} पर {day} को {time} बजे से JCB चाहिए, {hours}। आ सकेंगे? हाँ / नहीं / दूसरा दिन',
@@ -83,8 +138,6 @@ export const hi = Object.freeze({
   'refuse.not_understood': 'समझ नहीं आया। "मदद" लिखें।',
   'refuse.nothing_open': 'अभी कोई सवाल खुला नहीं है।',
   'refuse.no_match': 'यह जवाब खुले सवाल से मेल नहीं खाता। खुला सवाल: {question}',
-  // The one reply to a number not in the list (CONTRACTS section 7); nothing is stored.
-  'wa.unknown_sender': 'नमस्ते। यह नंबर सिर्फ़ दर्ज साइट और JCB वालों के लिए है, इसलिए यहाँ कुछ दर्ज नहीं हो सका।',
 
   // --- Roles -----------------------------------------------------------------------------------
   'role.jcb_owner': 'JCB मालिक',

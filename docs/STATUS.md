@@ -18,8 +18,8 @@ Each builder adds a dated entry (IST) at the end of every work session: **done, 
 
 ## Fable
 
-- 2026-10-27 — Done (branch `fable/hindi-requests`, 56 tests pass, typecheck clean):
-  - `src/i18n/hi.js`: 118 keys with `{parameters}` covering booking, meter readings/retakes, bill with evidence, accept/dispute, explanation wrapper, payment received/confirm, settled, refusals (the 7 REFUSE codes + our own), help per role, request list, site account, order-state names, and `wa.unknown_sender` as Claude asked. Tests: every key fills, no placeholder left, no Latin beyond JCB/UPI/UTR/OK, no chasing language.
+- 2026-10-27 — Done (branch `fable/hindi-requests`, 57 tests pass, typecheck clean):
+  - `src/i18n/hi.js`: all 40 keys from `docs/text-keys.md` (main 32d0893) written first, with a test that each exists and uses only the parameters the agents pass; `jcb.payment_claimed` says the contractor *says* they paid and asks the owner to check the account (test guards against "money arrived" wording). Then 113 keys of my own with `{parameters}` covering booking, meter readings/retakes, bill with evidence, accept/dispute, explanation wrapper, payment received/confirm, settled, refusals (the 7 REFUSE codes + our own), help per role, request list, site account, order-state names, and `wa.unknown_sender` as Claude asked. Tests: every key fills, no placeholder left, no Latin beyond JCB/UPI/UTR/OK, no chasing language.
   - `src/i18n/index.js`: a minimal strict `t(key, params)` (unknown key or missing parameter throws) plus `keys()` and `paramsOf()`. The mechanism is Claude's per CONTRACTS: replace freely, keep hi.js.
   - `src/i18n/format.js`: `rupees(paise)` with Indian grouping, `hours(tenths)`, `qty(hundredths, unit)`, `day(YYYY-MM-DD)` in Hindi, `orNone` for `—`. Integers only.
   - `src/contractor/requests.js`: `addRequest` / `listRequests` / `decideRequest` on one append-only table `request_events` (triggers refuse UPDATE/DELETE), status replayed from events. Also `advanceRequest` (approved → sent with orderId → done), `requestHistory`, `approvalLimitPaise(env)`, `RequestError` with codes BAD_INPUT / NOT_FOUND / OWN_REQUEST / WRONG_STATE.
