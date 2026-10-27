@@ -1,0 +1,20 @@
+# Public front door. HB_DOMAIN (and optionally HB_PORT) come from /etc/caddy/hisaab.env,
+# written by setup.sh. Caddy gets the HTTPS certificate by itself.
+{$HB_DOMAIN} {
+	encode zstd gzip
+
+	# Webhooks and agent messages are small; refuse anything bigger than 1 MB.
+	request_body {
+		max_size 1MB
+	}
+
+	@app path /wa/* /agents/* /health
+	handle @app {
+		reverse_proxy 127.0.0.1:{$HB_PORT:8080}
+	}
+
+	# Everything else: not found. No file server, so no directory listing.
+	handle {
+		respond "Not found" 404
+	}
+}
