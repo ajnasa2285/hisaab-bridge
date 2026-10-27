@@ -60,8 +60,13 @@ test('a JCB job by conversation: every committing step is read back and runs onl
 
     // Start photo is clear: read back, yes. End photo is not clear: the operator types it.
     nextRead = { ok: true, kind: 'hour_meter', raw: '1234.5', valueTenths: 12345, clear: true };
+    nextRead = { ok: true, kind: 'hour_meter', raw: '1284.5', valueTenths: 12845, clear: true };
     await jcbTalk.onImage(operator, { mime: 'image/jpeg', bytes: new Uint8Array([1, 2, 3]) });
     assert.deepEqual(said.at(-1)?.slice(0, 2), ['operator', 'step.record_meter_start']);
+    // The model misread a digit; the operator types the right reading and is asked again.
+    await jcbTalk.onText(operator, '1234.5');
+    assert.equal(last(), 'step.record_meter_start');
+    assert.ok(said.at(-1)?.[2].includes('1234.5'));
     await jcbTalk.onText(operator, 'हाँ');
     assert.equal(last(), 'jcb.meter_start_saved');
     nextRead = { ok: true, kind: 'hour_meter', raw: '124?.6', valueTenths: null, clear: false };

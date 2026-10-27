@@ -85,6 +85,12 @@ export function createConversation(o) {
         pending.delete(keyOf(person));
         return o.reply(person, 'step.cancelled');
       }
+      // A meter read-back can be answered with the right digits: read back again with them.
+      const digits = /^(\d{1,7})(?:\.(\d))?$/.exec(said);
+      if (p.tool === 'record_meter' && digits) {
+        pending.delete(keyOf(person));
+        return propose(person, 'record_meter', { ...p.args, valueTenths: Number(digits[1]) * 10 + Number(digits[2] ?? '0') });
+      }
       // Anything else: the question lapses and the message is read as a new one.
       pending.delete(keyOf(person));
     }
