@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePaise, parseTenths, parseTime, resolveDay } from '../../src/orchestrator/units.js';
+import { parseHundredths, parseHundredthsList, parsePaise, parseTenths, parseTime, resolveDay } from '../../src/orchestrator/units.js';
 import { pickOrder, proposeStep } from '../../src/orchestrator/orchestrator.js';
 
 const NOW = Date.parse('2026-10-28T20:00:00Z'); // 29 Oct 01:30 IST
@@ -50,7 +50,7 @@ test('the model sees only the steps the role allows, and code converts its copy 
   const p = await proposeStep({ spark: f.spark, person: person('supervisor'), text: 'kal subah 8 baje Shivpuri JCB 6 ghante', orders: [], nowMs: NOW });
   assert.deepEqual(p, { kind: 'step', tool: 'request_jcb', args: { site: 'Shivpuri', day: '2026-10-30', time: '08:00', hoursTenths: 60 } });
   const offered = f.seen[0].tools.map((/** @type {any} */ t) => t.function.name).sort();
-  assert.deepEqual(offered, ['help', 'request_jcb']);
+  assert.deepEqual(offered, ['confirm_count', 'help', 'request_jcb', 'request_material']);
   assert.ok(f.seen[0].system.includes('Today (India) is 2026-10-29'));
 });
 
@@ -83,4 +83,55 @@ test('a dispute needs exactly one figure; a model failure asks to try again', as
     { kind: 'step', tool: 'dispute_bill', args: { orderId: 'o1', hoursTenths: 55, reason: 'lunch' } });
   const down = async () => /** @type {const} */ ({ ok: false, transient: true, reason: 'http_503' });
   assert.deepEqual(await proposeStep({ spark: down, person: person('contractor'), text: 'x', orders, nowMs: NOW }), { kind: 'none', key: 'orchestrator.try_again' });
+});
+
+test('quantities as written become hundredths in code', () => {
+  assert.equal(parseHundredths('50'), 5000);
+  assert.equal(parseHundredths('2.5'), 250);
+  assert.equal(parseHundredths('1.25'), 125);
+  assert.equal(parseHundredths(' 0 '), 0, 'whether 0 is allowed is for the caller');
+  assert.equal(parseHundredths('1.255'), null);
+  assert.equal(parseHundredths('50 bori'), null);
+  assert.equal(parseHundredths(50), null);
+  assert.deepEqual(parseHundredthsList('50, 2.5'), [5000, 250]);
+  assert.deepEqual(parseHundredthsList('48'), [4800]);
+  assert.deepEqual(parseHundredthsList('48 0 2'), [4800, 0, 200]);
+  assert.equal(parseHundredthsList('48, do'), null);
+  assert.equal(parseHundredthsList(''), null);
+  assert.equal(parseHundredthsList(Array.from({ length: 21 }, () => '1').join(',')), null);
+});
+
+test('material steps: the model copies items and figures, code converts them', async () => {
+  let f = fakeSpark([{ name: 'request_material', args: { site: 'Shivpuri', day: 'tomorrow', time: null, items: [{ name: 'सीमेंट', quantity: '50', unit: 'बोरी' }, { name: 'रेत', quantity: '2.5', unit: 'ट्रॉली' }] } }]);
+  let p = await proposeStep({ spark: f.spark, person: person('supervisor'), text: 'kal Shivpuri cement 50 bori, ret 2.5 trolley', orders: [], nowMs: NOW });
+  assert.deepEqual(p, { kind: 'step', tool: 'request_material', args: { site: 'Shivpuri', day: '2026-10-30', items: [{ name: 'सीमेंट', qtyHundredths: 5000, unit: 'बोरी' }, { name: 'रेत', qtyHundredths: 250, unit: 'ट्रॉली' }] } });
+  f = fakeSpark([{ name: 'request_material', args: { site: 'S', day: 'tomorrow', time: null, items: [{ name: 'सीमेंट', quantity: '0', unit: 'बोरी' }] } }]);
+  assert.deepEqual(await proposeStep({ spark: f.spark, person: person('contractor'), text: 'x', orders: [], nowMs: NOW }), { kind: 'none', key: 'common.bad_args' });
+
+  // The supplier sees only the supplier's steps; the job list shows the items, so rates follow their order.
+  const orders = [{ ref: '#1', orderId: 'o1', site: 'Shivpuri', day: '2026-10-30', state: 'requested', what: 'सीमेंट 50 बोरी, रेत 2.5 ट्रॉली' }];
+  f = fakeSpark([{ name: 'reply_order', args: { order: null, answer: 'yes', rates_rupees: ['350', '4,000'], day: null, time: null } }]);
+  p = await proposeStep({ spark: f.spark, person: person('supplier'), text: 'haan 350 aur 4000', orders, nowMs: NOW });
+  assert.deepEqual(p, { kind: 'step', tool: 'reply_order', args: { orderId: 'o1', answer: 'yes', ratesPaise: [35000, 400000] } });
+  assert.deepEqual(f.seen[0].tools.map((/** @type {any} */ t) => t.function.name).sort(), ['confirm_payment', 'help', 'reply_order', 'send_bill', 'send_correction']);
+  assert.ok(f.seen[0].system.includes('items: सीमेंट 50 बोरी, रेत 2.5 ट्रॉली'));
+  f = fakeSpark([{ name: 'reply_order', args: { order: null, answer: 'yes', rates_rupees: ['350', 'saadhe chaar'], day: null, time: null } }]);
+  assert.deepEqual(await proposeStep({ spark: f.spark, person: person('supplier'), text: 'x', orders, nowMs: NOW }), { kind: 'none', key: 'common.bad_args' });
+
+  // The supplier's correction and the site's count are lists of quantities; a count may be 0.
+  const billed = [{ ref: '#1', orderId: 'o1', site: 'S', day: '—', state: 'disputed' }];
+  f = fakeSpark([{ name: 'send_correction', args: { order: null, quantities: ['48'] } }]);
+  assert.deepEqual(await proposeStep({ spark: f.spark, person: person('supplier'), text: '48 bori ka bhejo', orders: billed, nowMs: NOW }),
+    { kind: 'step', tool: 'send_correction', args: { orderId: 'o1', qtysHundredths: [4800] } });
+  const delivered = [{ ref: '#1', orderId: 'o1', site: 'S', day: '—', state: 'delivered' }];
+  f = fakeSpark([{ name: 'confirm_count', args: { order: null, quantities: ['48', '0'] } }]);
+  assert.deepEqual(await proposeStep({ spark: f.spark, person: person('supervisor'), text: '48 bori aayi, ret nahi aayi', orders: delivered, nowMs: NOW }),
+    { kind: 'step', tool: 'confirm_count', args: { orderId: 'o1', qtysHundredths: [4800, 0] } });
+
+  // A dispute may carry a quantity, still exactly one figure.
+  f = fakeSpark([{ name: 'dispute_bill', args: { order: '#1', their_hours: null, their_quantity: '48', their_total_rupees: null, reason: 'site par 48' } }]);
+  assert.deepEqual(await proposeStep({ spark: f.spark, person: person('contractor'), text: '48 hi aayi', orders: [{ ...billed[0], state: 'billed' }], nowMs: NOW }),
+    { kind: 'step', tool: 'dispute_bill', args: { orderId: 'o1', qtyHundredths: 4800, reason: 'site par 48' } });
+  f = fakeSpark([{ name: 'dispute_bill', args: { order: '#1', their_hours: null, their_quantity: '48', their_total_rupees: '16800', reason: 'x' } }]);
+  assert.deepEqual(await proposeStep({ spark: f.spark, person: person('contractor'), text: 'x', orders: [{ ...billed[0], state: 'billed' }], nowMs: NOW }), { kind: 'none', key: 'common.bad_args' });
 });

@@ -1,11 +1,13 @@
 // One person's conversation with their agent. A text becomes one proposed step (Muse Spark, via the
 // orchestrator); a step that commits anything is read back and runs only after the person says yes.
-// A meter photo is read by Muse Spark; the reading is confirmed by the person, or typed by them when
-// the photo is not clear. People decide; the model only proposes.
+// A meter photo (or a supplier's challan photo) is read by Muse Spark; the reading is confirmed by the
+// person, or typed by them when the photo is not clear. People decide; the model only proposes.
 
 import { createHash } from 'node:crypto';
 import { proposeStep, orderRefs, pickOrder } from '../orchestrator/orchestrator.js';
+import { parseHundredthsList } from '../orchestrator/units.js';
 import { meterReadings } from './jcb.js';
+import { challanQuantities, requestedItems } from './material.js';
 import { runTool } from './common.js';
 import { day as dayName, rupees } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
@@ -15,8 +17,13 @@ import { t } from '../i18n/index.js';
 /** @typedef {(person: Person, key: string, params?: Record<string, string | number>) => Promise<void> | void} Reply */
 /**
  * @typedef {{kind: 'confirm', tool: string, args: Record<string, any>, at: number} |
- *   {kind: 'meter_digits', orderId: string, which: 'start' | 'end', sha256: string, takenAt: string | null, at: number}} Pending
+ *   {kind: 'meter_digits', orderId: string, which: 'start' | 'end', sha256: string, takenAt: string | null, at: number} |
+ *   {kind: 'challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number}} Pending
  */
+/** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) => Promise<
+ *   {ok: true, kind: 'challan', challanNo: string | null, date: string | null,
+ *     items: {name: string, qtyHundredths: number | null, unit: string | null, raw: string}[], clear: boolean} |
+ *   {ok: true, kind: 'not_challan'} | {ok: false, transient: boolean, reason: string}>} ChallanReader */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) => Promise<
  *   {ok: true, kind: 'hour_meter', raw: string, valueTenths: number | null, clear: boolean} | {ok: true, kind: 'not_meter'} |
  *   {ok: false, transient: boolean, reason: string}>} MeterReader */
@@ -40,6 +47,7 @@ const norm = (text) => text.trim().toLowerCase().replace(/[।.!]+$/u, '').repla
  *   spark: import('../orchestrator/orchestrator.js').Spark,
  *   readMeter?: MeterReader,
  *   readUpi?: UpiReader,
+ *   readChallan?: ChallanReader,
  *   reply: Reply,
  *   now: () => number,
  * }} o
@@ -102,7 +110,29 @@ export function createConversation(o) {
         pending.delete(keyOf(person));
         return propose(person, 'record_meter', { ...p.args, valueTenths: Number(digits[1]) * 10 + Number(digits[2] ?? '0') });
       }
+      // A challan read-back or a delivery count can be answered with the right quantities, in order.
+      const figures = parseHundredthsList(said);
+      if (figures && p.tool === 'record_delivery') {
+        pending.delete(keyOf(person));
+        return proposeDelivery(person, { orderId: p.args.orderId, sha256: p.args.sha256, challanNo: p.args.challanNo ?? null }, figures);
+      }
+      if (figures && p.tool === 'confirm_count') {
+        pending.delete(keyOf(person));
+        return propose(person, 'confirm_count', { ...p.args, qtysHundredths: figures });
+      }
       // Anything else: the question lapses and the message is read as a new one.
+      pending.delete(keyOf(person));
+    }
+    if (p && p.kind === 'challan_figures') {
+      const figures = parseHundredthsList(said);
+      if (figures) {
+        pending.delete(keyOf(person));
+        return proposeDelivery(person, p, figures);
+      }
+      if (NO.has(said)) {
+        pending.delete(keyOf(person));
+        return o.reply(person, 'step.cancelled');
+      }
       pending.delete(keyOf(person));
     }
     if (p && p.kind === 'meter_digits') {
@@ -133,6 +163,7 @@ export function createConversation(o) {
    */
   async function onImage(person, image) {
     if (person.role === 'contractor') return onPaymentImage(person, image);
+    if (person.role === 'supplier') return onChallanImage(person, image);
     if (person.role !== 'operator' && person.role !== 'jcb_owner') return o.reply(person, 'common.unknown_step');
     if (!o.readMeter) return o.reply(person, 'orchestrator.try_again');
     if (image.mime !== 'image/jpeg' && image.mime !== 'image/png' && image.mime !== 'image/webp') return o.reply(person, 'meter.not_meter');
@@ -150,6 +181,58 @@ export function createConversation(o) {
       return o.reply(person, 'meter.ask_person', { raw: read.raw || '—' });
     }
     return propose(person, 'record_meter', { orderId: picked.orderId, which, valueTenths: read.valueTenths, sha256, takenAt });
+  }
+
+  /**
+   * A photo from the supplier is the challan of the order that is booked and not yet delivered. The
+   * model reads it; code matches what it read to the order's items; the supplier confirms what was
+   * read, or types the quantities when the photo is not clear.
+   * @param {Person} person
+   * @param {{mime: string, bytes: Uint8Array}} image
+   */
+  async function onChallanImage(person, image) {
+    if (!o.readChallan) return o.reply(person, 'orchestrator.try_again');
+    if (image.mime !== 'image/jpeg' && image.mime !== 'image/png' && image.mime !== 'image/webp') return o.reply(person, 'challan.not_challan');
+    const picked = pickOrder(orderRefs(o.ledger), null, ['booked']);
+    if (typeof picked === 'string') return o.reply(person, picked === 'common.wrong_state' ? 'challan.no_order_for_photo' : picked);
+    const items = requestedItems(o.ledger.events(picked.orderId));
+    const sha256 = createHash('sha256').update(image.bytes).digest('hex');
+    const read = await o.readChallan({ mime: image.mime, bytes: image.bytes });
+    if (!read.ok) return o.reply(person, 'orchestrator.try_again');
+    if (read.kind === 'not_challan') return o.reply(person, 'challan.not_challan');
+    const challanNo = typeof read.challanNo === 'string' && read.challanNo.trim() ? read.challanNo.trim().slice(0, 40) : null;
+    const qtys = challanQuantities(items, read.items);
+    if (!read.clear || qtys.some((q) => q === null)) {
+      pending.set(keyOf(person), { kind: 'challan_figures', orderId: picked.orderId, sha256, challanNo, at: o.now() });
+      return askQuantities(person, picked.orderId, read.items.map((i) => i.raw).filter(Boolean).join(', '));
+    }
+    return proposeDelivery(person, { orderId: picked.orderId, sha256, challanNo }, /** @type {number[]} */ (qtys));
+  }
+
+  /**
+   * Asks the supplier to type the delivered quantities, one per ordered item, in order.
+   * @param {Person} person @param {string} orderId @param {string} raw what the reader saw, if anything
+   */
+  function askQuantities(person, orderId, raw) {
+    const items = requestedItems(o.ledger.events(orderId)).map((i) => `${i.name} (${i.unit})`).join(', ');
+    return o.reply(person, 'challan.ask_person', { raw: raw || '—', items: items || '—' });
+  }
+
+  /**
+   * Reads back a delivery: one quantity per ordered item, in order; an item at 0 was not delivered.
+   * Typed figures that do not fit the order are asked for again.
+   * @param {Person} person
+   * @param {{orderId: string, sha256: string, challanNo: string | null}} c
+   * @param {number[]} qtys
+   */
+  function proposeDelivery(person, c, qtys) {
+    const ordered = requestedItems(o.ledger.events(c.orderId));
+    if (qtys.length !== ordered.length || qtys.every((q) => q === 0)) {
+      pending.set(keyOf(person), { kind: 'challan_figures', ...c, at: o.now() });
+      return askQuantities(person, c.orderId, '');
+    }
+    const items = ordered.map((it, i) => ({ name: it.name, qtyHundredths: qtys[i], unit: it.unit })).filter((it) => it.qtyHundredths > 0);
+    return propose(person, 'record_delivery', { orderId: c.orderId, items, sha256: c.sha256, challanNo: c.challanNo });
   }
 
   /**

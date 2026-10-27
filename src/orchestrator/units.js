@@ -13,6 +13,32 @@ export function parseTenths(s) {
 }
 
 /**
+ * A quantity: "50" → 5000, "2.5" → 250, "1.25" → 125, "0" → 0. More than two decimals, or anything
+ * else, is refused (null). Whether 0 is acceptable is for the caller.
+ * @param {unknown} s
+ * @returns {number | null}
+ */
+export function parseHundredths(s) {
+  if (typeof s !== 'string' || !/^\d{1,7}(\.\d{1,2})?$/.test(s.trim())) return null;
+  const [w, f = ''] = s.trim().split('.');
+  return Number(w) * 100 + Number(f.padEnd(2, '0'));
+}
+
+/**
+ * Quantities typed in order, separated by commas or spaces: "50, 2.5" → [5000, 250]. At most 20;
+ * any figure that is not a quantity refuses the whole list (null).
+ * @param {unknown} s
+ * @returns {number[] | null}
+ */
+export function parseHundredthsList(s) {
+  if (typeof s !== 'string' || !s.trim()) return null;
+  const parts = s.trim().split(/\s*[,;]\s*|\s+/);
+  if (parts.length > 20) return null;
+  const out = parts.map(parseHundredths);
+  return out.every((q) => q !== null) ? /** @type {number[]} */ (out) : null;
+}
+
+/**
  * "7320" → 732000, "7,320.50" → 732050 (commas allowed as grouping only).
  * @param {unknown} s
  * @returns {number | null}
