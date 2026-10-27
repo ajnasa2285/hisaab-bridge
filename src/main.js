@@ -6,6 +6,10 @@
 //   keys/jcb.pem, keys/contractor.pem   Ed25519 private keys (created on first start, mode 600)
 //   people.json                         who is who: [{line: 'jcb'|'site', phone, agent: 'jcb'|'contractor', role, name}]
 //   jcb.db, contractor.db, wa.db        the ledgers and the WhatsApp store
+//
+// Approval limits for the contractor's supervisor (docs/BUILD2.md section 3), whole rupees, optional:
+// HB_LIMIT_PROCUREMENT_RUPEES (JCB and material requests), HB_LIMIT_PAYMENT_RUPEES (payment claims).
+// Unset means every such step of a supervisor waits for the contractor.
 
 import { createServer } from 'node:http';
 import { createPublicKey } from 'node:crypto';
@@ -30,6 +34,18 @@ function need(env, name) {
   const v = env[name];
   if (!v || !v.trim()) throw new Error(`config: ${name} is not set`);
   return v.trim();
+}
+
+/**
+ * An optional limit in whole rupees, as paise. Anything but digits stops the start.
+ * @param {Record<string, string | undefined>} env @param {string} name
+ * @returns {number | undefined}
+ */
+function limitPaise(env, name) {
+  const v = env[name]?.trim();
+  if (!v) return undefined;
+  if (!/^\d{1,9}$/.test(v)) throw new Error(`config: ${name} must be whole rupees, digits only`);
+  return Number(v) * 100;
 }
 
 /** The agent's private key, created once. @param {string} file */
@@ -64,6 +80,12 @@ export function loadConfig(env) {
     graphVersion: env.HB_WA_GRAPH_VERSION || undefined,
   });
   const lines = [line('JCB', 'jcb'), line('SITE', 'site')];
+  /** @type {import('./agents/office.js').Limits} */
+  const limits = {};
+  const procurementPaise = limitPaise(env, 'HB_LIMIT_PROCUREMENT_RUPEES');
+  const paymentPaise = limitPaise(env, 'HB_LIMIT_PAYMENT_RUPEES');
+  if (procurementPaise !== undefined) limits.procurementPaise = procurementPaise;
+  if (paymentPaise !== undefined) limits.paymentPaise = paymentPaise;
   const lineIds = { jcb: lines[0].phoneNumberId, site: lines[1].phoneNumberId };
   const agentIds = { jcb: jcbId, contractor: siteId };
 
@@ -96,6 +118,7 @@ export function loadConfig(env) {
         peers: [{ id: jcbId, publicKey: createPublicKey(jcbKey), mayReceiveFrom: new Set(TO_CONTRACTOR) }],
         peerUrls: { [jcbId]: `${baseUrl}/agents/jcb` },
         jcbAgentId: jcbId,
+        limits,
       },
     ],
   };
