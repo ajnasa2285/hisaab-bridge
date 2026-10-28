@@ -458,6 +458,7 @@ function byCode(raw, want, text) {
  * @param {Record<string, any>} raw @param {Record<string, any>} got @param {string[]} missing
  */
 function merge(raw, got, missing) {
+  /** @type {Record<string, any>} */
   const out = { ...raw, items: Array.isArray(raw.items) ? raw.items.map((/** @type {any} */ it) => ({ ...it })) : raw.items };
   for (const m of missing) {
     if (m === 'site' || m === 'day') {
