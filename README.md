@@ -1,36 +1,141 @@
 # Hisaab Bridge
 
-**Evidence ledger → the owner's भेजो → signed A2A bill → accept or dispute → Muse Spark explains only code-checked differences → payment confirmed → settled on both sides.**
+**One contractor, two suppliers, one bridge.** Three small WhatsApp agents (a JCB owner's, a contractor's and a sand/cement supplier's) keep their own signed ledgers and agree on hours, deliveries, bills and payments by exchanging signed messages over A2A. Muse Spark reads and explains, code checks, people decide.
 
-An evidence-backed ledger between small businesses on WhatsApp: a contractor and his suppliers (a JCB owner, a sand/cement supplier) agree on hours, deliveries and payments. Built on Meta's Muse models for the Meta Global AI Developer Hackathon (Startup track, Build for Your World).
+Built during the Meta Global AI Developer Hackathon (Startup track, *Build for Your World*), 27 October to 4 November 2026.
 
-**Status:** work in progress, built during the event (27 October to 4 November 2026).
+- **Live judge page:** https://16-4-100-70.sslip.io/judge/ (three ledgers side by side, every message with its signature check)
+- **Agent Cards:** `https://16-4-100-70.sslip.io/agents/{jcb,site,supplier}/.well-known/agent-card.json`
+- **Demo video:** *(link added at submission)*
 
 ## The problem
 
-A contractor hires a JCB and buys sand and cement. Each supplier keeps his own count of hours and bags; the contractor's supervisor keeps another. At month end the counts and the payments do not match, and the argument costs everyone time, money and trust.
+On an Indian building site a contractor hires a JCB by the hour and buys sand and cement by the bag or the trip. The JCB owner counts hours, the supplier counts bags, and the contractor's supervisor keeps a third count in a notebook. Payments go by UPI, and the proof is a screenshot forwarded on WhatsApp. At month end the counts and the payments do not match, and the argument costs everyone time, money and trust.
 
-## How it works
+All of these people already live on WhatsApp. None of them will install an app or learn a form. So each business gets an agent on WhatsApp that speaks Hindi, takes photos and voice notes, and keeps a ledger that the other side can check.
 
-1. **Booking.** The supervisor asks his contractor's agent for a JCB or material. The contractor approves; his agent asks the supplier's agent; the supplier says yes, no, or another time.
-2. **Evidence.** The JCB operator sends hour-meter photos; the supplier's delivery comes with a challan photo and the supervisor's confirmation of what arrived. Muse Spark reads the printed digits; code checks continuity, limits and quantities.
-3. **Signed bill.** After the supplier's owner says भेजो, his agent sends a bill signed with Ed25519, with its evidence, over A2A. The contractor's agent returns a signed receipt.
-4. **Accept or dispute.** The contractor accepts, or disputes with his own figure. Muse Spark explains every difference to both sides in plain Hindi; code checks every figure it cites. The supplier keeps his bill or sends a correction. Nothing is rewritten.
-5. **Payment and settlement.** The contractor sends his UPI screenshot; Muse Spark reads it and code matches it with the bill. The ledger is settled on both sides only when the supplier confirms the money arrived.
+## What a job looks like
 
-Nothing is booked, sent, accepted, corrected or settled without the explicit WhatsApp reply of the person allowed to decide it.
+```
+Supervisor (WhatsApp)   "कल सुबह 8 बजे शिवपुरी साइट पर JCB चाहिए, 6 घंटे"   (text or voice note)
+Contractor agent        reads it back -> हाँ -> over the approval limit? held as J-1 for the contractor's "ok J-1"
+                        -> signed BOOKING_REQUEST over A2A
+JCB agent               asks the JCB owner: हाँ / नहीं / दूसरा समय -> signed BOOKING_REPLY with the rate
+JCB operator            start and end hour-meter photos -> Muse Spark reads the digits -> code checks continuity -> hours
+JCB owner               "भेजो" -> signed BILL, the meter photos' fingerprints as evidence
+Contractor              sees the bill beside the supervisor's own count -> accept, or dispute with their figure
+                        -> Muse Spark explains the difference from the evidence; code checks every number it cites
+JCB owner               keeps the bill or sends a CORRECTION; nothing is ever rewritten
+Contractor              sends the UPI screenshot -> Muse Spark reads amount, UTR, payee -> code matches it to the bill
+JCB owner               "आया" -> SETTLED on both ledgers
+```
 
-## Models
+The material flow is the same with a supplier agent: an order with items, rates in the supplier's yes, a delivery with a challan photo read by Muse Spark, the supervisor's own count on arrival (48 of 50 bags becomes a dispute, not an argument), then bill, payment and settlement.
 
-Every model called at runtime is a Meta model, through the Meta Model API: **Muse Spark** (understanding messages, reading meters, challans and UPI screenshots, explaining differences) and **Muse Voice Transcribe** (Hindi voice notes).
+**Nothing is booked, sent, accepted, corrected or settled without the explicit WhatsApp reply of the person allowed to decide it.** There are no payment reminders and no chasing; the JCB owner sees "unpaid", the agent never nags.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph WA[WhatsApp Cloud API]
+    L1[JCB number]
+    L2[Site number]
+    L3[Supplier number]
+  end
+  subgraph Server[One Node 24 service on EC2 behind Caddy, HTTPS]
+    R[Webhook: signature check, routing by line + phone to agent + role]
+    C[Conversation: read-back, हाँ / नहीं, commands, approvals]
+    J[JCB agent<br/>jcb.db]
+    S[Contractor agent<br/>contractor.db]
+    P[Supplier agent<br/>supplier.db]
+  end
+  M[(Meta Model API<br/>Muse Spark<br/>Muse Voice Transcribe)]
+  L1 & L2 & L3 --> R --> C
+  C --> J & S & P
+  J <-- "signed messages over A2A" --> S
+  P <-- "signed messages over A2A" --> S
+  C -. "understand, read photos, explain" .-> M
+```
+
+- **Signed messages** (`src/protocol/`): every message between agents is RFC 8785 canonical JSON signed with Ed25519, names its sender and addressee, expires, and carries a unique id. A forged, altered, misaddressed, expired, repeated or out-of-order message is refused with a signed `REFUSE` and writes nothing.
+- **Ledgers** (`src/ledger/`): each agent has its own append-only SQLite ledger, hash-chained, so a forced edit is detected. Order states are enforced by code: no bill before work or delivery, settlement only for the payment in force on the bill in force, a correction names the bill it replaces.
+- **A2A** (`src/transport/a2a.js`): the official `@a2a-js/sdk`, A2A 1.0 JSON-RPC. Each agent publishes an Agent Card with its id and public key; our signed message travels as a `data` part and the signed receipt comes back the same way. A2A is the envelope only; whether a message is genuine is decided by the protocol layer, never by the transport.
+- **WhatsApp** (`src/wa/`): one webhook per line, `X-Hub-Signature-256` checked on the raw bytes before parsing, each message handled once, replies only inside the 24-hour window. A line is only transport: people are routed by `{line, phone}` to `{agent, role}`, so one phone can be a JCB owner on one number and a contractor on another.
+- **Conversation** (`src/agents/conversation.js`): Muse Spark turns a message into one proposed tool call; the agent reads it back in Hindi and acts only on the person's हाँ. Exact commands are parsed by code before any model: `status J-1`, `pending`, `stock`, `ok P-2`, `no P-2 <reason>`, `help` / `मदद`.
+- **Approvals** (`src/agents/office.js`): a supervisor's order or payment above the contractor's limit (or with no estimate) is held under its reference until the contractor replies `ok` or `no`. Nobody approves their own entry; a decision is made once.
+- **Readers** (`src/readers/`): Muse Spark with a strict JSON schema reads the hour meter, the UPI screenshot and the delivery challan. Amounts become integer paise, quantities integer hundredths. An unsure reading says so and the person is asked; a value is never guessed.
+
+## Where Meta's models do the work
+
+Every model called at runtime is Meta's, through the Meta Model API. A test (`test/rules/meta-only.test.js`) fails the build if any other model or provider appears in the source.
+
+| Job | Model |
+|---|---|
+| Understanding a Hindi/Hinglish message and choosing the step | Muse Spark |
+| Reading the hour meter, the UPI screenshot, the delivery challan | Muse Spark (vision, strict schema) |
+| Explaining a difference between two figures to both sides, in Hindi | Muse Spark |
+| Voice notes from the site | Muse Voice Transcribe |
+| Hours, continuity, rates, amounts, matching payment to bill, signatures, permissions | Code, never a model |
+
+## Measured results
+
+Accuracy is measured on real photos from our pilot, labelled by a person, with the split frozen before the held-out run. The photos stay private; the aggregate reports are in `eval/results/`.
+
+| Reader | Set | Exact | Asked the person | Wrong but confident | Median time |
+|---|---|---|---|---|---|
+| Hour meter | held-out, 10 real photos, split frozen 28 Oct | 6 / 10 | 4 / 10 | **0** | 9.0 s |
+| Hour meter | development, 11 photos | 9 / 11 | 2 / 11 | 0 | |
+| UPI screenshot | development, 9 PhonePe receipts | 6 / 9 whole receipts; amount, date, UTR, status and payee 9 / 9 each | 3 / 9 | 0 | 8.5 s |
+
+The figure that matters most is the last-but-one column: across 30 real images the readers were never confidently wrong. When unsure they ask the person, which costs one WhatsApp reply instead of a wrong bill. The held-out meter run cost about US$0.11 for 10 photos.
+
+Not yet measured: UPI on unseen screenshots and other UPI apps, and the challan reader on real challans. Sample sizes are small and stated as such.
+
+**Tests:** 254 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and answered with the same receipt), whole jobs between agents with both ledgers agreeing at every step, the approval rules, and the judge page's file serving.
+
+## What works today, honestly
+
+- Running live on EC2 with HTTPS: three agents, their keys and ledgers, the webhooks, the judge page.
+- The JCB WhatsApp number works end to end on real phones.
+- The site and supplier numbers are Meta test numbers in separate business portfolios. As of 28 October the site number's business account is locked by Meta (error 131031), which we are resolving with Meta; until then all three agents can run on one number, routed by the sender's phone.
+- Real pilot jobs with a JCB owner and a contractor we work with start only after our own full run passes.
+
+## Run it
+
+Requires Node 24.
+
+```
+npm ci
+npm test
+npm run typecheck
+```
+
+The judge page runs locally with `node web/serve.js` on the bundled sample export. Deploying to your own server (Ubuntu, Caddy, systemd, WhatsApp webhooks) is described in `deploy/README.md`. Settings come only from `HB_*` environment variables and a private data folder; nothing secret is in this repository.
+
+## Repository map
+
+| Path | What |
+|---|---|
+| `src/protocol/` | canonical JSON, Ed25519 keys, message schemas, receiving rules |
+| `src/ledger/` | append-only hash-chained ledger, order states, references |
+| `src/transport/a2a.js` | A2A over the official SDK |
+| `src/agents/` | the three agents, the WhatsApp conversation, approvals, material |
+| `src/readers/` | meter, UPI and challan readers |
+| `src/meta/` | Meta Model API client |
+| `src/wa/` | WhatsApp webhook, routing, store, voice notes |
+| `src/i18n/` | Hindi texts |
+| `web/` | judge page |
+| `eval/` | accuracy measurement and the aggregate results |
+| `docs/` | `CONTRACTS.md` (interfaces), `BUILD2.md` (supplier, approvals, references), `STATUS.md` (daily progress) |
 
 ## Disclosure
 
-All code in this repository was written during the event. The design draws on what the author learned running private pilots of WhatsApp agents for his own businesses: a brick-kiln bookkeeping agent in production since October 2026, a JCB hours agent and a contractor site-office agent. No code from them is used. The organisers confirmed that mentioning the existing pilot as context is fine since no prior code is used.
+All code in this repository was written during the event, from 27 October 2026. The design draws on what we learned running private WhatsApp agents for our own businesses: a brick-kiln bookkeeping agent in production since October 2026, a JCB hours agent and a contractor site-office agent. No code from them is used, and none of them is part of this entry. The organisers confirmed that mentioning the existing pilot as context is fine.
 
-Pilot users: a JCB owner and a contractor we work with (with their consent). All data in this repository is invented; real photos and payments never leave the private server.
+Pilot users: a JCB owner and a contractor we work with, with their consent. All data in this repository is invented; real photos, phone numbers and payments stay on the private server.
 
-Coding tools used: Claude Code (lead), Astra, Fable, Codex, Muse Code.
+Built by the owner with AI coding tools, all disclosed: Claude Code (lead and integrator), Astra (readers and measurement), Fable (Hindi texts, contractor features, judge page), Codex and Muse Code.
 
 ## Licence
 
