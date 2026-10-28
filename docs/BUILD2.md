@@ -119,16 +119,24 @@ Human display values authorize numbers; stored paise/tenths, fingerprints, messa
 inside free-text reasons do not. Capture times remain unknown when absent; recorded times are
 separate and displayed in IST. Material totals use the existing integer rounding rules.
 
-`explainDifference({spark, facts, audience})` requests strict JSON from injected Muse Spark. It
-accepts only short Hindi prose with supported complete numeric tokens (including normalized
-Devanagari digits, grouping, money and hour units). References, dates and times are indivisible;
-their digits cannot authorize quantities. Unknown numbers, malformed responses, tool calls,
-common directives/blame/payment/causal language, errors and timeouts discard the entire prose.
-The number check proves numeric support, not every semantic claim in free text; the prompt and
-conservative language checks also restrict the explanation to neutral descriptions of evidence.
-Accepted prose uses `explain.wrapper`; otherwise `explain.unavailable` contains the same plain
-figures assembled by code. Requests have a 30-second attempt timeout and a 95-second total bound
-(including the existing client's retries). The existing discrepancy notice is sent before waiting.
+`explainDifference({spark, facts, audience})` sends injected Muse Spark a small request: a short
+system prompt and a few Hindi lines with only this difference (reader, ref, bill in force, meter or
+delivery/site count, the objection to the bill in force with its recorded reason in «», any
+correction), a strict schema with a 350-character explanation, no images or tools, and
+`reasoning_effort: "minimal"`. Live, that takes 3–6 s (p50 3.75 s, p95 5.6 s, 8/8 accepted; see
+`docs/explanation-live-check.md`). Attempts time out at 15 s; 35 s bounds the whole wait including
+one client retry. The existing discrepancy notice is sent first and never waits (`app.js` runs
+`onApplied` without awaiting it).
+
+The guard rejects the whole text, never edits it, with one check per promise
+(`guardViolation` names the rule broken): every number exists in the facts (complete tokens,
+normalized digits/grouping/units; references, dates and times are indivisible); no verdict on who
+is right; no payment, dues, dates, deadlines or reminders; no directive; no invented cause or
+guess. Quoting the other side's recorded reason is allowed: a quote must be a reason recorded on
+the bill in force, word for word, and is then set aside as their words (its numbers and wording do
+not count as the explanation's own). "कारण" as a noun is accepted only beside such a quote. These
+are wording checks, not a semantic proof. Accepted prose uses `explain.wrapper`; otherwise
+`explain.unavailable` contains the same plain figures assembled by code.
 
 The sellers explain after their existing DISPUTE notice; the contractor explains after a material
 bill/count or bill/rate mismatch notice. There is no JCB buyer count-mismatch hook in this build.
