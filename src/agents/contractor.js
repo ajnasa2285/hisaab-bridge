@@ -203,9 +203,11 @@ export function createContractorAgent(o) {
     confirm_count: {
       roles: ['supervisor', 'contractor'],
       commits: true,
+      /** @returns {{key: string, params: Record<string, string>}} */
       describe: (a) => {
         if (a.challan !== undefined) {
           const counted = challanItems(a.orderId, a.qtysHundredths);
+          /** @type {string} */
           const challan = validChallan(a.challan) ? a.challan.number ?? '—' : '—';
           return { key: 'step.site_challan', params: { ref: refOf(a.orderId), site: siteOf(a.orderId), challan, items: counted ? itemsText(counted) : '—', names: orderedNames(a.orderId) } };
         }
