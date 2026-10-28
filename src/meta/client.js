@@ -8,6 +8,8 @@ import { isObject, matchesSchema, supportedSchema } from './schema.js';
 /** @typedef {{ok:true, json:any, text:string, toolCalls:{name:string,args:any}[], usage:Usage, model:string, latencyMs:number}} SparkSuccess */
 const SPARK_MODELS = new Set(['muse-spark-1.1', 'muse-spark-1.2', 'muse-spark-1.3']);
 const BASE = 'https://api.meta.ai/v1';
+// Documented Chat Completions levels (https://dev.meta.ai/docs/reasoning); "none" is a 400 for Spark.
+const REASONING_EFFORTS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 
 /** @param {string} reason @param {number} start @param {boolean} [transient] @returns {Failure} */
 function failure(reason, start, transient = false) {
@@ -89,7 +91,8 @@ async function request(cfg, endpoint, body, headers, timeoutMs, decode) {
 }
 
 /**
- * @param {{system?:string, text:string, images?:ImageInput[], schema?:object, tools?:object[], timeoutMs?:number}} req
+ * @param {{system?:string, text:string, images?:ImageInput[], schema?:object, tools?:object[], timeoutMs?:number,
+ *   reasoningEffort?:'minimal'|'low'|'medium'|'high'|'xhigh'|'max'}} req
  * @returns {Promise<SparkSuccess|Failure>}
  */
 export async function museSpark(req) {
@@ -98,7 +101,8 @@ export async function museSpark(req) {
   if (!cfg) return failure('configuration_missing_or_invalid', start);
   const timeoutMs = req.timeoutMs ?? 60000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300000 || typeof req.text !== 'string'
-    || (req.system !== undefined && typeof req.system !== 'string')) return failure('invalid_request', start);
+    || (req.system !== undefined && typeof req.system !== 'string')
+    || (req.reasoningEffort !== undefined && !REASONING_EFFORTS.has(req.reasoningEffort))) return failure('invalid_request', start);
   if (req.schema && !supportedSchema(req.schema)) return failure('unsupported_schema', start);
   const images = req.images ?? [];
   if (!Array.isArray(images) || images.length > 50 || images.some(i => !i || !['image/jpeg', 'image/png', 'image/webp'].includes(i.mime)
@@ -112,6 +116,7 @@ export async function museSpark(req) {
     type: 'image_url', image_url: { url: `data:${i.mime};base64,${Buffer.from(i.bytes).toString('base64')}` },
   })) ] });
   const body = JSON.stringify({ model: cfg.model, messages,
+    ...(req.reasoningEffort ? { reasoning_effort: req.reasoningEffort } : {}),
     ...(req.schema ? { response_format: { type: 'json_schema', json_schema: { name: 'result', schema: req.schema, strict: true } } } : {}),
     ...(toolDefs.length ? { tools: toolDefs } : {}),
   });

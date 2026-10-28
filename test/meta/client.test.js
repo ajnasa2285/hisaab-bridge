@@ -50,6 +50,22 @@ test('Spark sends documented Meta image/schema shape, returns validated JSON', a
   }
 });
 
+test('reasoning effort is sent only when asked, and only a documented level', async t => {
+  environment(t);
+  /** @type {any[]} */
+  const sent = [];
+  t.mock.method(globalThis, 'fetch', async (/** @type {any} */ _url, /** @type {any} */ init) => { sent.push(JSON.parse(init.body)); return Response.json(body()); });
+  assert.ok((await museSpark({ text: 'invented', schema, reasoningEffort: 'minimal' })).ok);
+  assert.ok((await museSpark({ text: 'invented', schema })).ok);
+  assert.equal(sent[0].reasoning_effort, 'minimal');
+  assert.equal(Object.hasOwn(sent[1], 'reasoning_effort'), false);
+  for (const level of ['none', 'fast', '']) {
+    const result = await museSpark({ text: 'invented', schema, reasoningEffort: /** @type {any} */ (level) });
+    assert.equal(result.ok, false);
+  }
+  assert.equal(sent.length, 2, 'an unknown level never reaches the network');
+});
+
 test('missing configuration and unsafe hosts/models never contact the network', async t => {
   environment(t);
   const fetch = t.mock.method(globalThis, 'fetch', async () => { throw new Error('must not call'); });
