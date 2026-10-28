@@ -211,3 +211,29 @@ The model writes only `{explanation}`. All `{figures}` fragments below come from
 | `photo.none` | — | this person sends no photos on this agent; the photo is not read |
 | `photo.sent_by_meter` / `_upi` / `_challan` | kinds | a kind this person may not send here: who sends it, and what they can send; nothing recorded |
 | `photo.kind.meter` / `.upi` / `.challan` | — | the names used in `kinds` |
+
+## Ask anything (docs/BUILD2.md section 8; Claude drafted, Fable to polish)
+
+| Key | Params | When |
+|---|---|---|
+| `records.answer` | answer, refs | Muse Spark's checked answer, with the references the lookups returned |
+| `records.answer_plain` | answer | the same when the lookups named no order (stock) or more than 8 |
+| `records.unavailable` | figures | the answer failed a check, or the model stopped: code's lines from the last lookup |
+| `records.no_answer` | — | no lookup worked (timeout, outage, nothing asked); points to `स्थिति J-1` and `बाक़ी` |
+| `records.not_allowed` | — | the person asked for a lookup their role may not use |
+| `records.not_yet` | — | a reported payment the seller has not confirmed |
+| `records.all` | — | the group name when totals are not split |
+| `records.who.jcb` / `.supplier` / `.contractor` | — | the other side of an order, as lookups show it |
+| `records.fig.group` | name, orders | heading of a totals group |
+| `records.fig.material` | item, asked, delivered, counted, billed, amount | one item: asked, on the challan, received at site, billed (quantity and amount) |
+| `records.fig.jcb` | asked, billed, open | JCB hours asked, billed, billed and not settled |
+| `records.fig.money` | billed, accepted, claimed, settled, open | money of a totals group |
+| `records.fig.order` | ref, what, site, day, state, bill | one order in a list |
+| `records.fig.detail` | ref, what, site, day, state, bill, paid | one order by its reference |
+| `records.fig.stock` | site, item, qty, challan | one stock line |
+| `records.fig.payment` | ref, to, site, amount, day, confirmed | one reported payment |
+| `records.fig.payments_total` | count, total, confirmed | the payments' totals |
+| `records.fig.none` | — | a lookup found nothing |
+
+`help.contractor`, `help.supervisor`, `help.jcb_owner` and `help.supplier` gained one question
+example each; `test/orchestrator/intake.test.js` checks they reach the ask route.

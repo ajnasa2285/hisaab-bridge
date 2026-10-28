@@ -104,7 +104,7 @@ test('a one-lookup question: totals by code, the answer with only figures from t
     assert.deepEqual(names(f.seen[1]), ['list_orders', 'order_detail', 'totals', 'payments', 'stock', 'answer']);
     assert.equal(f.seen[1].reasoningEffort, 'low');
     // The model saw the code's figures as display values ("50 बोरी"), never stored integers.
-    assert.ok(f.seen[2].text.includes('"delivered_on_challan":"50 बोरी"') && f.seen[2].text.includes('"counted_at_site":"48 बोरी"'));
+    assert.ok(f.seen[2].text.includes('"delivered_on_challan":"50 बोरी"') && f.seen[2].text.includes('"received_at_site":"48 बोरी"'));
     assert.ok(!f.seen[2].text.includes('5000'));
     // Nothing was committed or left waiting for "हाँ".
     assert.equal(d.ledger.events(/** @type {any} */ (d.ledger.orders()[1]).order_id).length, before);
@@ -158,7 +158,7 @@ test('each agent answers from its own ledger: the supplier sees its own order wi
     assert.equal(facts[0].counted, null);
     const r = runLookup('totals', { site: null, kind: null, item: null, period: 'all', from: null, to: null, group_by: 'none' }, { ledger: s.supCore.ledger, side: 'seller', nowMs: s.supCore.now(), facts });
     assert.equal(r.data.groups[0].money.billed, '₹17,500');
-    assert.ok(!('counted_at_site' in r.data.groups[0].material[0]));
+    assert.ok(!('received_at_site' in r.data.groups[0].material[0]));
   } finally { await s.close(); }
 });
 
@@ -263,5 +263,20 @@ test('a committing request still goes to the normal step with its read-back', as
     assert.equal(d.said.at(-1)?.[1], 'step.request_material');
     assert.equal(d.conv.pending(contractor)?.kind, 'confirm');
     assert.equal(f.seen.length, 1);
+  } finally { await s.close(); }
+});
+
+test('the model\'s "null" words are null, a made-up choice is an error it sees, and an answer after only errors is not sent', async () => {
+  const s = await books();
+  try {
+    const ctx = { ledger: s.siteCore.ledger, side: /** @type {const} */ ('buyer'), nowMs: s.siteCore.now(), facts: orderFacts(s.siteCore.ledger) };
+    const r = runLookup('totals', { site: 'null', kind: 'jcb', item: 'None', period: 'null', from: 'null', to: '', group_by: 'null' }, ctx);
+    assert.equal(r.data.groups[0].jcb.hours_billed, '6.1 घंटे');
+    assert.match(runLookup('list_orders', { site: null, kind: 'truck', state: null, period: 'all', from: null, to: null }, ctx).data.error, /kind must be one of/);
+    const f = script([
+      [{ name: 'list_orders', args: { site: null, kind: null, state: 'pending', period: 'all', from: null, to: null } }],
+      [{ name: 'answer', args: { answer: 'कोई काम दर्ज नहीं मिला।' } }],
+    ]);
+    assert.equal((await answerQuestion({ spark: f.spark, ledger: s.siteCore.ledger, person: contractor, question: 'कौन से काम बाक़ी हैं?', nowMs: s.siteCore.now() })).key, 'records.no_answer');
   } finally { await s.close(); }
 });

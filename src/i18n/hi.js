@@ -218,7 +218,7 @@ export const hi = Object.freeze({
   'records.who.supplier': 'सप्लायर',
   'records.who.contractor': 'ठेकेदार',
   'records.fig.group': '{name} ({orders} काम):',
-  'records.fig.material': '• {item}: माँगा {asked}, चालान पर {delivered}, साइट की गिनती {counted}, बिल में {billed} ({amount})',
+  'records.fig.material': '• {item}: माँगा {asked}, चालान पर {delivered}, साइट पर {counted}, बिल में {billed} ({amount})',
   'records.fig.jcb': '• JCB घंटे: माँगे {asked}, बिल में {billed}, जिनका हिसाब पूरा नहीं {open}',
   'records.fig.money': '• बिल {billed} · मंज़ूर {accepted} · भुगतान बताया {claimed} · पुष्टि हुई {settled} · हिसाब पूरा नहीं {open}',
   'records.fig.order': '• {ref}: {what}, {site}, {day} — {state}, बिल {bill}',

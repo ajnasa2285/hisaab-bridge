@@ -199,3 +199,39 @@ role. Every agent gets `classifyPhoto` (CONTRACTS 3.4); `onImage` in `src/agents
   be confirmed by a "हाँ" meant for the new photo.
 * The old workaround (a contractor's photo read as UPI first, then as a challan) is gone: a challan
   photo is never offered to the UPI reader, and a UPI screenshot asks "which order?" before any read.
+
+## 8. Ask anything (29 Oct 2026)
+
+A person asks about their own records in Hindi or Hinglish ("इस महीने शिवपुरी पर कितना सीमेंट आया?",
+"JCB के कितने घंटे का बिल बाक़ी है?", "पिछले हफ़्ते किसको कितना भुगतान किया?") and gets a short answer.
+Muse Spark plans and phrases; code produces every figure (`src/agents/ask.js`).
+
+* **Route.** Exact commands are parsed by code first, as before. The router (`proposeStep`, with
+  `ask: true` from the conversation) also offers `ask_records`: "the person only asks a question about
+  their own records; nothing is to be done". Committing steps are unchanged, read back and confirmed.
+  A question has no read-back, no "हाँ", no pending question and no ledger entry.
+* **Lookups** (read-only, this agent's own ledger only, refused messages left out as in `view`):
+  `list_orders` (site, kind, state or `open`, period), `order_detail` (one reference), `totals`
+  (material asked / on the challan / received at site / billed with amount; JCB hours asked / billed /
+  billed and not settled; money billed / accepted / payment reported / settled / billed and not
+  settled; optionally per site or per kind), `payments` (reported UPI payments by the day paid, and
+  whether the seller confirmed), `stock` (the contractor agent only, as the `stock` command). The
+  model names a period (`today`, `this_week`, `last_month`, …) or copies dates as written; code
+  turns them into days (weeks from Monday, IST). Results are display values (`₹7,320`, `6.1 घंटे`,
+  `50 बोरी`), never stored integers. Empty words ("null", "-") are null; a made-up choice returns an
+  error the model sees, never a guess.
+* **Who may ask what** follows the exact commands (`office.js`): everyone may see orders and one
+  order (as `status` and `pending`); the contractor, supervisor, JCB owner and supplier also totals
+  and payments; `stock` only on the contractor agent; the operator gets only orders and one order.
+  The model sees only the lookups allowed; one named anyway is refused by code.
+* **The loop.** At most 4 lookups, in sequence (independent ones may come in one round), then
+  `answer` (Hindi, at most 400 characters); a fifth round offers only `answer`. `reasoning_effort:
+  "low"`, 15 s per attempt, 30 s for the whole question. Live: p50 8.9 s, p95 12.6 s per question
+  including the router; 9 of 10 correct and 1 partly (`docs/ask-live-check.md`).
+* **Checks** (the answer is rejected whole, never edited): every number exists in the lookups
+  (`numbersSupported` from `explain.js`); the explanation wording rules `format`, `verdict`,
+  `directive`, `cause` (`wordingViolation`); plus no reminder, chasing or due-date words; no quotes;
+  Devanagari; and at least one lookup that worked. "भुगतान" itself is allowed here, since people ask
+  about it. A passing answer goes out with the references it came from (`records.answer`). Otherwise
+  code's own lines from the last lookup that worked (`records.unavailable`), or `records.no_answer`
+  when none did (also on a timeout or outage before any lookup).

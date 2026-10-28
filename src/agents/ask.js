@@ -10,7 +10,7 @@ import { siteCount } from './material.js';
 import { stockOf } from './office.js';
 import { numbersSupported, wordingViolation } from './explain.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
-import { istDay } from '../orchestrator/units.js';
+import { blank, istDay } from '../orchestrator/units.js';
 import { day as dayName, hours as hoursText, qty as qtyText, rupees, tenths } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
 
@@ -33,8 +33,9 @@ import { t } from '../i18n/index.js';
 /** @typedef {{name: string, args: Record<string, any>, data: Record<string, any>, allowed: AllowedNumber[], lines: string[], refs: string[]}} Lookup */
 /** @typedef {{key: string, params?: Record<string, string | number>}} Said */
 
-// Measured live (29 Oct 2026, muse-spark-1.3; docs/ask-live-check.md). One attempt gets about three
-// times the slowest round seen; the whole question, every round and client retry included, is bounded.
+// Measured live (29 Oct 2026, muse-spark-1.3, "low" reasoning; docs/ask-live-check.md): one round
+// 2.7 s p50, 4.8 s at most; a whole question 8.9 s p50, 12.6 s p95 with the router. One attempt gets
+// about three times the slowest round; the whole question, every round and client retry included, is bounded.
 export const ATTEMPT_TIMEOUT_MS = 15000;
 export const ASK_TIMEOUT_MS = 30000;
 export const MAX_LOOKUPS = 4;
@@ -68,8 +69,9 @@ const PERIODS = ['all', 'today', 'yesterday', 'this_week', 'last_week', 'this_mo
 const text = (/** @type {number} */ max, /** @type {string} */ description) => ({ type: ['string', 'null'], maxLength: max, description });
 const FILTERS = {
   site: text(80, 'Site name as in the known sites, or null for every site.'),
-  kind: { type: ['string', 'null'], enum: ['jcb', 'material', null], description: 'jcb (JCB hours), material (cement, sand…) or null for both.' },
-  period: { type: 'string', enum: PERIODS, description: "Which days, by the order's day (the day it was asked for); 'all' when no time is said. Weeks start on Monday." },
+  // Choices are plain strings checked by code: a model's "null" must not fail the whole reply.
+  kind: text(10, "'jcb' (JCB hours), 'material' (cement, sand…) or null for both."),
+  period: text(12, `One of ${PERIODS.join(', ')}: which days, by the order's day (the day it was asked for); 'all' when no time is said. Weeks start on Monday.`),
   from: text(10, "Only when the person names a first date: as written, like '1-10' or '2026-10-01'; else null."),
   to: text(10, "Only when the person names a last date: as written, like '15-10'; else null."),
 };
@@ -77,18 +79,18 @@ const FILTERS = {
 const DEFS = {
   list_orders: {
     description: 'The orders (jobs) with their reference, site, day, state and bill: filter by site, kind, state, period.',
-    properties: { ...FILTERS, state: { type: ['string', 'null'], enum: [...STATES, 'open', null], description: "One state, 'open' for every order not settled or declined, or null for all." } },
+    properties: { ...FILTERS, state: text(16, `One of ${STATES.join(', ')}; 'open' for every order not settled or declined; or null for all.`) },
   },
   order_detail: {
     description: 'Everything recorded on one order by its reference (J-1, P-2): request, rate, delivery, site count, bill in force, payment.',
     properties: { ref: { type: 'string', maxLength: 8, description: 'The reference like "J-1" or "P-2".' } },
   },
   totals: {
-    description: 'Totals computed by code: material asked, delivered on the challan, counted at site, billed; JCB hours asked and billed; money billed, accepted, payment reported, settled, and billed but not settled.',
+    description: "Totals computed by code: material asked, delivered on the challan, received at site (the site's own count where it counted, else the challan), billed; JCB hours asked and billed; money billed, accepted, payment reported, settled, and billed but not settled.",
     properties: {
       ...FILTERS,
       item: text(80, 'One material item as in the known items (e.g. सीमेंट), or null for all.'),
-      group_by: { type: 'string', enum: ['none', 'site', 'kind'], description: "'site' or 'kind' to see each separately (kind = JCB or supplier), else 'none'." },
+      group_by: text(5, "'site' or 'kind' to see each separately (kind = JCB or supplier), else 'none'."),
     },
   },
   payments: {
@@ -306,9 +308,9 @@ function summary(c, orders, item) {
     if (o.kind === 'material') {
       for (const i of o.requested.filter(wanted)) row(i).requested += i.qtyHundredths;
       for (const i of (o.delivered ?? []).filter(wanted)) row(i).delivered += i.qtyHundredths;
-      // Where the site has not counted, its count is not known: shown apart, never filled in.
+      // Received at site, as for stock: the site's own count where it counted, else the challan's figure.
       if (o.counted) counted = true;
-      for (const i of (o.counted ?? []).filter(wanted)) row(i).counted += i.qtyHundredths;
+      for (const i of (o.counted ?? o.delivered ?? []).filter(wanted)) row(i).counted += i.qtyHundredths;
       for (const [k, l] of (o.bill?.lines ?? []).entries()) {
         const unit = o.delivered?.[k]?.name === l.what ? o.delivered[k].unit : o.requested.find((x) => x.name === l.what)?.unit;
         if (!unit || !wanted({ name: l.what, qtyHundredths: 0, unit })) continue;
@@ -337,7 +339,7 @@ function summary(c, orders, item) {
   if (items.size) {
     out.material = [...items.values()].map((r) => ({
       item: r.name, unit: r.unit, asked: c.qty(r.requested, r.unit), delivered_on_challan: c.qty(r.delivered, r.unit),
-      ...(counted ? { counted_at_site: c.qty(r.counted, r.unit) } : {}),
+      ...(counted ? { received_at_site: c.qty(r.counted, r.unit) } : {}),
       billed_quantity: c.qty(r.billedQty, r.unit), billed_amount: c.money(r.billedPaise),
     }));
   }
@@ -358,7 +360,7 @@ function summary(c, orders, item) {
 function summaryLines(name, s) {
   const lines = [t('records.fig.group', { name, orders: s.orders })];
   for (const m of s.material ?? []) {
-    lines.push(t('records.fig.material', { item: m.item, asked: m.asked, delivered: m.delivered_on_challan, counted: m.counted_at_site ?? '—', billed: m.billed_quantity, amount: m.billed_amount }));
+    lines.push(t('records.fig.material', { item: m.item, asked: m.asked, delivered: m.delivered_on_challan, counted: m.received_at_site ?? '—', billed: m.billed_quantity, amount: m.billed_amount }));
   }
   if (s.jcb) lines.push(t('records.fig.jcb', { asked: s.jcb.hours_asked, billed: s.jcb.hours_billed, open: s.jcb.hours_billed_not_settled }));
   lines.push(t('records.fig.money', { billed: s.money.billed, accepted: s.money.accepted, claimed: s.money.payment_reported, settled: s.money.settled, open: s.money.billed_not_settled }));
@@ -372,8 +374,14 @@ function summaryLines(name, s) {
  * @param {{ledger: import('../ledger/store.js').Ledger, side: 'buyer' | 'seller', nowMs: number, facts: OrderFacts[]}} ctx
  * @returns {Lookup}
  */
-export function runLookup(name, a, ctx) {
+export function runLookup(name, raw, ctx) {
   const c = collector();
+  // Every value the model left empty ("", "null", "none", "-") is null; a choice it made up is an error.
+  const a = /** @type {Record<string, any>} */ (Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, blank(v) ? null : typeof v === 'string' ? v.trim() : v])));
+  if (a.kind != null) a.kind = String(a.kind).toLowerCase();
+  if (a.period == null) a.period = 'all';
+  const choices = /** @type {[string, string[]][]} */ ([['kind', ['jcb', 'material']], ['period', PERIODS], ['state', [...STATES, 'open']], ['group_by', ['none', 'site', 'kind']]]);
+  for (const [k, allowed] of choices) if (a[k] != null && !allowed.includes(a[k])) return { name, args: raw, data: { error: `${k} must be one of ${allowed.join(', ')}` }, allowed: [], lines: [], refs: [] };
   /** @param {Record<string, any>} data @param {string[]} lines */
   const done = (data, lines) => ({ name, args: a, data, allowed: c.allowed, lines, refs: [...c.refs] });
   const fail = (/** @type {string} */ error) => ({ name, args: a, data: { error }, allowed: [], lines: [], refs: [] });
@@ -530,7 +538,7 @@ export async function answerQuestion(o) {
     const answer = r.toolCalls.find((/** @type {any} */ call) => call?.name === 'answer');
     if (answer) {
       // An answer needs a lookup behind it; its words are display-only and never reach a tool.
-      if (done.length === 0) break;
+      if (!done.some((l) => !l.data.error)) break;
       const said = typeof answer.args?.answer === 'string' ? answer.args.answer.trim() : '';
       if (answerViolation(said, done.flatMap((l) => l.allowed)) !== null) break;
       const refs = [...new Set(done.flatMap((l) => l.refs))];
