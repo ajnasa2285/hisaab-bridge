@@ -6,6 +6,8 @@
 // no) are answered by code before the model sees anything, and a confirmed step passes the site
 // office's gate (approvals with limits, src/agents/office.js). A request with a value left out (site,
 // day, quantity, unit) is kept, and only what is missing is asked; the reply fills it, nothing is guessed.
+// A question about the person's own records is answered read-only (src/agents/ask.js): no read-back,
+// nothing committed.
 // People decide; the model only proposes.
 
 import { createHash } from 'node:crypto';
@@ -16,6 +18,7 @@ import { challanQuantities, requestedItems, siteCount } from './material.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
 import { runTool } from './common.js';
 import { parseCommand } from './office.js';
+import { answerQuestion } from './ask.js';
 import { day as dayName, qty as qtyText, rupees } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
 
@@ -236,7 +239,12 @@ export function createConversation(o) {
     }
     if (HELP.has(said)) return o.reply(person, `help.${person.role}`);
 
-    const proposal = await proposeStep({ spark: o.spark, person, text, orders: orderRefs(o.ledger), nowMs: o.now() });
+    const proposal = await proposeStep({ spark: o.spark, person, text, orders: orderRefs(o.ledger), nowMs: o.now(), ask: true });
+    if (proposal.kind === 'ask') {
+      // Read-only: the answer is only said; it never becomes a step, a pending question or a ledger entry.
+      const r = await answerQuestion({ spark: o.spark, ledger: o.ledger, person, question: text, nowMs: o.now() });
+      return o.reply(person, r.key, r.params);
+    }
     return onProposal(person, text, proposal);
   }
 
@@ -247,6 +255,7 @@ export function createConversation(o) {
   function onProposal(person, text, proposal) {
     if (proposal.kind === 'help') return o.reply(person, `help.${person.role}`);
     if (proposal.kind === 'none') return o.reply(person, proposal.key);
+    if (proposal.kind === 'ask') return o.reply(person, 'common.unknown_step');
     if (proposal.kind === 'missing') {
       pending.set(keyOf(person), { kind: 'fill', tool: proposal.tool, raw: proposal.raw, args: proposal.args, missing: proposal.missing, said: text, at: o.now() });
       return o.reply(person, 'ask.missing', { questions: askText(proposal.args, proposal.missing) });

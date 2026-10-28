@@ -30,6 +30,8 @@ const SAMPLE = {
   awaited: 'बिल का इंतज़ार', bill: '₹7,320', challan: '50 बोरी',
   names: 'बालू (cft), गिट्टी (brass)', siteNo: '96', challanNo: '97', questions: 'किस साइट पर?', forms: '"UPI" / "चालान"', kinds: 'UPI भुगतान, चालान',
   quantity: '50', unit: 'बोरी', number: '412', figure: '48 बोरी', before: '₹17,500', after: '₹16,800',
+  answer: 'शिवपुरी पर सीमेंट 50 बोरी आया।', refs: 'P-1, P-2', orders: 2, asked: '50 बोरी', delivered: '50 बोरी',
+  counted: '48 बोरी', open: '₹7,320', accepted: '₹7,320', claimed: '₹7,320', settled: '₹0', confirmed: 'अभी नहीं',
 };
 
 test('every key has a non-empty Hindi text and fills with its parameters', () => {

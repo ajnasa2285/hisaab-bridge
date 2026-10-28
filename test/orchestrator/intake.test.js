@@ -158,23 +158,29 @@ test('the reply fills the missing value: by code when it is plainly that value, 
 
 /**
  * Each request example in the help texts, with the arguments a model would give for it and the jobs
- * open at the time. Commands and the bare yes/no are answered by code and need no entry.
- * @type {Record<string, Record<string, {call: {name: string, args: any}, orders?: any[], site?: string}>>}
+ * open at the time. Commands and the bare yes/no are answered by code and need no entry. A question
+ * about the records goes to the read-only ask route (src/agents/ask.js).
+ * @type {Record<string, Record<string, {call: {name: string, args: any}, orders?: any[], site?: string, kind?: string}>>}
  */
+const QUESTION = { call: { name: 'ask_records', args: {} }, kind: 'ask' };
 const HELP_EXAMPLES = {
   supervisor: {
+    'इस हफ़्ते कितने घंटे JCB का बिल आया?': QUESTION,
     'JCB चाहिए कल 8 बजे': { site: 'Rampur', call: { name: 'request_jcb', args: { site: null, day: 'tomorrow', time: '8', hours: null } } },
     'सीमेंट 50 बोरी कल': { site: 'Rampur', call: { name: 'request_material', args: { site: null, day: 'tomorrow', time: null, items: [cement('50')] } } },
   },
   contractor: {
+    'इस महीने शिवपुरी पर कितना सीमेंट आया?': QUESTION,
     'JCB चाहिए 30-10 शिवपुरी': { call: { name: 'request_jcb', args: { site: 'शिवपुरी', day: '30-10', time: null, hours: null } } },
     'सीमेंट 50 बोरी 30-10 शिवपुरी': { call: { name: 'request_material', args: { site: 'शिवपुरी', day: '30-10', time: null, items: [cement('50')] } } },
   },
   jcb_owner: {
+    'इस महीने कितने घंटे का बिल गया?': QUESTION,
     '30-10': { orders: [{ ref: 'J-1', orderId: 'o1', site: 'S', day: '2026-10-29', state: 'requested' }], call: { name: 'reply_booking', args: { order: null, answer: 'other_time', rate_rupees_per_hour: null, day: '30-10', time: null } } },
     'बिल': { orders: [{ ref: 'J-1', orderId: 'o1', site: 'S', day: '2026-10-29', state: 'working' }], call: { name: 'send_bill', args: { order: null } } },
   },
   supplier: {
+    'पिछले हफ़्ते कितना भुगतान आया?': QUESTION,
     'हाँ 350': { orders: [{ ref: 'P-1', orderId: 'o1', site: 'S', day: '2026-10-29', state: 'requested', what: 'सीमेंट 50 बोरी' }], call: { name: 'reply_order', args: { order: null, answer: 'yes', rates_rupees: ['350'], day: null, time: null } } },
     '30-10': { orders: [{ ref: 'P-1', orderId: 'o1', site: 'S', day: '2026-10-29', state: 'requested' }], call: { name: 'reply_order', args: { order: null, answer: 'other_time', rates_rupees: null, day: '30-10', time: null } } },
     'बिल': { orders: [{ ref: 'P-1', orderId: 'o1', site: 'S', day: '2026-10-29', state: 'delivered' }], call: { name: 'send_bill', args: { order: null } } },
@@ -189,8 +195,8 @@ test('every example in the help texts works', async () => {
       const want = HELP_EXAMPLES[role]?.[ex];
       assert.ok(want, `help.${role}: "${ex}" has no expected reading here; add one`);
       const f = fakeSpark([want.call]);
-      const p = await proposeStep({ spark: f.spark, person: person(role, want.site), text: ex, orders: want.orders ?? [], nowMs: NOW });
-      assert.equal(p.kind, 'step', `help.${role}: "${ex}" gave ${JSON.stringify(p)}`);
+      const p = await proposeStep({ spark: f.spark, person: person(role, want.site), text: ex, orders: want.orders ?? [], nowMs: NOW, ask: true });
+      assert.equal(p.kind, want.kind ?? 'step', `help.${role}: "${ex}" gave ${JSON.stringify(p)}`);
     }
   }
   // The text sent when a message cannot be used shows examples that work too.

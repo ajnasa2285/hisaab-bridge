@@ -213,6 +213,12 @@ const RULES = [
     'नतीजतन', 'फलस्वरूप', 'परिणामस्वरूप', 'शायद', 'संभवतः', 'संभवत', 'हो\\s+सकत\\p{L}*', 'लगता', 'बारिश', 'ख़राब\\p{L}*',
     'खराब\\p{L}*', 'चोरी', 'नुकसान', 'तकनीकी', 'गड़बड़\\p{L}*', 'because', 'due\\s+to', 'probably', 'maybe'])],
 ];
+/** The first of the named wording rules a text breaks, or null (for other display-only prose, e.g. answers in ask.js).
+ * @param {string} text @param {string[]} names @returns {string|null} */
+export function wordingViolation(text, names) {
+  for (const [rule, pattern] of RULES) if (names.includes(rule) && pattern.test(text)) return rule;
+  return null;
+}
 /** "कारण" / "वजह" as a noun: allowed only beside a quoted recorded reason, never as the model's own. */
 const REASON_NOUN = anyWord(['कारण', 'वजह']);
 const QUOTE = /“([^“”]*)”|"([^"]*)"|«([^«»]*)»|‘([^‘’]*)’/gu;
