@@ -6,6 +6,7 @@ import { summarizeCosts } from './metrics.js';
 import { evaluationReader } from './readers.js';
 import { REPO, createPrivateData, splitDigest, safeMain } from './private-data.js';
 import { parseEvaluationArgs, partitionDigest, validateCachedRun, validateCheckpointDate, evaluationReadiness } from './checkpoint.js';
+import { runPhotoEvaluation } from './photo-run.js';
 
 /** @param {string} kind @returns {string} */
 function readerDigest(kind) {
@@ -17,6 +18,7 @@ function readerDigest(kind) {
 /** @param {string[]} [args] */
 export async function runEvaluation(args = process.argv.slice(2)) {
   const { kind, heldout, scoreOnly, check } = parseEvaluationArgs(args);
+  if (kind === 'photo') { await runPhotoEvaluation({ heldout, check }); return; }
   const reader = evaluationReader(kind), store = createPrivateData(reader.kind);
   const { loadSplit, imageHash, readImage, privatePath, readPrivateJson, writePrivateJson } = store;
   if (check) { console.log(JSON.stringify(evaluationReadiness(reader, store), null, 2)); return; }
