@@ -52,6 +52,111 @@ export function parsePaise(s) {
   return Number.isSafeInteger(paise) && paise > 0 ? paise : null;
 }
 
+/**
+ * A value the model left empty: null, undefined, or a string like "", "null", "none", "-" (models
+ * sometimes write null as a word). Every nullable field goes through this.
+ * @param {unknown} v
+ */
+export function blank(v) {
+  if (v === null || v === undefined) return true;
+  return typeof v === 'string' && ['', 'null', 'none', '-'].includes(v.trim().toLowerCase());
+}
+
+// Number words, in hundredths. Only exact words; anything else is not a number (null, never a guess).
+/** @type {Record<string, number>} */
+const WORDS = {};
+for (const [n, forms] of /** @type {[number, string[]][]} */ ([
+  [1, ['एक', 'ek']], [2, ['दो', 'do']], [3, ['तीन', 'teen', 'tin']], [4, ['चार', 'char', 'chaar']],
+  [5, ['पाँच', 'पांच', 'paanch', 'panch', 'paach']], [6, ['छह', 'छः', 'छे', 'chhe', 'che', 'chhah', 'chah']],
+  [7, ['सात', 'saat', 'sat']], [8, ['आठ', 'aath', 'ath']], [9, ['नौ', 'nau']], [10, ['दस', 'das', 'dus']],
+  [11, ['ग्यारह', 'gyarah', 'gyara']], [12, ['बारह', 'barah', 'bara']], [13, ['तेरह', 'terah', 'tera']],
+  [14, ['चौदह', 'chaudah', 'chauda']], [15, ['पंद्रह', 'पन्द्रह', 'pandrah', 'pandra']], [16, ['सोलह', 'solah', 'sola']],
+  [17, ['सत्रह', 'satrah', 'satra']], [18, ['अठारह', 'atharah', 'athara']], [19, ['उन्नीस', 'unnis', 'unees']],
+  [20, ['बीस', 'bees', 'bis']], [25, ['पच्चीस', 'pachchis', 'pachis', 'pachees']], [30, ['तीस', 'tees', 'tis']],
+  [35, ['पैंतीस', 'paintis', 'paintees']], [40, ['चालीस', 'chalis', 'chaalis', 'chalees']],
+  [45, ['पैंतालीस', 'paintalis', 'paintalees']], [50, ['पचास', 'pachaas', 'pachas']],
+  [60, ['साठ', 'saath', 'sath']], [70, ['सत्तर', 'sattar']], [75, ['पचहत्तर', 'pachhattar', 'pachattar']],
+  [80, ['अस्सी', 'assi', 'assee']], [90, ['नब्बे', 'nabbe']],
+  // Fractions said as one word: 1½ and 2½.
+  [1.5, ['डेढ़', 'डेढ', 'dedh', 'derh']], [2.5, ['ढाई', 'dhai', 'dhaai', 'adhai', 'dhaayi']],
+])) for (const f of forms) WORDS[f.normalize('NFC')] = Math.round(n * 100);
+/** "साढ़े तीन" = 3½, "सवा दो" = 2¼, "पौने तीन" = 2¾: added to the next number, in hundredths. */
+const PREFIX = /** @type {Record<string, number>} */ ({ 'साढ़े': 50, 'साढे': 50, saadhe: 50, sadhe: 50, saade: 50, 'सवा': 25, sawa: 25, sava: 25, 'पौने': -25, paune: -25, pone: -25 });
+const HUNDRED = new Set(['सौ', 'sau']);
+const THOUSAND = new Set(['हज़ार', 'हजार', 'hazar', 'hazaar', 'hajar']);
+
+/**
+ * A quantity as the person wrote it: digits ("50", "2.5"), number words ("पचास", "pachaas",
+ * "दो सौ", "dhai sau", "do hazar paanch sau", "saadhe teen"), or digits with a word ("2 सौ").
+ * Returns hundredths, or null when it is not exactly a number. 0 only as the digit "0".
+ * @param {unknown} s
+ * @returns {number | null}
+ */
+export function parseQuantity(s) {
+  const digits = parseHundredths(s);
+  if (digits !== null || typeof s !== 'string') return digits;
+  const tokens = s.normalize('NFC').trim().toLowerCase().split(/\s+/);
+  if (tokens.length === 0 || tokens.length > 6) return null;
+  let total = 0;
+  let cur = 0;
+  let afterHundred = false;
+  let prefix = 0;
+  for (const tok of tokens) {
+    if (Object.hasOwn(PREFIX, tok)) {
+      if (prefix || cur) return null;
+      prefix = PREFIX[tok];
+      continue;
+    }
+    const n = Object.hasOwn(WORDS, tok) ? WORDS[tok] : parseHundredths(tok);
+    if (n !== null) {
+      if (prefix && n % 100 !== 0) return null; // "saadhe dhai" is not a number
+      const v = n + prefix;
+      prefix = 0;
+      if (v <= 0) return null;
+      if (cur === 0) cur = v;
+      else if (afterHundred && cur % 10000 === 0 && v < 10000) cur += v; // "do sau pachaas"
+      else return null;
+      afterHundred = false;
+      continue;
+    }
+    if (HUNDRED.has(tok)) {
+      if ((prefix && cur) || cur >= 10000) return null;
+      cur = (cur || 100 + prefix) * 100; // "sau" alone is 100; "sawa sau" 125
+      prefix = 0;
+      afterHundred = true;
+      continue;
+    }
+    if (THOUSAND.has(tok)) {
+      if ((prefix && cur) || total !== 0 || cur >= 100000) return null;
+      total = (cur || 100 + prefix) * 1000;
+      prefix = 0;
+      cur = 0;
+      afterHundred = false;
+      continue;
+    }
+    return null;
+  }
+  if (prefix) return null;
+  const q = total + cur;
+  // Whole hundredths only (a fraction of a fraction is refused), and within what digits allow.
+  return Number.isSafeInteger(q) && q > 0 && q < 1e9 ? q : null;
+}
+
+/**
+ * A day as a person types it in reply to "which day?", in the model's form for resolveDay:
+ * आज/aaj → 'today', कल/kal → 'tomorrow' (a request is always ahead), परसों/parso → 'day_after',
+ * or a date like '30-10'. Anything else is null.
+ * @param {string} s
+ * @returns {string | null}
+ */
+export function dayWord(s) {
+  const t = s.normalize('NFC').trim().toLowerCase().replace(/[।.!]+$/u, '');
+  if (['आज', 'aaj', 'aj', 'today'].includes(t)) return 'today';
+  if (['कल', 'kal', 'tomorrow'].includes(t)) return 'tomorrow';
+  if (['परसों', 'परसो', 'parso', 'parson', 'parsoon'].includes(t)) return 'day_after';
+  return /^\d{1,2}[-/.]\d{1,2}(?:[-/.]\d{4})?$/.test(t) ? t : null;
+}
+
 /** The IST calendar day of a moment. @param {number} ms @returns {string} YYYY-MM-DD */
 export function istDay(ms) {
   return new Date(ms + 330 * 60 * 1000).toISOString().slice(0, 10);

@@ -3,17 +3,19 @@
 // A meter photo (or a challan photo, the supplier's or the site's own copy) is read by Muse Spark; the
 // reading is confirmed by the person, or typed by them when the photo is not clear. Exact commands (status, pending, stock, ok,
 // no) are answered by code before the model sees anything, and a confirmed step passes the site
-// office's gate (approvals with limits, src/agents/office.js). People decide; the model only proposes.
+// office's gate (approvals with limits, src/agents/office.js). A request with a value left out (site,
+// day, quantity, unit) is kept, and only what is missing is asked; the reply fills it, nothing is guessed.
+// People decide; the model only proposes.
 
 import { createHash } from 'node:crypto';
-import { proposeStep, orderRefs, pickOrder } from '../orchestrator/orchestrator.js';
+import { fillStep, proposeStep, orderRefs, pickOrder } from '../orchestrator/orchestrator.js';
 import { parseHundredthsList } from '../orchestrator/units.js';
 import { meterReadings } from './jcb.js';
 import { challanQuantities, requestedItems, siteCount } from './material.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
 import { runTool } from './common.js';
 import { parseCommand } from './office.js';
-import { day as dayName, rupees } from '../i18n/format.js';
+import { day as dayName, qty as qtyText, rupees } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
@@ -24,7 +26,8 @@ import { t } from '../i18n/index.js';
  *   {kind: 'meter_digits', orderId: string, which: 'start' | 'end', sha256: string, takenAt: string | null, at: number} |
  *   {kind: 'challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number} |
  *   {kind: 'site_challan_order', orderIds: string[], sha256: string, reading: SiteReading, at: number} |
- *   {kind: 'site_challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number}} Pending
+ *   {kind: 'site_challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number} |
+ *   {kind: 'fill', tool: string, raw: Record<string, any>, args: Record<string, any>, missing: string[], said: string, at: number}} Pending
  */
 /** @typedef {{challanNo: string | null, items: {name: string, qtyHundredths: number | null, raw: string}[], clear: boolean}} SiteReading */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) => Promise<
@@ -192,12 +195,57 @@ export function createConversation(o) {
       }
       pending.delete(keyOf(person));
     }
+    if (p && p.kind === 'fill') {
+      if (NO.has(said)) {
+        pending.delete(keyOf(person));
+        return o.reply(person, 'step.cancelled');
+      }
+      if (!HELP.has(said)) {
+        const r = await fillStep({ spark: o.spark, person, text, orders: orderRefs(o.ledger), nowMs: o.now(), pending: p });
+        // The model could not be reached: the question stays open for the same reply again.
+        if (r && r.kind === 'none' && r.key === 'orchestrator.try_again') return o.reply(person, r.key);
+        pending.delete(keyOf(person));
+        if (r) return onProposal(person, p.said, r);
+      }
+      // Not an answer: the question lapses and the message is read as a new one.
+      pending.delete(keyOf(person));
+    }
     if (HELP.has(said)) return o.reply(person, `help.${person.role}`);
 
     const proposal = await proposeStep({ spark: o.spark, person, text, orders: orderRefs(o.ledger), nowMs: o.now() });
+    return onProposal(person, text, proposal);
+  }
+
+  /**
+   * @param {Person} person @param {string} text the message the step came from (the first one, across a second question)
+   * @param {import('../orchestrator/orchestrator.js').Proposal} proposal
+   */
+  function onProposal(person, text, proposal) {
     if (proposal.kind === 'help') return o.reply(person, `help.${person.role}`);
     if (proposal.kind === 'none') return o.reply(person, proposal.key);
+    if (proposal.kind === 'missing') {
+      pending.set(keyOf(person), { kind: 'fill', tool: proposal.tool, raw: proposal.raw, args: proposal.args, missing: proposal.missing, said: text, at: o.now() });
+      return o.reply(person, 'ask.missing', { questions: askText(proposal.args, proposal.missing) });
+    }
     return propose(person, proposal.tool, proposal.args);
+  }
+
+  /**
+   * One short question naming only what is missing, in the order site, day, then each item.
+   * @param {Record<string, any>} args what is already understood @param {string[]} missing
+   */
+  function askText(args, missing) {
+    const lines = [];
+    if (missing.includes('site')) lines.push(t('ask.site'));
+    if (missing.includes('day')) lines.push(t('ask.day'));
+    for (const [i, it] of (Array.isArray(args.items) ? args.items : []).entries()) {
+      const noQty = missing.includes(`qty:${i}`);
+      const noUnit = missing.includes(`unit:${i}`);
+      if (noQty && noUnit) lines.push(t('ask.qty_unit', { name: it.name }));
+      else if (noQty) lines.push(t('ask.qty', { name: it.name, unit: it.unit }));
+      else if (noUnit) lines.push(t('ask.unit', { name: it.name, qty: qtyText(it.qtyHundredths, '').trim() }));
+    }
+    return lines.join('\n');
   }
 
   /**

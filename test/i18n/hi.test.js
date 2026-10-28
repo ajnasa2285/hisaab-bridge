@@ -28,7 +28,7 @@ const SAMPLE = {
   expectedTotal: '₹17,500', siteTotal: '₹16,800', item: 'सरिया (टन)',
   ref: 'J-1', step: 'शिवपुरी पर 29 अक्टूबर 2026 को 8 बजे से 6 घंटे के लिए JCB माँगें?', note: 'ठीक है', decision: 'मंज़ूर',
   awaited: 'बिल का इंतज़ार', bill: '₹7,320', challan: '50 बोरी',
-  names: 'बालू (cft), गिट्टी (brass)', siteNo: '96', challanNo: '97',
+  names: 'बालू (cft), गिट्टी (brass)', siteNo: '96', challanNo: '97', questions: 'किस साइट पर?',
   quantity: '50', unit: 'बोरी', number: '412', figure: '48 बोरी', before: '₹17,500', after: '₹16,800',
 };
 
@@ -102,6 +102,7 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
   const AGENT_KEYS = {
     'common.unknown_step': [], 'common.not_allowed': [], 'common.bad_args': [], 'common.no_such_order': [], 'common.wrong_state': [],
     'common.pending': [], 'common.refused': [], 'wa.unknown_sender': [],
+    'ask.missing': ['questions'], 'ask.site': [], 'ask.day': [], 'ask.qty': ['name', 'unit'], 'ask.qty_unit': ['name'], 'ask.unit': ['name', 'qty'],
     'jcb.booking_request': ['ref', 'site', 'day', 'time', 'hours'], 'jcb.rate_needed': [], 'jcb.day_needed': [],
     'jcb.reply_sent_yes': [], 'jcb.reply_sent_no': [], 'jcb.reply_sent_other_time': [],
     'jcb.job_booked': ['ref', 'site', 'day', 'time'], 'jcb.meter_start_saved': ['reading'], 'jcb.meter_end_saved': ['reading', 'hours'],

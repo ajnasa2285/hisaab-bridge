@@ -106,7 +106,8 @@ test('material steps: the model copies items and figures, code converts them', a
   let p = await proposeStep({ spark: f.spark, person: person('supervisor'), text: 'kal Shivpuri cement 50 bori, ret 2.5 trolley', orders: [], nowMs: NOW });
   assert.deepEqual(p, { kind: 'step', tool: 'request_material', args: { site: 'Shivpuri', day: '2026-10-30', items: [{ name: 'सीमेंट', qtyHundredths: 5000, unit: 'बोरी' }, { name: 'रेत', qtyHundredths: 250, unit: 'ट्रॉली' }] } });
   f = fakeSpark([{ name: 'request_material', args: { site: 'S', day: 'tomorrow', time: null, items: [{ name: 'सीमेंट', quantity: '0', unit: 'बोरी' }] } }]);
-  assert.deepEqual(await proposeStep({ spark: f.spark, person: person('contractor'), text: 'x', orders: [], nowMs: NOW }), { kind: 'none', key: 'common.bad_args' });
+  // A quantity of 0 is not an order: it is asked for, not refused.
+  assert.deepEqual(/** @type {any} */ (await proposeStep({ spark: f.spark, person: person('contractor'), text: 'x', orders: [], nowMs: NOW })).missing, ['qty:0']);
 
   // The supplier sees only the supplier's steps; the job list shows the items, so rates follow their order.
   const orders = [{ ref: 'P-1', orderId: 'o1', site: 'Shivpuri', day: '2026-10-30', state: 'requested', what: 'सीमेंट 50 बोरी, रेत 2.5 ट्रॉली' }];

@@ -135,3 +135,33 @@ bill/count or bill/rate mismatch notice. There is no JCB buyer count-mismatch ho
 `app.js` passes its existing Spark injection to these agents; the runtime client remains
 `src/meta/client.js`. Explanations carry no confirmation expectation, tool, ledger entry or state
 change. Full tests and typecheck remain the lead's AWS checks, per the explanation brief.
+
+## 6. Intake: ask only for what is missing (28 Oct 2026)
+
+A real test showed a supervisor's plain request ("कल साइट पर सीमेंट 50 बोरी चाहिए", a voice note with
+"pachaas", our own help example) answered with `common.bad_args` or help every time: the model wrote
+null as the string "null", a quantity in words could not be copied as digits, and a request without a
+site name had no way through. Now:
+
+* **Null words.** Every nullable field the model fills counts "", "null", "none", "-" (any case) as
+  null (`blank` in `src/orchestrator/units.js`), the job reference too.
+* **Number words in code.** The model copies a quantity as written, digits or words; code converts
+  (`parseQuantity`): एक/ek … नब्बे/nabbe (the common ones), सौ/sau, हज़ार/hazar, डेढ़/dedh, ढाई/dhai,
+  साढ़े/saadhe, सवा/sawa, पौने/paune and combinations ("do sau pachaas", "dhai sau", "2 सौ"). Anything
+  not exactly a number is null and is asked, never guessed.
+* **The site.** `people.json` may give a person a `site` (a supervisor usually works on one). For
+  `request_jcb` and `request_material` the model gives the site as written or null; a generic word
+  ("साइट", "site", "साइड", "side", "yahan", "यहाँ") and the little words around a name ("pe", "पर") are
+  not a name. No name: the person's `site`; else the only site among the agent's open jobs; else asked.
+  A name matching a known site whatever its case becomes that site.
+* **Ask, keep the rest.** A request complete except site, day, a quantity or a unit is kept as a
+  pending question (`fill`, 30 minutes like the others) and one message asks only for what is missing
+  (`ask.*`). The reply is read by code when one value is asked and the reply is plainly that value
+  (a site name, आज/कल/परसों/30-10, a quantity with or without its unit, a unit); otherwise Muse Spark
+  reads it with the first message and the step so far as context, and only the missing values are taken
+  from it. Then the usual read-back and "हाँ". "नहीं" cancels; "मदद" or a reply that fills nothing ends
+  the question and is read as a new message; a model outage keeps the question open.
+* `common.bad_args` is kept for messages that cannot be used even with a question; its text shows
+  examples that work. Every request example in `help.*` and `common.bad_args` is run through the real
+  parsing path in `test/orchestrator/intake.test.js`; "माँगें" and "हिसाब", which no command answered,
+  are gone from the help texts.
