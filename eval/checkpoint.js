@@ -4,10 +4,10 @@ import { splitDigest } from './private-data.js';
 /** @param {string[]} args */
 export function parseEvaluationArgs(args) {
   const kind = args[0];
-  if (!['meter', 'upi', 'challan'].includes(kind) || args.slice(1).some(a => !['--heldout', '--score-latest', '--check'].includes(a))
+  if (!['meter', 'upi', 'challan', 'photo'].includes(kind) || args.slice(1).some(a => !['--heldout', '--score-latest', '--check'].includes(a))
     || new Set(args).size !== args.length) throw new Error('invalid_arguments');
   const heldout = args.includes('--heldout'), scoreOnly = args.includes('--score-latest'), check = args.includes('--check');
-  if ((heldout && scoreOnly) || (check && scoreOnly)) throw new Error('invalid_arguments');
+  if ((heldout && scoreOnly) || (check && scoreOnly) || (kind === 'photo' && scoreOnly)) throw new Error('invalid_arguments');
   return { kind, heldout, scoreOnly, check };
 }
 

@@ -9,8 +9,8 @@ Units everywhere: **hours in tenths** (`61` = 6.1 h), **quantities in hundredths
 | Path | Owner | What |
 |---|---|---|
 | `src/meta/client.js` | Astra (Claude reviews) | The only door to Meta's models (section 2) |
-| `src/readers/` | Astra | `meter.js`, `upi.js`, `challan.js` (section 3) |
-| `eval/` | Astra | answer-key tool, evaluation runs, results (section 3.4) |
+| `src/readers/` | Astra | `meter.js`, `upi.js`, `challan.js`, `photo.js` (section 3) |
+| `eval/` | Astra | answer-key tool, evaluation runs, results (section 3.5) |
 | `src/protocol/` | Claude | messages, canonical JSON, signing, verification (section 4) |
 | `src/ledger/` | Claude | append-only stores, order states (section 5) |
 | `src/agents/` | Claude | JCB agent, contractor agent, supplier agent: wiring, decisions |
@@ -97,11 +97,28 @@ export async function readUpi(image) {}
 export async function readChallan(image) {}
 ```
 
-### 3.4 Evaluation (`eval/`)
+### 3.4 Photo kind
+
+```js
+/**
+ * @param {ImageInput} image
+ * @returns {Promise<{ok: true, kind: 'meter'|'upi'|'challan'|'other', clear: boolean,
+ *   model: string, latencyMs: number}
+ * | {ok: false, transient: boolean, reason: string}>}
+ */
+export async function classifyPhoto(image) {}
+```
+
+`src/readers/photo.js` makes one `museSpark` call through `src/meta/client.js` with a strict JSON schema, without reading fields or using the sender's role. The shared client's bounded transient retries still apply. Image text is data, never instructions.
+
+Kinds: `meter` is an engine hour-counter photo; `upi` is a UPI payment receipt screenshot (including pending or failed); `challan` is a delivery challan, delivery note, material bill or weighbridge slip; `other` is none of these. `clear` describes certainty about the kind, not legibility of individual fields. Any doubt or competing kinds means `clear: false`; an unidentifiable image returns `kind: 'other', clear: false`. The conversation must ask the person what the photo is when unsure; only a clear kind selects its specific reader. A clear `other` is not routed to a field reader.
+
+### 3.5 Evaluation (`eval/`)
 
 - Real images and answer keys live outside the repo: `D:\MUNSHI\CLAUDE\HACKATHON\hisaab-data\{meters,upi,challans}\` with `answers.json` per folder: `{ "<file>": { ...expected fields } }`.
 - `split.json` (also outside the repo) fixes development vs held-out files **before** any held-out run; held-out results are only computed with `npm run eval -- --heldout` and are never used to tune prompts.
 - The repo holds the code and `eval/results/*.json` with **aggregate numbers only** (counts, accuracy, wrong-but-confident, unclear rate, latency, tokens, cost), never file names of real images or their contents.
+- `npm run eval -- photo [--heldout]` evaluates photo kind using the existing `meters`, `upi` and `challans` folders as truth, preserving every photo's existing split side. It needs no field answer key. Reports include per-kind correct (`clear: true` and matching kind), unsure (`clear: false`), wrong-but-confident (`clear: true` and wrong kind), failures, latency and cost. Empty kinds remain explicitly unassessed. Photo held-out checkpoints are recorded separately from field-reader checkpoints; selected held-out photos still require a frozen split and are never used to tune the prompt.
 
 ## 4. Messages (`src/protocol/`)
 
