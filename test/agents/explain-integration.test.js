@@ -95,13 +95,13 @@ test('JCB dispute explains after the original notice; prose changes no ledger, t
     assert.equal(requests.length, 1);
     assert.equal(requests[0].tools, undefined, 'no model tools are offered');
     assert.ok(requests[0].schema, 'the helper requests structured JSON');
-    assert.match(requests[0].text, /seller/);
-    const firstFacts = JSON.parse(requests[0].text).facts;
-    assert.equal(firstFacts.currentBill.lines[0].quantity, '6.1');
-    assert.equal(firstFacts.meterEvidence.computedHours, '6.1');
-    assert.equal(firstFacts.meterEvidence.start.source, 'locally_confirmed_meter');
-    assert.equal(firstFacts.disputes.at(-1).figure.value, '5.5');
-    for (const value of ['1234.5', '1240.6', '6.1', '5.5']) assert.ok(requests[0].text.includes(value), value);
+    assert.equal(requests[0].reasoningEffort, 'minimal');
+    // The request is a few lines for this difference, from this agent's own ledger.
+    const first = requests[0].text;
+    assert.match(first, /^पाठक: विक्रेता \(JCB मालिक\)/);
+    assert.match(first, /लागू बिल \(मूल\): JCB 6\.1 घंटे/);
+    assert.match(first, /मीटर फ़ोटो: शुरू 1234\.5, अंत 1240\.6; कोड से गिना अंतर 6\.1 घंटे/);
+    assert.match(first, /दूसरे पक्ष की आपत्ति \(लागू बिल पर\): 5\.5 घंटे; लिखा कारण «साइट की दर्ज अवधि अलग है।»/);
     assert.ok(!requests[0].text.includes(SHA_A) && !requests[0].text.includes(orderId), 'fingerprints and internal ids are not numerical evidence');
 
     // A later dispute must use the correction now in force while preserving its meter evidence.
@@ -110,13 +110,12 @@ test('JCB dispute explains after the original notice; prose changes no ledger, t
     assert.equal((await runTool(s.site.tools, contractor, { tool: 'dispute_bill', args: { orderId, hoursTenths: 50, reason: 'दर्ज अवधि फिर अलग है।' } })).ok, true);
     await n.waitFor('jcb', 'explain.wrapper', after);
     assert.equal(requests.length, 2);
-    assert.match(requests[1].text, /CORRECTION|correction/);
-    const correctedFacts = JSON.parse(requests[1].text).facts;
-    assert.equal(correctedFacts.currentBill.lines[0].quantity, '5.5');
-    assert.equal(correctedFacts.currentBill.source, 'CORRECTION');
-    assert.equal(correctedFacts.corrections.at(-1).isCurrent, true);
-    assert.equal(correctedFacts.disputes.at(-1).concernsCurrentBill, true);
-    assert.ok(requests[1].text.includes('6,600') || requests[1].text.includes('6600'), 'current corrected amount is supplied');
+    const corrected = requests[1].text;
+    assert.match(corrected, /लागू बिल \(सुधरा हुआ\): JCB 5\.5 घंटे × ₹1,200 = ₹6,600/);
+    assert.match(corrected, /मीटर फ़ोटो: शुरू 1234\.5, अंत 1240\.6/);
+    assert.match(corrected, /सुधार: पहले JCB 6\.1 घंटे.*→ अब JCB 5\.5 घंटे/);
+    assert.match(corrected, /आपत्ति \(लागू बिल पर\): 5\.0 घंटे; लिखा कारण «दर्ज अवधि फिर अलग है।»/);
+    assert.ok(!corrected.includes('साइट की दर्ज अवधि अलग है'), 'the objection to the replaced bill is history, not this difference');
     assert.equal(s.jcbCore.ledger.view(orderId).state, 'disputed');
     assert.equal(s.jcbCore.ledger.view(orderId).billRev, 2);
   } finally {
@@ -141,13 +140,10 @@ test('material explanations keep the buyer site challan separate from the seller
     assert.equal(buyer.expect, undefined);
     assert.ok(n.all.findIndex((x) => x.key === 'site.material_bill_count_differs') < n.all.indexOf(buyer));
     assert.equal(s.siteCore.ledger.view(orderId).state, 'billed', 'no automatic dispute or acceptance');
-    assert.match(requests[0].text, /buyer/);
-    const buyerFacts = JSON.parse(requests[0].text).facts;
-    assert.equal(buyerFacts.localSiteCount.fromSiteChallanPhoto, true);
-    assert.equal(buyerFacts.localSiteCount.items[0].quantity, '48');
-    assert.equal(buyerFacts.signedDelivery.items[0].quantity, '50');
-    assert.equal(buyerFacts.signedDelivery.challanNumber, 'DEL-81');
-    for (const value of ['SITE-75', 'DEL-81', '48', '50']) assert.ok(requests[0].text.includes(value), value);
+    const buyerText = requests[0].text;
+    assert.match(buyerText, /^पाठक: खरीदार \(ठेकेदार\)/);
+    assert.match(buyerText, /साइट की अपनी गिनती \(साइट के चालान SITE-75 की फ़ोटो से\): सीमेंट 48 बोरी/);
+    assert.match(buyerText, /विक्रेता की हस्ताक्षरित डिलीवरी, चालान DEL-81: सीमेंट 50 बोरी/);
 
     assert.equal((await runTool(s.site.tools, contractor, { tool: 'dispute_bill', args: { orderId, qtyHundredths: 4800, reason: 'साइट की गिनती अलग है।' } })).ok, true);
     const seller = await n.waitFor('supplier', 'explain.wrapper');
@@ -155,10 +151,9 @@ test('material explanations keep the buyer site challan separate from the seller
     assert.equal(seller.expect, undefined);
     assert.ok(n.all.findIndex((x) => x.key === 'supplier.bill_disputed') < n.all.indexOf(seller));
     assert.equal(requests.length, 2);
-    assert.match(requests[1].text, /seller/);
-    const sellerFacts = JSON.parse(requests[1].text).facts;
-    assert.equal(sellerFacts.localSiteCount, null, 'site photo provenance is unknown to the seller');
-    assert.equal(sellerFacts.disputes.at(-1).figure.value, '48');
+    assert.match(requests[1].text, /^पाठक: विक्रेता \(सप्लायर\)/);
+    assert.ok(!requests[1].text.includes('साइट की अपनी गिनती'), 'site photo provenance is unknown to the seller');
+    assert.match(requests[1].text, /दूसरे पक्ष की आपत्ति \(लागू बिल पर\): 48 बोरी/);
     assert.ok(requests[1].text.includes('DEL-81'));
     assert.ok(!requests[1].text.includes('SITE-75'), 'a seller cannot see the site-only challan number');
     assert.ok(!requests[1].text.includes(SHA_B), 'a seller cannot see the site-only photo fingerprint');
