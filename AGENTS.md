@@ -5,7 +5,7 @@ Read this file first, then `docs/CONTRACTS.md`, then your brief in `docs/briefs/
 ## Hackathon rules (hard)
 
 1. **New code only.** Everything in this repository is written during the event, from **27 October 2026, 09:30 IST**. Do not copy, port, translate or regenerate code from anywhere else on this computer.
-2. **Never open the owner's private agents**, not even to "look how it was done": `D:\Agent Munshi*`, `D:\Bhatta Munshi*`, `D:\BHATTA MUNSHI*`, `D:\JCB`, `D:\Construction`, `D:\MUNSHI\CLAUDE\HACKATHON\a2a-test`, `D:\MUNSHI\CODEX*`, any `bhatta-munshi-v6` folder. Design knowledge is in `docs/`; that is all you need. Open-source libraries from npm are fine.
+2. **Never open the owner's private projects**, not even to "look how it was done": open nothing on this computer outside this repository, except the private data folder named in rule 4. Design knowledge is in `docs/`; that is all you need. Open-source libraries from npm are fine.
 3. **Only Meta models at runtime.** Every model the product calls is a Meta model through the Meta Model API (Muse Spark, Muse Voice Transcribe). No Gemini, OpenAI, Anthropic or any other model endpoint in `src/`, not even for comparison. All model calls go through `src/meta/client.js`. A test fails the build if another model endpoint appears.
 4. **The repository is public.** No keys, tokens, passwords, real phone numbers, real names, real photos, real UPI screenshots or real amounts in the repo, in tests, in commit messages, or in logs that get committed. Tests use invented data and phone numbers `9190000000xx`. Real data lives only in `D:\MUNSHI\CLAUDE\HACKATHON\hisaab-data\` (outside the repo) and on the server.
 
