@@ -28,6 +28,7 @@ const SAMPLE = {
   expectedTotal: '₹17,500', siteTotal: '₹16,800', item: 'सरिया (टन)',
   ref: 'J-1', step: 'शिवपुरी पर 29 अक्टूबर 2026 को 8 बजे से 6 घंटे के लिए JCB माँगें?', note: 'ठीक है', decision: 'मंज़ूर',
   awaited: 'बिल का इंतज़ार', bill: '₹7,320', challan: '50 बोरी',
+  names: 'बालू (cft), गिट्टी (brass)', siteNo: '96', challanNo: '97',
 };
 
 test('every key has a non-empty Hindi text and fills with its parameters', () => {

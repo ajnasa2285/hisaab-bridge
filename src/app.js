@@ -126,11 +126,12 @@ export function createApp(cfg) {
     const reply = (p, key, params) => sendTo(p, t(key, params));
     // References, exact commands, and (contractor) approvals with this agent's limits.
     const office = createOffice({ ledger: core.ledger, tools: agent.tools, kind: a.kind, limits: a.limits, tell, reply, now });
-    // Each agent reads only its own kind of photo: meters (JCB), UPI screenshots (contractor), challans (supplier).
+    // Each agent reads only its own kind of photo: meters (JCB), UPI screenshots and the site's copy of
+    // a challan (contractor), challans (supplier).
     const talk = createConversation({
       ledger: core.ledger, tools: agent.tools, spark: cfg.spark, readMeter: a.kind === 'jcb' ? cfg.readMeter : undefined,
       readUpi: a.kind === 'contractor' ? cfg.readUpi : undefined,
-      readChallan: a.kind === 'supplier' ? cfg.readChallan : undefined,
+      readChallan: a.kind === 'supplier' || a.kind === 'contractor' ? cfg.readChallan : undefined,
       reply, now, office,
     });
     const card = agentCardJson({ id: a.id, name: a.title, description: a.title, baseUrl: `${cfg.baseUrl}/agents/${a.name}`, publicKeyText: publicKeyText(a.privateKey) });

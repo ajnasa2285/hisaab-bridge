@@ -1,5 +1,5 @@
 import { museSpark } from '../meta/client.js';
-import { parseUpiDate } from './upi.js';
+import { parseUpiDate, validUpiDate } from './upi.js';
 
 export const CHALLAN_VERSION = 'challan-v1';
 export const MAX_CHALLAN_ITEMS = 20;
@@ -83,6 +83,19 @@ export function parseQtyHundredths(raw) {
   return hundredths > 0n && hundredths <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(hundredths) : null;
 }
 
+/** A challan date: what parseUpiDate accepts, or a handwritten d/m/yy or dd/mm/yy in Indian day/month
+ * order (6/8/26 = 2026-08-06), only when the day and month are valid; anything else gives null.
+ * @param {string} raw @returns {string|null} */
+export function parseChallanDate(raw) {
+  const full = parseUpiDate(raw);
+  if (full !== null) return full;
+  // One separator throughout: "6/8/26", "6-8-26" or "6.8.26".
+  const match = /^(\d{1,2})([/.-])(\d{1,2})\2(\d{2})$/.exec(raw);
+  if (!match) return null;
+  const date = `20${match[4]}-${match[3].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+  return validUpiDate(date) ? date : null;
+}
+
 /** Canonical unit, else the printed text if it is plain, else null.
  * @param {unknown} raw @returns {string|null} */
 export function normaliseUnit(raw) {
@@ -121,7 +134,7 @@ export async function readChallan(image) {
   const challanNo = noRaw !== null && noRaw.length <= 40 ? noRaw : null;
   if (noRaw !== null && challanNo === null) clear = false;
   const dateRaw = visible(v.date);
-  const date = dateRaw !== null ? parseUpiDate(dateRaw) : null;
+  const date = dateRaw !== null ? parseChallanDate(dateRaw) : null;
   if (dateRaw !== null && date === null) clear = false;
   const vehicleRaw = visible(v.vehicle);
   const squeezed = vehicleRaw?.replace(/[\s-]/g, '') ?? null;

@@ -148,7 +148,7 @@ One SQLite file per agent. Tables are append-only (triggers refuse UPDATE/DELETE
 - `events(seq INTEGER PRIMARY KEY, order_id, direction 'in'|'out'|'local', type, msg_id UNIQUE, body_json, at, prev_hash, hash)` — every message sent or received (the whole signed message) and every local decision or evidence (`EVIDENCE`, `NOTE`); `hash = sha256(prev_hash + canonical(row))`. API: `src/ledger/store.js` (`openLedger`, `ensureOrder`, `append`, `view`, `fits`, `events`, `verifyChain`).
 - `orders(order_id, kind, counterparty, site, created_at)` — identity only; the state is derived from events.
 
-Order states (derived): `requested → booked | declined → working (jcb) | delivered (material) → billed → accepted | disputed → billed (rev n+1) → payment_claimed → settled`. A message that does not fit the current state is refused with `WRONG_STATE`. A `yes` on a material order must carry `rates`, and a `yes` on a JCB order must not. The site's own count of a delivery is a local `NOTE {kind: 'site_count', items}` on the buyer's ledger only; it never changes the state.
+Order states (derived): `requested → booked | declined → working (jcb) | delivered (material) → billed → accepted | disputed → billed (rev n+1) → payment_claimed → settled`. A message that does not fit the current state is refused with `WRONG_STATE`. A `yes` on a material order must carry `rates`, and a `yes` on a JCB order must not. The site's own count of a delivery is a local `NOTE {kind: 'site_count', items, challan?: {sha256, number}}` on the buyer's ledger only (`challan` when the count came from a photo of the site's copy of the challan; it may be recorded before the DELIVERY); it never changes the state.
 
 ## 6. Orchestrator (`src/orchestrator/`)
 

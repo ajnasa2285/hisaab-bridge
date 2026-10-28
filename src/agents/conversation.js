@@ -1,7 +1,7 @@
 // One person's conversation with their agent. A text becomes one proposed step (Muse Spark, via the
 // orchestrator); a step that commits anything is read back and runs only after the person says yes.
-// A meter photo (or a supplier's challan photo) is read by Muse Spark; the reading is confirmed by the
-// person, or typed by them when the photo is not clear. Exact commands (status, pending, stock, ok,
+// A meter photo (or a challan photo, the supplier's or the site's own copy) is read by Muse Spark; the
+// reading is confirmed by the person, or typed by them when the photo is not clear. Exact commands (status, pending, stock, ok,
 // no) are answered by code before the model sees anything, and a confirmed step passes the site
 // office's gate (approvals with limits, src/agents/office.js). People decide; the model only proposes.
 
@@ -9,7 +9,8 @@ import { createHash } from 'node:crypto';
 import { proposeStep, orderRefs, pickOrder } from '../orchestrator/orchestrator.js';
 import { parseHundredthsList } from '../orchestrator/units.js';
 import { meterReadings } from './jcb.js';
-import { challanQuantities, requestedItems } from './material.js';
+import { challanQuantities, requestedItems, siteCount } from './material.js';
+import { openRefs, parseRef } from '../ledger/refs.js';
 import { runTool } from './common.js';
 import { parseCommand } from './office.js';
 import { day as dayName, rupees } from '../i18n/format.js';
@@ -21,8 +22,11 @@ import { t } from '../i18n/index.js';
 /**
  * @typedef {{kind: 'confirm', tool: string, args: Record<string, any>, at: number} |
  *   {kind: 'meter_digits', orderId: string, which: 'start' | 'end', sha256: string, takenAt: string | null, at: number} |
- *   {kind: 'challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number}} Pending
+ *   {kind: 'challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number} |
+ *   {kind: 'site_challan_order', orderIds: string[], sha256: string, reading: SiteReading, at: number} |
+ *   {kind: 'site_challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number}} Pending
  */
+/** @typedef {{challanNo: string | null, items: {name: string, qtyHundredths: number | null, raw: string}[], clear: boolean}} SiteReading */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) => Promise<
  *   {ok: true, kind: 'challan', challanNo: string | null, date: string | null,
  *     items: {name: string, qtyHundredths: number | null, unit: string | null, raw: string}[], clear: boolean} |
@@ -135,6 +139,10 @@ export function createConversation(o) {
         pending.delete(keyOf(person));
         return proposeDelivery(person, { orderId: p.args.orderId, sha256: p.args.sha256, challanNo: p.args.challanNo ?? null }, figures);
       }
+      if (figures && p.tool === 'confirm_count' && p.args.challan) {
+        pending.delete(keyOf(person));
+        return proposeSiteCount(person, { orderId: p.args.orderId, sha256: p.args.challan.sha256, challanNo: p.args.challan.number ?? null }, figures, false);
+      }
       if (figures && p.tool === 'confirm_count') {
         pending.delete(keyOf(person));
         return propose(person, 'confirm_count', { orderId: p.args.orderId, qtysHundredths: figures });
@@ -153,6 +161,23 @@ export function createConversation(o) {
         return o.reply(person, 'step.cancelled');
       }
       pending.delete(keyOf(person));
+    }
+    if (p && p.kind === 'site_challan_order') {
+      const want = parseRef(text);
+      if (want !== null) {
+        const r = orderRefs(o.ledger).find((x) => x.ref === want && p.orderIds.includes(x.orderId));
+        if (!r) return askOrder(person, p.orderIds);
+        pending.delete(keyOf(person));
+        return siteCountFromRead(person, r.orderId, p.sha256, p.reading);
+      }
+      pending.delete(keyOf(person));
+      if (NO.has(said)) return o.reply(person, 'step.cancelled');
+    }
+    if (p && p.kind === 'site_challan_figures') {
+      const figures = parseHundredthsList(said);
+      pending.delete(keyOf(person));
+      if (figures) return proposeSiteCount(person, p, figures, false);
+      if (NO.has(said)) return o.reply(person, 'step.cancelled');
     }
     if (p && p.kind === 'meter_digits') {
       const m = /^(\d{1,7})(?:\.(\d))?$/.exec(said);
@@ -181,6 +206,15 @@ export function createConversation(o) {
    * @param {{mime: string, bytes: Uint8Array, takenAt?: string | null}} image
    */
   async function onImage(person, image) {
+    if (mayCountChallan(person)) {
+      if (person.role !== 'contractor' || !o.readUpi) return onSiteChallanImage(person, image);
+      // The contractor's photo is a UPI screenshot or the site's challan; the open orders tell which,
+      // and when both could be, a photo that is not a UPI screenshot is read as a challan.
+      const toCount = uncounted().length > 0;
+      const toPay = orderRefs(o.ledger).some((r) => r.state === 'accepted' || r.state === 'payment_claimed');
+      if (toCount && !toPay) return onSiteChallanImage(person, image);
+      if (toCount) return onPaymentImage(person, image, () => onSiteChallanImage(person, image));
+    }
     if (person.role === 'contractor') return onPaymentImage(person, image);
     if (person.role === 'supplier') return onChallanImage(person, image);
     if (person.role !== 'operator' && person.role !== 'jcb_owner') return o.reply(person, 'common.unknown_step');
@@ -254,20 +288,110 @@ export function createConversation(o) {
     return propose(person, 'record_delivery', { orderId: c.orderId, items, sha256: c.sha256, challanNo: c.challanNo });
   }
 
+  /** May this person count a delivery from the site's own challan on this agent? @param {Person} person */
+  function mayCountChallan(person) {
+    return !!o.readChallan && Object.hasOwn(o.tools, 'confirm_count') && o.tools.confirm_count.roles.includes(person.role);
+  }
+
+  /** The material orders waiting for the site's count: booked or delivered, not yet counted. */
+  function uncounted() {
+    return orderRefs(o.ledger).filter((r) => (r.state === 'booked' || r.state === 'delivered')
+      && /** @type {{kind: string} | null} */ (o.ledger.order(r.orderId))?.kind === 'material'
+      && siteCount(o.ledger.events(r.orderId)) === null);
+  }
+
+  /** @param {string} orderId */
+  const refOf = (orderId) => openRefs(o.ledger).refOf(orderId) ?? '—';
+  /** "बालू (cft), सीमेंट (बोरी)" @param {string} orderId */
+  const namesOf = (orderId) => requestedItems(o.ledger.events(orderId)).map((i) => `${i.name} (${i.unit})`).join(', ') || '—';
+
+  /**
+   * A photo of the site's own copy of the challan (supervisor or contractor) is the site's record of
+   * what arrived for a material order not yet counted. The model reads it; code matches what it read
+   * to the order's items; the person confirms with "हाँ" or types the figures. It becomes the site's
+   * count with the photo's fingerprint as evidence, compared with the supplier's signed DELIVERY.
+   * @param {Person} person
+   * @param {{mime: string, bytes: Uint8Array}} image
+   */
+  async function onSiteChallanImage(person, image) {
+    if (!o.readChallan) return o.reply(person, 'orchestrator.try_again');
+    if (image.mime !== 'image/jpeg' && image.mime !== 'image/png' && image.mime !== 'image/webp') return o.reply(person, 'challan.not_challan');
+    const open = uncounted();
+    if (open.length === 0) return o.reply(person, 'site.challan_no_order');
+    const sha256 = createHash('sha256').update(image.bytes).digest('hex');
+    const read = await o.readChallan({ mime: image.mime, bytes: image.bytes });
+    if (!read.ok) return o.reply(person, 'orchestrator.try_again');
+    if (read.kind === 'not_challan') return o.reply(person, 'challan.not_challan');
+    const challanNo = typeof read.challanNo === 'string' && read.challanNo.trim() ? read.challanNo.trim().slice(0, 40) : null;
+    /** @type {SiteReading} */
+    const reading = { challanNo, items: read.items, clear: read.clear };
+    if (open.length > 1) {
+      pending.set(keyOf(person), { kind: 'site_challan_order', orderIds: open.map((r) => r.orderId), sha256, reading, at: o.now() });
+      return askOrder(person, open.map((r) => r.orderId));
+    }
+    return siteCountFromRead(person, open[0].orderId, sha256, reading);
+  }
+
+  /**
+   * Which order is this challan for? Lists the orders with their references, the exact reply form.
+   * @param {Person} person @param {string[]} orderIds
+   */
+  function askOrder(person, orderIds) {
+    const lines = orderRefs(o.ledger).filter((r) => orderIds.includes(r.orderId))
+      .map((r) => t('site.challan_order_line', { ref: r.ref, site: r.site, what: r.what ?? '—' })).join('\n');
+    return o.reply(person, 'site.challan_which_order', { lines });
+  }
+
+  /**
+   * What the reader saw, as the site's count of this order: read back when every item was read
+   * clearly, else the person types the figures. Nothing is filled in.
+   * @param {Person} person @param {string} orderId @param {string} sha256 @param {SiteReading} reading
+   */
+  function siteCountFromRead(person, orderId, sha256, reading) {
+    const qtys = challanQuantities(requestedItems(o.ledger.events(orderId)), reading.items);
+    if (!reading.clear || qtys.some((q) => q === null)) {
+      pending.set(keyOf(person), { kind: 'site_challan_figures', orderId, sha256, challanNo: reading.challanNo, at: o.now() });
+      return o.reply(person, 'site.challan_ask_person', { ref: refOf(orderId), raw: reading.items.map((i) => i.raw).filter(Boolean).join(', ') || '—', names: namesOf(orderId) });
+    }
+    return proposeSiteCount(person, { orderId, sha256, challanNo: reading.challanNo }, /** @type {number[]} */ (qtys), true);
+  }
+
+  /**
+   * Reads back the site's count from its challan: one figure per ordered item, in order (0 = did not
+   * come). `fromRead` marks figures the reader saw: a bare "हाँ" to them records a first count only.
+   * Typed figures that do not fit the order are asked for again.
+   * @param {Person} person
+   * @param {{orderId: string, sha256: string, challanNo: string | null}} c
+   * @param {number[]} qtys
+   * @param {boolean} fromRead
+   */
+  function proposeSiteCount(person, c, qtys, fromRead) {
+    const ordered = requestedItems(o.ledger.events(c.orderId));
+    if (qtys.length !== ordered.length || qtys.every((q) => q === 0)) {
+      pending.set(keyOf(person), { kind: 'site_challan_figures', orderId: c.orderId, sha256: c.sha256, challanNo: c.challanNo, at: o.now() });
+      return o.reply(person, 'site.challan_ask_person', { ref: refOf(c.orderId), raw: '—', names: namesOf(c.orderId) });
+    }
+    /** @type {Record<string, any>} */
+    const args = { orderId: c.orderId, qtysHundredths: qtys, challan: { sha256: c.sha256, number: c.challanNo } };
+    if (fromRead) args.sameAsChallan = true;
+    return propose(person, 'confirm_count', args);
+  }
+
   /**
    * A UPI screenshot from the contractor is a payment claim for the accepted bill. The model reads
    * it; the contractor confirms what was read; the JCB owner later confirms the money arrived.
    * @param {Person} person
    * @param {{mime: string, bytes: Uint8Array}} image
+   * @param {() => Promise<void> | void} [notUpi] what to do instead when the photo is not a UPI screenshot
    */
-  async function onPaymentImage(person, image) {
+  async function onPaymentImage(person, image, notUpi) {
     if (!o.readUpi) return o.reply(person, 'orchestrator.try_again');
     if (image.mime !== 'image/jpeg' && image.mime !== 'image/png' && image.mime !== 'image/webp') return o.reply(person, 'payment.not_upi');
     const picked = pickOrder(orderRefs(o.ledger), null, ['accepted', 'payment_claimed']);
     if (typeof picked === 'string') return o.reply(person, picked);
     const read = await o.readUpi({ mime: image.mime, bytes: image.bytes });
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
-    if (read.kind === 'not_upi') return o.reply(person, 'payment.not_upi');
+    if (read.kind === 'not_upi') return notUpi ? notUpi() : o.reply(person, 'payment.not_upi');
     const day = read.date && /^\d{4}-\d{2}-\d{2}$/.test(read.date) ? read.date : null;
     if (!read.clear || read.amountPaise === null || !read.utr || day === null) return o.reply(person, 'payment.retake');
     if (read.status !== 'success') {

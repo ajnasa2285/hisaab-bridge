@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { tenths as hours, rupees, day as dayName, qty } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
-import { agreedRates, billFollows, delivery, itemsText, lineAmountPaise, linesText, materialBillBody, ratesText, sameItems, siteCount, validItems } from './material.js';
+import { agreedRates, billFollows, countDifferences, delivery, itemsText, lineAmountPaise, linesText, materialBillBody, rateFor, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, validItems } from './material.js';
 import { openRefs } from '../ledger/refs.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
@@ -56,6 +56,38 @@ export function createContractorAgent(o) {
     const d = isMaterial(orderId) ? delivery(ledger.events(orderId)) : null;
     if (!d || !Array.isArray(qtys) || qtys.length !== d.items.length || !qtys.every(nonNegInt)) return null;
     return d.items.map((it, i) => ({ name: it.name, qtyHundredths: /** @type {number} */ (qtys[i]), unit: it.unit }));
+  };
+
+  /**
+   * The site's count from its own copy of the challan: one figure (0 allowed) per ordered item, in the
+   * order's order, not all 0; the items at 0 are left out (they did not come).
+   * @param {string} orderId @param {unknown} qtys @returns {Item[] | null}
+   */
+  const challanItems = (orderId, qtys) => {
+    const ordered = isMaterial(orderId) ? requestedItems(ledger.events(orderId)) : [];
+    if (!ordered.length || !Array.isArray(qtys) || qtys.length !== ordered.length || !qtys.every(nonNegInt) || qtys.every((q) => q === 0)) return null;
+    return ordered.map((it, i) => ({ name: it.name, qtyHundredths: /** @type {number} */ (qtys[i]), unit: it.unit })).filter((it) => it.qtyHundredths > 0);
+  };
+  /** "बालू (cft), सीमेंट (बोरी)": the order's items, for typing figures in order. @param {string} orderId */
+  const orderedNames = (orderId) => (isMaterial(orderId) ? requestedItems(ledger.events(orderId)) : []).map((i) => `${i.name} (${i.unit})`).join(', ') || '—';
+  /** A challan as evidence: the photo's fingerprint and the number as read and confirmed. @param {unknown} c */
+  const validChallan = (c) => {
+    const x = /** @type {any} */ (c);
+    return !!x && typeof x === 'object' && isSha256(x.sha256)
+      && (x.number === null || (typeof x.number === 'string' && x.number.trim().length > 0 && x.number.length <= 40));
+  };
+  /**
+   * The site's count against the supplier's signed delivery: the quantity of each item and, when both
+   * are known, the challan numbers. Code compares; a difference is told with both figures.
+   * @param {string} orderId @param {Item[]} count @param {string | null} siteNo
+   * @param {NonNullable<ReturnType<typeof delivery>>} d
+   */
+  const compareCount = (orderId, count, siteNo, d) => {
+    const numbersDiffer = siteNo !== null && d.number !== null && !sameChallanNo(siteNo, d.number);
+    return {
+      same: countDifferences(count, d.items).length === 0 && !numbersDiffer,
+      params: { ref: refOf(orderId), site: siteOf(orderId), count: itemsText(count), siteNo: siteNo ?? '—', challan: itemsText(d.items), challanNo: d.number ?? '—' },
+    };
   };
 
   /**
@@ -166,15 +198,23 @@ export function createContractorAgent(o) {
     // kept on our side only (a local NOTE); code compares it with the challan and later with the bill.
     // `sameAsChallan` marks the one-word "हाँ" to the delivery notice: it records a first count only.
     // A count already recorded changes only with typed figures, and the contractor is told both.
+    // With `challan` ({sha256, number}) the count comes from the site's own copy of the challan (a
+    // photo the site sent): one figure per ordered item, recorded before or after the DELIVERY.
     confirm_count: {
       roles: ['supervisor', 'contractor'],
       commits: true,
       describe: (a) => {
+        if (a.challan !== undefined) {
+          const counted = challanItems(a.orderId, a.qtysHundredths);
+          const challan = validChallan(a.challan) ? a.challan.number ?? '—' : '—';
+          return { key: 'step.site_challan', params: { ref: refOf(a.orderId), site: siteOf(a.orderId), challan, items: counted ? itemsText(counted) : '—', names: orderedNames(a.orderId) } };
+        }
         const counted = countedItems(a.orderId, a.qtysHundredths);
         return { key: 'step.confirm_count', params: { site: siteOf(a.orderId), items: counted ? itemsText(counted) : '—' } };
       },
       async run(person, a) {
         if (!known(a.orderId)) return no('common.no_such_order');
+        if (a.challan !== undefined) return countFromChallan(person, a);
         const d = isMaterial(a.orderId) ? delivery(ledger.events(a.orderId)) : null;
         if (d === null) return no('common.wrong_state');
         const items = countedItems(a.orderId, a.qtysHundredths);
@@ -266,6 +306,39 @@ export function createContractorAgent(o) {
   };
 
   /**
+   * The site's count from its own copy of the challan, with the photo as evidence. Before the
+   * supplier's DELIVERY it is kept for the comparison when the DELIVERY comes; after it, code compares
+   * at once.
+   * @param {import('../wa/directory.js').Person} person @param {Record<string, any>} a
+   */
+  async function countFromChallan(person, a) {
+    if (!isMaterial(a.orderId) || !['booked', 'delivered'].includes(ledger.view(a.orderId).state)) return no('common.wrong_state');
+    if (!validChallan(a.challan)) return no('common.bad_args');
+    const items = challanItems(a.orderId, a.qtysHundredths);
+    const ref = refOf(a.orderId);
+    if (items === null) return no('site.challan_figures', { ref, names: orderedNames(a.orderId) });
+    const before = siteCount(ledger.events(a.orderId));
+    if (before !== null && a.sameAsChallan === true) return no('site.count_already', { ref, count: itemsText(before) });
+    const challan = { sha256: a.challan.sha256, number: a.challan.number === null ? null : a.challan.number.trim() };
+    const stored = ledger.append({
+      orderId: a.orderId, direction: 'local', type: 'NOTE', msgId: randomUUID(),
+      body: { kind: 'site_count', items, challan }, at: new Date(agent.now()).toISOString(),
+    });
+    if (stored === null) return no('common.wrong_state');
+    const site = siteOf(a.orderId);
+    const d = delivery(ledger.events(a.orderId));
+    if (before !== null && !sameItems(before, items) && person.role !== 'contractor') {
+      await tell('contractor', 'site.count_changed', { ref, site, old: itemsText(before), count: itemsText(items), challan: d ? itemsText(d.items) : '—' });
+    }
+    if (d === null) return ok('site.challan_count_saved', { ref, site, items: itemsText(items), challan: challan.number ?? '—' });
+    const c = compareCount(a.orderId, items, challan.number, d);
+    if (c.same) return ok('site.challan_count_matches', { ref, site, items: itemsText(items), challan: d.number ?? challan.number ?? '—' });
+    // Code compares; the contractor is told both figures (in the reply, when the contractor counted).
+    if (person.role !== 'contractor') await tell('contractor', 'site.challan_count_differs', c.params);
+    return ok('site.challan_count_differs', c.params);
+  }
+
+  /**
    * A material bill or correction: checked against the signed delivery and the agreed rates, then
    * against the site's own count. Only a bill that follows from both is offered for a one-word "हाँ".
    * @param {Message} m
@@ -288,8 +361,12 @@ export function createContractorAgent(o) {
     /** @type {Item[]} */
     const billed = b.lines.map((/** @type {any} */ l, /** @type {number} */ i) => ({ name: l.what, qtyHundredths: l.qtyHundredths, unit: d.items[i].unit }));
     if (count !== null && !sameItems(count, billed)) {
-      // What the site's count comes to at the same rates (an item counted as 0 adds nothing).
-      const siteTotal = count.reduce((s, it, i) => s + (it.qtyHundredths === 0 ? 0 : lineAmountPaise(it.qtyHundredths, b.lines[i].ratePaise) ?? 0), 0);
+      // What the site's count comes to at the agreed rates (an item counted as 0 adds nothing). A count
+      // from the site's own challan may list other items than the delivery, so each is priced by name.
+      const siteTotal = count.reduce((s, it) => {
+        const rate = rateFor(rates, it);
+        return s + (it.qtyHundredths === 0 || rate === null ? 0 : lineAmountPaise(it.qtyHundredths, rate) ?? 0);
+      }, 0);
       await tell('contractor', 'site.material_bill_count_differs', { ref, site, lines, total, count: itemsText(count), siteTotal: rupees(siteTotal) });
       return;
     }
@@ -319,6 +396,17 @@ export function createContractorAgent(o) {
         break;
       }
       case 'DELIVERY': {
+        // The site already counted from its own copy of the challan: code compares, nobody is asked again.
+        const events = ledger.events(m.order_id);
+        const count = siteCount(events);
+        const d = delivery(events);
+        if (count !== null && d !== null) {
+          const c = compareCount(m.order_id, count, siteChallan(events)?.number ?? null, d);
+          const key = c.same ? 'site.delivery_matches_count' : 'site.challan_count_differs';
+          await tell('contractor', key, c.params);
+          await tell('supervisor', key, c.params);
+          break;
+        }
         // The site is asked for its own count; a plain "हाँ" means "the same as the challan".
         const params = { ref, site, items: itemsText(b.items), challan: b.challan?.number ?? '—' };
         const expect = { tool: 'confirm_count', args: { orderId: m.order_id, qtysHundredths: b.items.map((/** @type {Item} */ it) => it.qtyHundredths), sameAsChallan: true } };

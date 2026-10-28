@@ -71,6 +71,14 @@ Contractor side (contractor, supervisor):
 | `site.count_differs` | ref, site, challan, count | to the contractor: the site's count differs from the challan (both figures) |
 | `site.count_already` | ref, count | a one-word "हाँ" to the delivery notice after a count is already recorded: nothing changes (type figures to change it) |
 | `site.count_changed` | ref, site, old, count, challan | a recorded count changed by typed figures; to the person and to the contractor (old and new) |
+| `site.challan_no_order` | — | the site sent a challan photo but no material order is booked/delivered and still uncounted; nothing recorded; how to make an order (Claude drafted, Fable to polish) |
+| `site.challan_which_order` | lines | several orders could be this challan's: which reference? one `site.challan_order_line` (ref, site, what) per order, with the exact reply `"P-n"` (Claude drafted, Fable to polish) |
+| `site.challan_ask_person` | ref, raw, names | the site's challan was not read clearly: type the quantities in the order's order (`names` = `बालू (cft), गिट्टी (brass)`), 0 for what did not come (Claude drafted, Fable to polish) |
+| `site.challan_figures` | ref, names | typed figures do not fit the order: one per ordered item, in order (Claude drafted, Fable to polish) |
+| `site.challan_count_saved` | ref, site, items, challan | the site's count from its challan photo is recorded; the supplier's delivery has not come yet (Claude drafted, Fable to polish) |
+| `site.challan_count_matches` | ref, site, items, challan | recorded, and it agrees with the supplier's signed delivery (Claude drafted, Fable to polish) |
+| `site.challan_count_differs` | ref, site, count, siteNo, challan, challanNo | the site's challan and the supplier's delivery differ (quantities or challan numbers): both figures; a dispute with the site's figure once the bill comes. To the person who counted and the contractor; on a later DELIVERY to contractor and supervisor (Claude drafted, Fable to polish) |
+| `site.delivery_matches_count` | ref, site, count, siteNo, challan, challanNo | a DELIVERY arrived for an order the site already counted from its challan, and it agrees; nobody is asked again (Claude drafted, Fable to polish) |
 | `site.material_bill_received` | ref, site, lines, total, photos | a material bill that follows from the delivery, the agreed rates and the site's count; "हाँ" accepts |
 | `site.material_correction_received` | ref, site, lines, total, photos | a corrected material bill; "हाँ" accepts |
 | `site.material_bill_mismatch` | ref, site, lines, total, expected, expectedTotal | to the contractor: the bill does not equal delivered qty × agreed rates (no "हाँ" offered) |
@@ -111,6 +119,7 @@ Read-backs (each ends with "हाँ / नहीं"):
 | `step.send_material_correction` | site, lines, total | supplier: confirm the corrected bill |
 | `step.request_material` | site, day, time, items | contractor/supervisor: confirm the material request |
 | `step.confirm_count` | site, items | supervisor/contractor: confirm the site's count |
+| `step.site_challan` | ref, site, challan, items, names | supervisor/contractor: confirm what was read from the photo of the site's challan, or type the right figures in order (Claude drafted, Fable to polish) |
 | `step.confirm_payment` | site, amount | (shared with the JCB owner) the supplier confirms the money arrived |
 
 ## Read-back and conversation (Claude drafted the Hindi; Fable to polish)

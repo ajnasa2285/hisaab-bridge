@@ -122,6 +122,38 @@ export function siteCount(events) {
   return n ? n.body.items : null;
 }
 
+/** The challan the site's count in force was read from (its photo), or null. @param {LedgerEvent[]} events @returns {{sha256: string, number: string | null} | null} */
+export function siteChallan(events) {
+  const n = ofType(events, 'NOTE', 'local').filter((e) => e.body.kind === 'site_count').at(-1);
+  return n && n.body.challan ? n.body.challan : null;
+}
+
+/**
+ * Where the site's count and the delivery differ, item by item (same name and unit); an item missing
+ * on one side counts as 0 there. Delivered items first, in their order, then items only the site has.
+ * @param {Item[]} count
+ * @param {Item[]} delivered
+ * @returns {{name: string, unit: string, count: number, delivered: number}[]}
+ */
+export function countDifferences(count, delivered) {
+  const key = (/** @type {Item} */ it) => `${norm(it.name)}\u0000${norm(it.unit)}`;
+  /** @type {Map<string, {name: string, unit: string, count: number, delivered: number}>} */
+  const rows = new Map();
+  for (const it of delivered) rows.set(key(it), { name: it.name, unit: it.unit, count: 0, delivered: it.qtyHundredths });
+  for (const it of count) {
+    const r = rows.get(key(it));
+    if (r) r.count += it.qtyHundredths;
+    else rows.set(key(it), { name: it.name, unit: it.unit, count: it.qtyHundredths, delivered: 0 });
+  }
+  return [...rows.values()].filter((r) => r.count !== r.delivered);
+}
+
+/** Two challan numbers name the same paper (ignoring case, spaces and leading zeros). @param {string} a @param {string} b */
+export function sameChallanNo(a, b) {
+  const n = (/** @type {string} */ s) => s.toLowerCase().replace(/\s+/g, '').replace(/^0+(?=\d)/, '');
+  return n(a) === n(b);
+}
+
 /** Same items with the same quantities, in the same order. @param {Item[]} a @param {Item[]} b */
 export function sameItems(a, b) {
   return a.length === b.length && a.every((x, i) => x.name === b[i].name && x.unit === b[i].unit && x.qtyHundredths === b[i].qtyHundredths);

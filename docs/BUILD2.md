@@ -28,7 +28,7 @@ optional; its key is `keys/supplier.pem`, made once like the others.
 contractor/supervisor   request_material   BOOKING_REQUEST {kind:'material', site, day, time?, items:[{name, qtyHundredths, unit}]}
 supplier                reply_order        BOOKING_REPLY   {answer:'yes', rates:[{name, unit, ratePaise}]} | no | other_time
 supplier (challan photo) record_delivery   DELIVERY        {items (as delivered), challan:{sha256, number?}, deliveredAt}
-supervisor              confirm_count      local NOTE      {kind:'site_count', items:[{name, qtyHundredths, unit}]}  (contractor ledger only)
+supervisor              confirm_count      local NOTE      {kind:'site_count', items:[{name, qtyHundredths, unit}], challan?:{sha256, number}}  (contractor ledger only)
 supplier                send_bill          BILL            lines = delivered qty x agreed rate, evidence = [{kind:'challan', ...}]
 contractor              accept / dispute   ACCEPT | DISPUTE {theirFigure:{qtyHundredths} | {totalPaise}}
 supplier                send_correction    CORRECTION
@@ -46,6 +46,31 @@ supplier                confirm_payment    SETTLED
   the site's figure. Code compares; the model never decides a quantity.
 * The challan photo is read by `readChallan` (CONTRACTS 3.3) on the supplier side, read back, and
   confirmed or typed by the supplier, exactly like a meter photo. Its sha256 is evidence.
+
+### 2a. The site's own challan photo
+
+A challan comes in two copies: the site keeps one, the other goes back to the supplier signed. The
+supervisor (or the contractor) photographs the site's copy on the contractor agent; that is the
+site's record of what arrived, with the photo as evidence.
+
+* The photo is for a material order (`P-n`) of this contractor agent that is `booked` or
+  `delivered` and not yet counted at site. None: the person is told how to make an order, nothing is
+  read or recorded. Several: the photo is read once and the person is asked which reference (reply
+  `P-n`). A contractor's photo is the site challan when an order waits for a count and no bill waits
+  for payment; when both could be, it is read as a UPI screenshot first and as a challan if it is not one.
+* `readChallan` reads it; code maps what was read onto the order's items (`challanQuantities`). Read
+  back with the reference, challan number and items (`step.site_challan`); "हाँ" or the right figures
+  in order. An unclear read or a missing quantity asks the person to type them; nothing is filled in.
+* Recorded through `confirm_count` with `challan: {sha256, number}`: the local `NOTE {kind:
+  'site_count', items, challan}` on the contractor ledger only (items at 0 left out). A bare "हाँ"
+  never overwrites a count already recorded; typed figures may, and the contractor sees old and new.
+* Code compares with the supplier's signed DELIVERY whenever both exist (at the "हाँ" if the DELIVERY
+  is there, else when it arrives, and then nobody is asked for a count again): quantity per item by
+  name and unit, and the challan numbers when both are known. A difference is told with both figures;
+  the dispute (with the site's figure) is offered when the bill comes, which is checked against the
+  site's count as before.
+* `readChallan` accepts a handwritten d/m/yy or dd/mm/yy as 20yy, Indian day/month order, only when
+  day and month are valid.
 
 ## 3. Approvals with limits (contractor agent, local)
 

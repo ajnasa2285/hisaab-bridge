@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { CHALLAN_SCHEMA, CHALLAN_UNITS, normaliseUnit, parseQtyHundredths, readChallan } from '../../src/readers/challan.js';
+import { CHALLAN_SCHEMA, CHALLAN_UNITS, normaliseUnit, parseChallanDate, parseQtyHundredths, readChallan } from '../../src/readers/challan.js';
 import { supportedSchema } from '../../src/meta/schema.js';
 
 const image = { mime: /** @type {const} */ ('image/png'), bytes: new Uint8Array([1, 2, 3]) };
@@ -88,7 +88,8 @@ for (const [label, change, key, state] of /** @type {[string, object, string, bo
   ['absent date', { date: field(null) }, 'date', true],
   ['ambiguous date order', { date: field('03/04/2026') }, 'date', false],
   ['missing year', { date: field('27 Oct') }, 'date', false],
-  ['two digit year', { date: field('27/10/26') }, 'date', false],
+  ['two digit year, impossible day', { date: field('31/11/26') }, 'date', false],
+  ['two digit year, month 13', { date: field('6/13/26') }, 'date', false],
   ['absent vehicle', { vehicle: field(null) }, 'vehicle', true],
   ['masked vehicle', { vehicle: field('XX 00 AB-****') }, 'vehicle', false],
 ])) {
@@ -168,4 +169,19 @@ test('schema only uses supported JSON Schema keywords and the reader has no side
   const source = readFileSync(new URL('../../src/readers/challan.js', import.meta.url), 'utf8');
   assert.ok(!/\bfetch\s*\(|node:https?|https?:\/\//.test(source));
   assert.deepEqual([...source.matchAll(/from ['"]([^'"]+)/g)].map(m => m[1]), ['../meta/client.js', './upi.js']);
+});
+
+test('challan dates: d/m/yy and dd/mm/yy are Indian day/month order in 20yy; anything doubtful is null', () => {
+  for (const [raw, value] of /** @type {[string, string][]} */ ([
+    ['6/8/26', '2026-08-06'], ['06/08/26', '2026-08-06'], ['27/10/26', '2026-10-27'], ['1-2-27', '2027-02-01'], ['29.02.28', '2028-02-29'],
+    ['27/10/2026', '2026-10-27'], ['2026-10-27', '2026-10-27'],
+  ])) assert.equal(parseChallanDate(raw), value, raw);
+  for (const raw of ['31/11/26', '0/8/26', '6/0/26', '6/13/26', '29/02/27', '6/8/6', '6/8/026', '6-8/26', '6/8/26 ', '06/08', '03/04/2026', '127/1/26'])
+    assert.equal(parseChallanDate(raw), null, raw);
+});
+
+test('a two-digit year printed on a challan is read as 20yy', async t => {
+  model(t, { ...inventedChallan(), date: field('6/8/26') });
+  const result = await readChallan(image);
+  assert.ok(result.ok && result.kind === 'challan' && result.date === '2026-08-06' && result.clear === true);
 });
