@@ -5,7 +5,7 @@
 export const ROLES = /** @type {const} */ (['jcb_owner', 'operator', 'contractor', 'supervisor', 'supplier']);
 
 /** @typedef {typeof ROLES[number]} Role */
-/** @typedef {{line: string, phone: string, agent: string, role: Role, name: string}} Person */
+/** A person; `site` (optional, people.json) is where they usually work. @typedef {{line: string, phone: string, agent: string, role: Role, name: string, site?: string}} Person */
 
 /**
  * @param {{lines: string[], people: Person[]}} config lines are phone_number_ids

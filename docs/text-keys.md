@@ -8,7 +8,7 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 |---|---|---|
 | `common.unknown_step` | — | the request did not match any step |
 | `common.not_allowed` | — | this person's role may not take this step |
-| `common.bad_args` | — | a value is missing or not understood |
+| `common.bad_args` | — | the message cannot be used even with a question (no item name, a time that is no time); says what to send, with examples that work |
 | `common.no_such_order` | — | no such job/order |
 | `common.wrong_state` | — | the step does not fit where the job is now |
 | `common.pending` | — | saved on our side; the other side is not reachable, will be sent again automatically |
@@ -166,3 +166,14 @@ Commands are parsed by code before the model (`src/agents/office.js`, `parseComm
 | `office.stock` | lines | `stock [item]` on the contractor's agent: `office.stock_site` (site), `office.stock_line` (name, qty), `office.stock_line_differs` (name, qty, challan); `office.stock_none` when empty |
 | `office.stock_not_here` | — | `stock` on another agent |
 | `help.contractor`, `help.supervisor`, `help.jcb_owner`, `help.supplier` | — | each now ends with the commands that role can use |
+
+## Asking for what is missing (docs/BUILD2.md section 6; Claude drafted, Fable to polish)
+
+| Key | Params | When |
+|---|---|---|
+| `ask.missing` | questions | a JCB or material request is complete except some values: the questions below, one per line, and how to cancel |
+| `ask.site` | — | no site named, none in people.json, and not exactly one among the open jobs |
+| `ask.day` | — | no day said, or one that is not understood |
+| `ask.qty` | name, unit | an item's quantity is not said or not exactly a number |
+| `ask.qty_unit` | name | an item has neither quantity nor unit |
+| `ask.unit` | name, qty | an item's unit is not said |
