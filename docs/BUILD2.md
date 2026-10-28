@@ -57,7 +57,8 @@ site's record of what arrived, with the photo as evidence.
   `delivered` and not yet counted at site. None: the person is told how to make an order, nothing is
   read or recorded. Several: the photo is read once and the person is asked which reference (reply
   `P-n`). A contractor's photo is the site challan when an order waits for a count and no bill waits
-  for payment; when both could be, it is read as a UPI screenshot first and as a challan if it is not one.
+  for payment; when both could be, it is read as a UPI screenshot first and as a challan if it is not one (read
+  before any "which order?" about payments, so a challan photo never gets that question).
 * `readChallan` reads it; code maps what was read onto the order's items (`challanQuantities`). Read
   back with the reference, challan number and items (`step.site_challan`); "हाँ" or the right figures
   in order. An unclear read or a missing quantity asks the person to type them; nothing is filled in.

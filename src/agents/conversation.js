@@ -388,10 +388,13 @@ export function createConversation(o) {
     if (!o.readUpi) return o.reply(person, 'orchestrator.try_again');
     if (image.mime !== 'image/jpeg' && image.mime !== 'image/png' && image.mime !== 'image/webp') return o.reply(person, 'payment.not_upi');
     const picked = pickOrder(orderRefs(o.ledger), null, ['accepted', 'payment_claimed']);
-    if (typeof picked === 'string') return o.reply(person, picked);
+    // With another reading to fall back on, the photo is read before an unclear payment order is
+    // reported: a challan photo must not get a question about payments.
+    if (typeof picked === 'string' && !notUpi) return o.reply(person, picked);
     const read = await o.readUpi({ mime: image.mime, bytes: image.bytes });
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
     if (read.kind === 'not_upi') return notUpi ? notUpi() : o.reply(person, 'payment.not_upi');
+    if (typeof picked === 'string') return o.reply(person, picked);
     const day = read.date && /^\d{4}-\d{2}-\d{2}$/.test(read.date) ? read.date : null;
     if (!read.clear || read.amountPaise === null || !read.utr || day === null) return o.reply(person, 'payment.retake');
     if (read.status !== 'success') {

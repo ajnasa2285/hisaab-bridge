@@ -47,7 +47,10 @@ async function start(opts = {}) {
   const reply = (/** @type {any} */ p, /** @type {string} */ key, /** @type {any} */ params) => { said.push([p.role, key, t(key, params)]); };
   const spark = async () => ({ ok: /** @type {const} */ (true), toolCalls: [] });
   const readChallan = async () => { reads += 1; return nextRead; };
-  const readUpi = opts.withUpi ? async () => /** @type {any} */ ({ ok: true, kind: 'not_upi' }) : undefined;
+  /** @type {any} */
+  let nextUpi = { ok: true, kind: 'not_upi' };
+  let upiReads = 0;
+  const readUpi = opts.withUpi ? async () => { upiReads += 1; return nextUpi; } : undefined;
   siteTalk = createConversation({ ledger: s.siteCore.ledger, tools: s.site.tools, spark, readChallan, readUpi, reply, now: s.siteCore.now });
   /** @type {string[]} */
   const orderIds = [];
@@ -63,6 +66,8 @@ async function start(opts = {}) {
     s, siteTalk, said, orderIds, orderId: orderIds[0],
     read: (/** @type {any} */ r) => { nextRead = r; },
     reads: () => reads,
+    upi: (/** @type {any} */ r) => { nextUpi = r; },
+    upiReads: () => upiReads,
     last: () => said.at(-1),
     count: (/** @type {string} */ id) => siteCount(s.siteCore.ledger.events(id)),
     note: (/** @type {string} */ id) => s.siteCore.ledger.events(id).filter((e) => e.type === 'NOTE' && e.body.kind === 'site_count').at(-1),
@@ -302,6 +307,64 @@ test('roles: the contractor may send the site challan; other roles and other age
     });
     await supTalk.onImage(supervisor, photo);
     assert.deepEqual(said, ['common.unknown_step']);
+  } finally {
+    await c.s.close();
+  }
+});
+
+/**
+ * The contractor has bills to pay and an order to count: the first `payable` orders are delivered,
+ * billed and accepted; the last order is booked and waits for the site's count.
+ * @param {number} payable
+ */
+async function mixed(payable) {
+  const c = await start({ withUpi: true, orders: [...Array.from({ length: payable }, () => [SAND]), [GITTI]] });
+  for (const id of c.orderIds.slice(0, payable)) {
+    await c.deliver(id, [SAND], '50');
+    await runTool(c.s.sup.tools, supplier, { tool: 'send_bill', args: { orderId: id } });
+    await new Promise((res) => setImmediate(res));
+    assert.equal((await runTool(c.s.site.tools, contractor, { tool: 'accept_bill', args: { orderId: id } })).key, 'site.material_bill_accepted');
+    assert.equal(c.s.siteCore.ledger.view(id).state, 'accepted');
+  }
+  return c;
+}
+const UPI = { ok: true, kind: 'upi_payment', amountPaise: 1500000, date: '2026-10-29', utr: '123456789012', status: 'success', clear: true };
+
+test('mixed, two bills to pay: a challan photo gets the site challan read-back, not a question about payments', async () => {
+  const c = await mixed(2);
+  try {
+    c.read(clearRead('96', [{ name: 'गिट्टी', qtyHundredths: 200 }]));
+    await c.siteTalk.onImage(contractor, photo);
+    assert.equal(c.upiReads(), 1);
+    assert.equal(c.last()?.[1], 'step.site_challan');
+    assert.ok(c.last()?.[2].includes('P-3') && c.last()?.[2].includes('गिट्टी 2 brass'), c.last()?.[2]);
+  } finally {
+    await c.s.close();
+  }
+});
+
+test('mixed, two bills to pay: a UPI screenshot is asked which order, and the challan reader is not used', async () => {
+  const c = await mixed(2);
+  try {
+    c.upi(UPI);
+    await c.siteTalk.onImage(contractor, photo);
+    assert.equal(c.last()?.[1], 'orchestrator.which_job');
+    assert.equal(c.reads(), 0);
+  } finally {
+    await c.s.close();
+  }
+});
+
+test('mixed, one bill to pay: a challan photo gets the site challan read-back', async () => {
+  const c = await mixed(1);
+  try {
+    c.read(clearRead('96', [{ name: 'गिट्टी', qtyHundredths: 200 }]));
+    await c.siteTalk.onImage(contractor, photo);
+    assert.equal(c.upiReads(), 1);
+    assert.equal(c.last()?.[1], 'step.site_challan');
+    assert.ok(c.last()?.[2].includes('P-2'));
+    await c.siteTalk.onText(contractor, 'हाँ');
+    assert.equal(c.last()?.[1], 'site.challan_count_saved');
   } finally {
     await c.s.close();
   }
