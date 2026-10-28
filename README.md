@@ -76,7 +76,7 @@ Every model called at runtime is Meta's, through the Meta Model API. A test (`te
 | Job | Model |
 |---|---|
 | Understanding a Hindi/Hinglish message (typed, forwarded or spoken), choosing the step, and asking only for what is missing | Muse Spark (tool calling) |
-| Deciding what a photo is: hour meter, UPI receipt, delivery challan or other (measured; being wired into the conversation) | Muse Spark (vision, strict schema) |
+| Deciding what every incoming photo is (hour meter, UPI receipt, delivery challan or other) before the right reader runs; asks the person when unsure | Muse Spark (vision, strict schema) |
 | Reading the hour meter, the UPI screenshot, the delivery challan (printed and handwritten on one page) | Muse Spark (vision, strict schema) |
 | Explaining a difference between two parties' figures to each side, in Hindi, from that side's evidence | Muse Spark (strict schema, every number checked by code) |
 | Voice notes from the site | Muse Voice Transcribe |
