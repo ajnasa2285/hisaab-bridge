@@ -78,6 +78,7 @@ const JUDGE_HEADERS = {
  *   readMeter?: import('./agents/conversation.js').MeterReader,
  *   readUpi?: import('./agents/conversation.js').UpiReader,
  *   readChallan?: import('./agents/conversation.js').ChallanReader,
+ *   classifyPhoto?: import('./agents/conversation.js').PhotoClassifier,
  *   transcribe?: (req: {audio: Uint8Array, mime: string, language?: 'hi'}) => Promise<{ok: true, text: string} | {ok: false, transient: boolean, reason: string}>,
  *   toWav?: typeof import('./wa/audio.js').toWav,
  *   fetch?: typeof globalThis.fetch,
@@ -126,13 +127,13 @@ export function createApp(cfg) {
     const reply = (p, key, params) => sendTo(p, t(key, params));
     // References, exact commands, and (contractor) approvals with this agent's limits.
     const office = createOffice({ ledger: core.ledger, tools: agent.tools, kind: a.kind, limits: a.limits, tell, reply, now });
-    // Each agent reads only its own kind of photo: meters (JCB), UPI screenshots and the site's copy of
-    // a challan (contractor), challans (supplier).
+    // Every agent asks Muse Spark what a photo is; each then reads only its own kinds: meters (JCB),
+    // UPI screenshots and the site's copy of a challan (contractor), challans (supplier).
     const talk = createConversation({
       ledger: core.ledger, tools: agent.tools, spark: cfg.spark, readMeter: a.kind === 'jcb' ? cfg.readMeter : undefined,
       readUpi: a.kind === 'contractor' ? cfg.readUpi : undefined,
       readChallan: a.kind === 'supplier' || a.kind === 'contractor' ? cfg.readChallan : undefined,
-      reply, now, office,
+      classifyPhoto: cfg.classifyPhoto, reply, now, office,
     });
     const card = agentCardJson({ id: a.id, name: a.title, description: a.title, baseUrl: `${cfg.baseUrl}/agents/${a.name}`, publicKeyText: publicKeyText(a.privateKey) });
     const a2a = createA2AHandler(core, card, {

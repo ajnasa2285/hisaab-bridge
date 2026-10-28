@@ -56,9 +56,8 @@ site's record of what arrived, with the photo as evidence.
 * The photo is for a material order (`P-n`) of this contractor agent that is `booked` or
   `delivered` and not yet counted at site. None: the person is told how to make an order, nothing is
   read or recorded. Several: the photo is read once and the person is asked which reference (reply
-  `P-n`). A contractor's photo is the site challan when an order waits for a count and no bill waits
-  for payment; when both could be, it is read as a UPI screenshot first and as a challan if it is not one (read
-  before any "which order?" about payments, so a challan photo never gets that question).
+  `P-n`). Whether a contractor's photo is the site challan or a UPI screenshot is decided by its kind
+  (section 7), never by which orders are open.
 * `readChallan` reads it; code maps what was read onto the order's items (`challanQuantities`). Read
   back with the reference, challan number and items (`step.site_challan`); "हाँ" or the right figures
   in order. An unclear read or a missing quantity asks the person to type them; nothing is filled in.
@@ -173,3 +172,30 @@ site name had no way through. Now:
   examples that work. Every request example in `help.*` and `common.bad_args` is run through the real
   parsing path in `test/orchestrator/intake.test.js`; "माँगें" and "हिसाब", which no command answered,
   are gone from the help texts.
+
+## 7. Any photo, any time (28 Oct 2026)
+
+Real people send any photo at any time, so the kind of a photo is no longer taken from the sender's
+role. Every agent gets `classifyPhoto` (CONTRACTS 3.4); `onImage` in `src/agents/conversation.js`:
+
+* **Who may send what, on this agent** (`photoKinds`, from the tools' roles): `meter` for the
+  operator and JCB owner (JCB agent, `record_meter`); `upi` for the contractor (contractor agent,
+  `claim_payment`); `challan` for the supplier (supplier agent, `record_delivery`) and for the
+  supervisor or contractor (contractor agent, the site's own copy, `confirm_count`). A person who may
+  send none gets `photo.none` and the photo is not classified.
+* **One classification, then one reader.** Muse Spark says `meter`, `upi`, `challan` or `other`
+  with `clear`. A clear kind the person may send goes to that kind's flow, whose reader reads the photo
+  once and keeps its own `not_*` check as a second safety. A clear kind they may not send: who sends it
+  (`photo.sent_by_*`), with what they can send; `other` (or a file that is not an image): what they can
+  send (`photo.other`). Nothing is read or recorded in these cases.
+* **Unsure → ask once.** `photo.ask_kind` with the exact forms for this person's kinds ("मीटर",
+  "UPI", "चालान"). The photo is kept in memory (bytes, never stored) as a pending question with the
+  usual 30-minute expiry. The answer routes it as if Muse Spark had said that kind (still checked
+  against the role); a cancel word cancels; any other text lapses the question, photo too, and is read
+  as a new message.
+* **Failure.** A classifier error or timeout is `orchestrator.try_again`; nothing is read or kept.
+* **A photo while another question is open** starts its own flow and the old question lapses, as it
+  does for a new text: the photo is the newest thing the person said, and an older read-back must not
+  be confirmed by a "हाँ" meant for the new photo.
+* The old workaround (a contractor's photo read as UPI first, then as a challan) is gone: a challan
+  photo is never offered to the UPI reader, and a UPI screenshot asks "which order?" before any read.

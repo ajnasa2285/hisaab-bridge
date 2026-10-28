@@ -199,3 +199,15 @@ The model writes only `{explanation}`. All `{figures}` fragments below come from
 | `ask.qty` | name, unit | an item's quantity is not said or not exactly a number |
 | `ask.qty_unit` | name | an item has neither quantity nor unit |
 | `ask.unit` | name, qty | an item's unit is not said |
+
+## Any photo, any time (docs/BUILD2.md section 7; Claude drafted, Fable to polish)
+
+`kinds` is the list of photos this person may send on this agent, already named (`मीटर, UPI भुगतान, चालान`); `forms` are the exact replies, quoted (`"UPI" / "चालान"`).
+
+| Key | Params | When |
+|---|---|---|
+| `photo.ask_kind` | forms | Muse Spark is not sure what the photo is: asks once, with the reply forms for this person's role and how to cancel |
+| `photo.other` | kinds | the photo is none of the kinds (or not an image); nothing recorded |
+| `photo.none` | — | this person sends no photos on this agent; the photo is not read |
+| `photo.sent_by_meter` / `_upi` / `_challan` | kinds | a kind this person may not send here: who sends it, and what they can send; nothing recorded |
+| `photo.kind.meter` / `.upi` / `.challan` | — | the names used in `kinds` |

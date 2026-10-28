@@ -94,3 +94,10 @@ export async function setup(o = {}) {
     close: () => Promise.all(servers.map((s) => new Promise((r) => s.close(() => r(undefined))))),
   };
 }
+
+/**
+ * A stand-in for classifyPhoto that always sees one kind.
+ * @param {'meter' | 'upi' | 'challan' | 'other'} kind @param {boolean} [clear]
+ * @returns {import('../../src/agents/conversation.js').PhotoClassifier}
+ */
+export const seesPhoto = (kind, clear = true) => async () => ({ ok: true, kind, clear, model: 'stand-in', latencyMs: 1 });

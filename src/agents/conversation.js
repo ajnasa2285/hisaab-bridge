@@ -1,7 +1,8 @@
 // One person's conversation with their agent. A text becomes one proposed step (Muse Spark, via the
 // orchestrator); a step that commits anything is read back and runs only after the person says yes.
-// A meter photo (or a challan photo, the supplier's or the site's own copy) is read by Muse Spark; the
-// reading is confirmed by the person, or typed by them when the photo is not clear. Exact commands (status, pending, stock, ok,
+// Any photo, any time: Muse Spark first says what it is (meter, UPI, challan, other); code checks that
+// this person may send that kind here, and only then that kind's reader reads it (an unsure kind is
+// asked). The reading is confirmed by the person, or typed by them when the photo is not clear. Exact commands (status, pending, stock, ok,
 // no) are answered by code before the model sees anything, and a confirmed step passes the site
 // office's gate (approvals with limits, src/agents/office.js). A request with a value left out (site,
 // day, quantity, unit) is kept, and only what is missing is asked; the reply fills it, nothing is guessed.
@@ -27,8 +28,13 @@ import { t } from '../i18n/index.js';
  *   {kind: 'challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number} |
  *   {kind: 'site_challan_order', orderIds: string[], sha256: string, reading: SiteReading, at: number} |
  *   {kind: 'site_challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number} |
- *   {kind: 'fill', tool: string, raw: Record<string, any>, args: Record<string, any>, missing: string[], said: string, at: number}} Pending
+ *   {kind: 'fill', tool: string, raw: Record<string, any>, args: Record<string, any>, missing: string[], said: string, at: number} |
+ *   {kind: 'photo_kind', image: Photo, at: number}} Pending
  */
+/** @typedef {{mime: string, bytes: Uint8Array, takenAt?: string | null}} Photo */
+/** @typedef {'meter' | 'upi' | 'challan'} PhotoKind */
+/** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) =>
+ *   Promise<import('../readers/photo.js').PhotoClassification>} PhotoClassifier */
 /** @typedef {{challanNo: string | null, items: {name: string, qtyHundredths: number | null, raw: string}[], clear: boolean}} SiteReading */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) => Promise<
  *   {ok: true, kind: 'challan', challanNo: string | null, date: string | null,
@@ -46,6 +52,16 @@ const PENDING_MS = 30 * 60 * 1000;
 const YES = new Set(['हाँ', 'हां', 'हा', 'जी', 'जी हाँ', 'ठीक', 'ठीक है', 'सही', 'सही है', 'han', 'haan', 'ha', 'haa', 'ji', 'yes', 'y', 'ok', 'okay', 'theek', 'thik', 'sahi', '👍', '✅']);
 const NO = new Set(['नहीं', 'नही', 'ना', 'न', 'गलत', 'ग़लत', 'nahi', 'nahin', 'nhi', 'na', 'no', 'n', 'galat', 'cancel', '❌']);
 const HELP = new Set(['मदद', 'help', 'madad', '?']);
+/** The replies to "यह फ़ोटो क्या है?"; the first of each is the form asked for. @type {Record<PhotoKind, string[]>} */
+const KIND_WORDS = {
+  meter: ['मीटर', 'meter', 'mitar'],
+  upi: ['upi', 'यूपीआई', 'भुगतान', 'payment', 'bhugtan'],
+  challan: ['चालान', 'चलान', 'challan', 'chalan'],
+};
+/** @param {string} said @returns {PhotoKind | null} */
+const kindOfWord = (said) => /** @type {PhotoKind | null} */ (Object.entries(KIND_WORDS).find(([, w]) => w.includes(said))?.[0] ?? null);
+/** @param {string} mime */
+const isImageMime = (mime) => mime === 'image/jpeg' || mime === 'image/png' || mime === 'image/webp';
 
 /** @param {string} text */
 const norm = (text) => text.trim().toLowerCase().replace(/[।.!]+$/u, '').replace(/\s+/g, ' ');
@@ -58,6 +74,7 @@ const norm = (text) => text.trim().toLowerCase().replace(/[।.!]+$/u, '').repla
  *   readMeter?: MeterReader,
  *   readUpi?: UpiReader,
  *   readChallan?: ChallanReader,
+ *   classifyPhoto?: PhotoClassifier,
  *   reply: Reply,
  *   now: () => number,
  *   office?: ReturnType<typeof import('./office.js').createOffice>,
@@ -116,6 +133,13 @@ export function createConversation(o) {
       }
     }
     const p = current(person);
+    if (p && p.kind === 'photo_kind') {
+      pending.delete(keyOf(person));
+      if (NO.has(said)) return o.reply(person, 'step.cancelled');
+      const kind = kindOfWord(said);
+      if (kind) return routePhoto(person, p.image, kind);
+      // Not an answer: the question lapses, the photo with it, and the message is read as a new one.
+    }
     if (p && p.kind === 'confirm') {
       if (YES.has(said)) {
         pending.delete(keyOf(person));
@@ -248,24 +272,66 @@ export function createConversation(o) {
     return lines.join('\n');
   }
 
+  /** May this person take this step on this agent? @param {Person} person @param {string} tool */
+  const may = (person, tool) => Object.hasOwn(o.tools, tool) && o.tools[tool].roles.includes(person.role);
+
   /**
-   * A photo from the JCB side is a meter reading for the job that is booked or working.
-   * @param {Person} person
-   * @param {{mime: string, bytes: Uint8Array, takenAt?: string | null}} image
+   * The kinds of photo this person may send on this agent: meter readings (operator, JCB owner), UPI
+   * screenshots (contractor), challans (supplier; supervisor or contractor for the site's own copy).
+   * @param {Person} person @returns {PhotoKind[]}
+   */
+  function photoKinds(person) {
+    /** @type {PhotoKind[]} */
+    const kinds = [];
+    if (o.readMeter && may(person, 'record_meter')) kinds.push('meter');
+    if (o.readUpi && may(person, 'claim_payment')) kinds.push('upi');
+    if (o.readChallan && (may(person, 'record_delivery') || may(person, 'confirm_count'))) kinds.push('challan');
+    return kinds;
+  }
+
+  /** "मीटर, UPI भुगतान" @param {PhotoKind[]} kinds */
+  const kindNames = (kinds) => kinds.map((k) => t(`photo.kind.${k}`)).join(', ') || '—';
+
+  /**
+   * Any photo, any time: Muse Spark says what it is, then only that kind's reader reads it. An unsure
+   * kind is asked ("यह फ़ोटो क्या है?") with the photo kept in memory as long as any open question.
+   * A new photo starts its own flow: a question still open lapses, as it does for a new text.
+   * @param {Person} person @param {Photo} image
    */
   async function onImage(person, image) {
-    if (mayCountChallan(person)) {
-      if (person.role !== 'contractor' || !o.readUpi) return onSiteChallanImage(person, image);
-      // The contractor's photo is a UPI screenshot or the site's challan; the open orders tell which,
-      // and when both could be, a photo that is not a UPI screenshot is read as a challan.
-      const toCount = uncounted().length > 0;
-      const toPay = orderRefs(o.ledger).some((r) => r.state === 'accepted' || r.state === 'payment_claimed');
-      if (toCount && !toPay) return onSiteChallanImage(person, image);
-      if (toCount) return onPaymentImage(person, image, () => onSiteChallanImage(person, image));
+    pending.delete(keyOf(person));
+    const kinds = photoKinds(person);
+    if (kinds.length === 0) return o.reply(person, 'photo.none');
+    if (!isImageMime(image.mime)) return o.reply(person, 'photo.other', { kinds: kindNames(kinds) });
+    if (!o.classifyPhoto) return o.reply(person, 'orchestrator.try_again');
+    const c = await o.classifyPhoto({ mime: /** @type {'image/jpeg'} */ (image.mime), bytes: image.bytes });
+    if (!c.ok) return o.reply(person, 'orchestrator.try_again');
+    if (!c.clear) {
+      pending.set(keyOf(person), { kind: 'photo_kind', image, at: o.now() });
+      return o.reply(person, 'photo.ask_kind', { forms: kinds.map((k) => `"${KIND_WORDS[k][0].toUpperCase()}"`).join(' / ') });
     }
-    if (person.role === 'contractor') return onPaymentImage(person, image);
-    if (person.role === 'supplier') return onChallanImage(person, image);
-    if (person.role !== 'operator' && person.role !== 'jcb_owner') return o.reply(person, 'common.unknown_step');
+    if (c.kind === 'other') return o.reply(person, 'photo.other', { kinds: kindNames(kinds) });
+    return routePhoto(person, image, c.kind);
+  }
+
+  /**
+   * A photo whose kind is known (seen by Muse Spark, or said by the person) goes to that kind's flow
+   * if this person may send it here; otherwise they are told who sends it, and nothing is read.
+   * @param {Person} person @param {Photo} image @param {PhotoKind} kind
+   */
+  function routePhoto(person, image, kind) {
+    const kinds = photoKinds(person);
+    if (!kinds.includes(kind)) return o.reply(person, `photo.sent_by_${kind}`, { kinds: kindNames(kinds) });
+    if (kind === 'meter') return onMeterImage(person, image);
+    if (kind === 'upi') return onPaymentImage(person, image);
+    return may(person, 'record_delivery') ? onChallanImage(person, image) : onSiteChallanImage(person, image);
+  }
+
+  /**
+   * A meter photo from the JCB side is a meter reading for the job that is booked or working.
+   * @param {Person} person @param {Photo} image
+   */
+  async function onMeterImage(person, image) {
     if (!o.readMeter) return o.reply(person, 'orchestrator.try_again');
     if (image.mime !== 'image/jpeg' && image.mime !== 'image/png' && image.mime !== 'image/webp') return o.reply(person, 'meter.not_meter');
     const picked = pickOrder(orderRefs(o.ledger), null, ['booked', 'working']);
@@ -334,11 +400,6 @@ export function createConversation(o) {
     }
     const items = ordered.map((it, i) => ({ name: it.name, qtyHundredths: qtys[i], unit: it.unit })).filter((it) => it.qtyHundredths > 0);
     return propose(person, 'record_delivery', { orderId: c.orderId, items, sha256: c.sha256, challanNo: c.challanNo });
-  }
-
-  /** May this person count a delivery from the site's own challan on this agent? @param {Person} person */
-  function mayCountChallan(person) {
-    return !!o.readChallan && Object.hasOwn(o.tools, 'confirm_count') && o.tools.confirm_count.roles.includes(person.role);
   }
 
   /** The material orders waiting for the site's count: booked or delivered, not yet counted. */
@@ -430,19 +491,15 @@ export function createConversation(o) {
    * it; the contractor confirms what was read; the JCB owner later confirms the money arrived.
    * @param {Person} person
    * @param {{mime: string, bytes: Uint8Array}} image
-   * @param {() => Promise<void> | void} [notUpi] what to do instead when the photo is not a UPI screenshot
    */
-  async function onPaymentImage(person, image, notUpi) {
+  async function onPaymentImage(person, image) {
     if (!o.readUpi) return o.reply(person, 'orchestrator.try_again');
     if (image.mime !== 'image/jpeg' && image.mime !== 'image/png' && image.mime !== 'image/webp') return o.reply(person, 'payment.not_upi');
     const picked = pickOrder(orderRefs(o.ledger), null, ['accepted', 'payment_claimed']);
-    // With another reading to fall back on, the photo is read before an unclear payment order is
-    // reported: a challan photo must not get a question about payments.
-    if (typeof picked === 'string' && !notUpi) return o.reply(person, picked);
+    if (typeof picked === 'string') return o.reply(person, picked);
     const read = await o.readUpi({ mime: image.mime, bytes: image.bytes });
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
-    if (read.kind === 'not_upi') return notUpi ? notUpi() : o.reply(person, 'payment.not_upi');
-    if (typeof picked === 'string') return o.reply(person, picked);
+    if (read.kind === 'not_upi') return o.reply(person, 'payment.not_upi');
     const day = read.date && /^\d{4}-\d{2}-\d{2}$/.test(read.date) ? read.date : null;
     if (!read.clear || read.amountPaise === null || !read.utr || day === null) return o.reply(person, 'payment.retake');
     if (read.status !== 'success') {

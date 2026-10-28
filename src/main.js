@@ -27,6 +27,7 @@ import { listModels, museSpark, transcribe } from './meta/client.js';
 import { readMeter } from './readers/meter.js';
 import { readUpi } from './readers/upi.js';
 import { readChallan } from './readers/challan.js';
+import { classifyPhoto } from './readers/photo.js';
 
 /** @typedef {import('./protocol/messages.js').MessageType} MessageType */
 
@@ -153,7 +154,7 @@ export function loadConfig(env) {
 
 async function main() {
   const cfg = loadConfig(process.env);
-  const app = createApp({ ...cfg, spark: museSpark, readMeter, readUpi, readChallan, transcribe });
+  const app = createApp({ ...cfg, spark: museSpark, readMeter, readUpi, readChallan, classifyPhoto, transcribe });
   const server = createServer((req, res) => {
     app.handle(req, res).catch(() => {
       if (!res.headersSent) res.writeHead(500).end();

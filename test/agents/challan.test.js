@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { createConversation } from '../../src/agents/conversation.js';
 import { runTool } from '../../src/agents/common.js';
 import { t } from '../../src/i18n/index.js';
-import { setup, person } from './helpers.js';
+import { setup, person, seesPhoto } from './helpers.js';
 
 const supplier = person('supplier', 'agent:supplier-1');
 const supervisor = { ...person('supervisor', 'agent:contractor-1'), phone: '919000000012' };
@@ -33,7 +33,7 @@ async function start() {
   });
   const reply = (/** @type {any} */ p, /** @type {string} */ key, /** @type {any} */ params) => { said.push([p.role, key, t(key, params)]); };
   const spark = async () => ({ ok: /** @type {const} */ (true), toolCalls: [] });
-  const supTalk = createConversation({ ledger: s.supCore.ledger, tools: s.sup.tools, spark, readChallan: async () => nextRead, reply, now: s.supCore.now });
+  const supTalk = createConversation({ ledger: s.supCore.ledger, tools: s.sup.tools, spark, readChallan: async () => nextRead, classifyPhoto: seesPhoto('challan'), reply, now: s.supCore.now });
   siteTalk = createConversation({ ledger: s.siteCore.ledger, tools: s.site.tools, spark, reply, now: s.siteCore.now });
   await runTool(s.site.tools, supervisor, { tool: 'request_material', args: { site: 'Shivpuri', day: '2026-10-29', items: ITEMS } });
   const orderId = /** @type {{order_id: string}} */ (s.siteCore.ledger.orders()[0]).order_id;
@@ -91,7 +91,7 @@ test('an unclear challan: the supplier types the quantities; the site counts dif
     await c.supTalk.onImage(supplier, photo);
     assert.equal(c.last()?.[1], 'challan.not_challan');
     await c.supTalk.onImage(supplier, { mime: 'application/pdf', bytes: new Uint8Array([1]) });
-    assert.equal(c.last()?.[1], 'challan.not_challan');
+    assert.equal(c.last()?.[1], 'photo.other');
 
     c.read({ ok: true, kind: 'challan', challanNo: null, date: null, vehicle: null, clear: false, items: [
       { name: 'सीमेंट', qtyHundredths: null, unit: 'बोरी', raw: 'सीमेंट 5? बोरी' },

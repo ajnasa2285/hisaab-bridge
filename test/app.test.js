@@ -202,6 +202,7 @@ test('three agents in one service: a material order goes from the site line to t
     spark,
     readChallan,
     readMeter: async () => { throw new Error('a supplier photo must never reach the meter reader'); },
+    classifyPhoto: async () => ({ ok: true, kind: 'challan', clear: true, model: 'stand-in', latencyMs: 1 }),
     fetch: fakeGraph,
     log: () => {},
   });

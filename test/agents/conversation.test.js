@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createConversation } from '../../src/agents/conversation.js';
 import { t } from '../../src/i18n/index.js';
-import { setup, person } from './helpers.js';
+import { setup, person, seesPhoto } from './helpers.js';
 
 const owner = person('jcb_owner', 'agent:jcb-1');
 const operator = { ...person('operator', 'agent:jcb-1'), phone: '919000000002' };
@@ -35,7 +35,7 @@ test('a JCB job by conversation: every committing step is read back and runs onl
   });
   try {
     const reply = (/** @type {any} */ p, /** @type {string} */ key, /** @type {any} */ params) => { said.push([p.role, key, t(key, params)]); };
-    jcbTalk = createConversation({ ledger: s.jcbCore.ledger, tools: s.jcb.tools, spark, readMeter, reply, now: s.jcbCore.now });
+    jcbTalk = createConversation({ ledger: s.jcbCore.ledger, tools: s.jcb.tools, spark, readMeter, classifyPhoto: seesPhoto('meter'), reply, now: s.jcbCore.now });
     siteTalk = createConversation({ ledger: s.siteCore.ledger, tools: s.site.tools, spark, reply, now: s.siteCore.now });
     const last = () => said.at(-1)?.[1];
     const settle = () => new Promise((r) => setImmediate(r));

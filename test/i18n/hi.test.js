@@ -28,7 +28,7 @@ const SAMPLE = {
   expectedTotal: '₹17,500', siteTotal: '₹16,800', item: 'सरिया (टन)',
   ref: 'J-1', step: 'शिवपुरी पर 29 अक्टूबर 2026 को 8 बजे से 6 घंटे के लिए JCB माँगें?', note: 'ठीक है', decision: 'मंज़ूर',
   awaited: 'बिल का इंतज़ार', bill: '₹7,320', challan: '50 बोरी',
-  names: 'बालू (cft), गिट्टी (brass)', siteNo: '96', challanNo: '97', questions: 'किस साइट पर?',
+  names: 'बालू (cft), गिट्टी (brass)', siteNo: '96', challanNo: '97', questions: 'किस साइट पर?', forms: '"UPI" / "चालान"', kinds: 'UPI भुगतान, चालान',
   quantity: '50', unit: 'बोरी', number: '412', figure: '48 बोरी', before: '₹17,500', after: '₹16,800',
 };
 
@@ -138,6 +138,8 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'supplier.bill_accepted': ['ref', 'site'], 'supplier.bill_disputed': ['ref', 'site', 'their', 'reason'], 'supplier.correction_sent': ['lines', 'total'],
     'supplier.payment_claimed': ['ref', 'site', 'amount', 'utr', 'day'], 'supplier.settled_sent': ['amount'],
     'challan.not_challan': [], 'challan.ask_person': ['raw', 'items'], 'challan.no_order_for_photo': [],
+    'photo.ask_kind': ['forms'], 'photo.other': ['kinds'], 'photo.none': [], 'photo.sent_by_meter': ['kinds'],
+    'photo.sent_by_upi': ['kinds'], 'photo.sent_by_challan': ['kinds'], 'photo.kind.meter': [], 'photo.kind.upi': [], 'photo.kind.challan': [],
     'step.reply_order_yes': ['site', 'day', 'time', 'rates'], 'step.reply_order_no': ['site', 'day', 'time', 'rates'],
     'step.reply_order_other_time': ['site', 'day', 'time', 'rates'], 'step.record_delivery': ['site', 'items', 'challan'],
     'step.send_material_bill': ['site', 'lines', 'total'], 'step.send_material_correction': ['site', 'lines', 'total'],

@@ -282,6 +282,17 @@ export const hi = Object.freeze({
   'payment.received': '{from} ने भुगतान बताया: {amount}, UTR {utr}, {day}, बिल {total}। खाते में आया हो तो "हाँ" लिखें, नहीं तो "नहीं"।',
   'payment.retake': 'UPI की फ़ोटो साफ़ नहीं है। कृपया पूरी फ़ोटो दोबारा भेजें, जिसमें रक़म, UTR और तारीख़ दिखें।',
   'payment.not_upi': 'इस फ़ोटो में UPI भुगतान नहीं दिखा।',
+
+  // --- Any photo, any time: what the photo is (docs/BUILD2.md section 7; Claude drafted, Fable to polish)
+  'photo.ask_kind': 'यह फ़ोटो क्या है? {forms} लिखें। ("नहीं" लिखें तो कुछ दर्ज नहीं होगा।)',
+  'photo.other': 'इस फ़ोटो से कुछ दर्ज नहीं हुआ। आप ये फ़ोटो भेज सकते हैं: {kinds}।',
+  'photo.none': 'इस नंबर पर फ़ोटो से कुछ दर्ज नहीं होता। "मदद" लिखें।',
+  'photo.sent_by_meter': 'मीटर की फ़ोटो ऑपरेटर या JCB मालिक भेजते हैं। कुछ दर्ज नहीं हुआ। आप भेज सकते हैं: {kinds}।',
+  'photo.sent_by_upi': 'भुगतान की फ़ोटो ठेकेदार भेजते हैं। कुछ दर्ज नहीं हुआ। आप भेज सकते हैं: {kinds}।',
+  'photo.sent_by_challan': 'चालान की फ़ोटो सप्लायर या साइट के लोग भेजते हैं। कुछ दर्ज नहीं हुआ। आप भेज सकते हैं: {kinds}।',
+  'photo.kind.meter': 'मीटर',
+  'photo.kind.upi': 'UPI भुगतान',
+  'photo.kind.challan': 'चालान',
   'payment.amount_differs': 'फ़ोटो में {seen} दिखा, बिल {total} का है। यही भेजें? हाँ / नहीं',
   'payment.not_confirmed': '{from} ने कहा कि {amount} अभी खाते में नहीं आया। UTR {utr} जाँच लें।',
   'payment.unconfirmed': 'भुगतान {amount} की पुष्टि अभी नहीं आई।',

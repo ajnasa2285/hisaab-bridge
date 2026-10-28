@@ -10,7 +10,7 @@ import { createOffice } from '../../src/agents/office.js';
 import { runTool } from '../../src/agents/common.js';
 import { openRefs } from '../../src/ledger/refs.js';
 import { t } from '../../src/i18n/index.js';
-import { setup, person } from './helpers.js';
+import { setup, person, seesPhoto } from './helpers.js';
 
 const supplier = { ...person('supplier', 'agent:supplier-1'), name: 'Supplier' };
 const contractor = { ...person('contractor', 'agent:contractor-1'), name: 'Contractor' };
@@ -46,7 +46,7 @@ async function desks(limits) {
   const siteOffice = createOffice({ ledger: s.siteCore.ledger, tools: s.site.tools, kind: 'contractor', limits, tell: tellSite, reply, now: s.siteCore.now });
   const supOffice = createOffice({ ledger: s.supCore.ledger, tools: s.sup.tools, kind: 'supplier', tell: tellSite, reply, now: s.supCore.now });
   talks.site = createConversation({ ledger: s.siteCore.ledger, tools: s.site.tools, spark, reply, now: s.siteCore.now, office: siteOffice });
-  talks.sup = createConversation({ ledger: s.supCore.ledger, tools: s.sup.tools, spark, readChallan: async () => nextRead, reply, now: s.supCore.now, office: supOffice });
+  talks.sup = createConversation({ ledger: s.supCore.ledger, tools: s.sup.tools, spark, readChallan: async () => nextRead, classifyPhoto: seesPhoto('challan'), reply, now: s.supCore.now, office: supOffice });
   /** @param {any} who @param {string} text @param {{name: string, args: any}} [call] */
   const site = async (who, text, call) => { if (call) calls.push(call); await talks.site.onText(who, text); };
   /** @param {string} text @param {{name: string, args: any}} [call] */

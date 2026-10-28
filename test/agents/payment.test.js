@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { createConversation } from '../../src/agents/conversation.js';
 import { runTool } from '../../src/agents/common.js';
 import { t } from '../../src/i18n/index.js';
-import { setup, person, SHA_A, SHA_B } from './helpers.js';
+import { setup, person, SHA_A, SHA_B, seesPhoto } from './helpers.js';
 
 const owner = person('jcb_owner', 'agent:jcb-1');
 const operator = person('operator', 'agent:jcb-1');
@@ -41,7 +41,7 @@ test('a UPI screenshot becomes a confirmed payment claim; the owner\'s one "เคนเ
     const reply = (/** @type {any} */ p, /** @type {string} */ key, /** @type {any} */ params) => { said.push([p.role, key, t(key, params)]); };
     const spark = async () => ({ ok: /** @type {const} */ (true), toolCalls: [] });
     jcbTalk = createConversation({ ledger: s.jcbCore.ledger, tools: s.jcb.tools, spark, reply, now: s.jcbCore.now });
-    const siteTalk = createConversation({ ledger: s.siteCore.ledger, tools: s.site.tools, spark, readUpi: async () => nextRead, reply, now: s.siteCore.now });
+    const siteTalk = createConversation({ ledger: s.siteCore.ledger, tools: s.site.tools, spark, readUpi: async () => nextRead, classifyPhoto: seesPhoto('upi'), reply, now: s.siteCore.now });
     const orderId = await acceptedJob(s);
     const last = () => said.at(-1)?.[1];
     const shot = { mime: 'image/jpeg', bytes: new Uint8Array([9, 9, 9]) };
