@@ -8,6 +8,8 @@ import { rupees, day as dayName, qty } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, ofType, posInt } from './common.js';
 import { agreedRates, delivery, itemsText, linesText, materialBillBody, rateFor, ratesText, requestedItems, validItems } from './material.js';
 import { openRefs } from '../ledger/refs.js';
+import { explainDifference } from './explain.js';
+import { differenceFacts } from './explain-facts.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -21,6 +23,7 @@ const MAX_CHALLAN_NO = 40;
  *   agent: Parameters<typeof import('../protocol/exchange.js').prepare>[0],
  *   link: ReturnType<typeof import('./link.js').createLink>,
  *   tell: Tell,
+ *   spark?: import('./explain.js').Spark,
  * }} o
  */
 export function createSupplierAgent(o) {
@@ -217,6 +220,8 @@ export function createSupplierAgent(o) {
           their: posInt(f.qtyHundredths) ? qty(f.qtyHundredths, unit).trim() : posInt(f.totalPaise) ? rupees(f.totalPaise) : '—',
           reason: b.reason,
         });
+        const explanation = await explainDifference({ spark: o.spark, audience: 'seller', facts: differenceFacts(ledger, m.order_id, refOf(m.order_id)) });
+        await tell('supplier', explanation.key, explanation.params);
         break;
       }
       case 'PAYMENT_CLAIM':

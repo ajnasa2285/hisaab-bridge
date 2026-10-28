@@ -7,6 +7,8 @@ import { randomUUID } from 'node:crypto';
 import { tenths as hours, rupees, day as dayName } from '../i18n/format.js';
 import { deliveryResult, isIso, isSha256, isTime, isDay, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
 import { openRefs } from '../ledger/refs.js';
+import { explainDifference } from './explain.js';
+import { differenceFacts } from './explain-facts.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -51,6 +53,7 @@ export function jcbBillBody(hoursTenths, ratePaise, readings) {
  *   agent: Parameters<typeof import('../protocol/exchange.js').prepare>[0],
  *   link: ReturnType<typeof import('./link.js').createLink>,
  *   tell: Tell,
+ *   spark?: import('./explain.js').Spark,
  * }} o
  */
 export function createJcbAgent(o) {
@@ -215,14 +218,17 @@ export function createJcbAgent(o) {
       case 'ACCEPT':
         await tell('jcb_owner', 'jcb.bill_accepted', { ref: refOf(m.order_id), site: siteOf(m.order_id) });
         break;
-      case 'DISPUTE':
+      case 'DISPUTE': {
         await tell('jcb_owner', 'jcb.bill_disputed', {
           ref: refOf(m.order_id),
           site: siteOf(m.order_id),
           their: b.theirFigure?.hoursTenths !== undefined ? `${hours(b.theirFigure.hoursTenths)} h` : b.theirFigure?.totalPaise !== undefined ? rupees(b.theirFigure.totalPaise) : '—',
           reason: b.reason,
         });
+        const explanation = await explainDifference({ spark: o.spark, audience: 'seller', facts: differenceFacts(ledger, m.order_id, refOf(m.order_id)) });
+        await tell('jcb_owner', explanation.key, explanation.params);
         break;
+      }
       case 'PAYMENT_CLAIM':
         await tell('jcb_owner', 'jcb.payment_claimed', { ref: refOf(m.order_id), site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn) }, { tool: 'confirm_payment', args: { orderId: m.order_id } });
         break;

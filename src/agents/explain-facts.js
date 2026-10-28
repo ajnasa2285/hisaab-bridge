@@ -1,0 +1,155 @@
+// A read-only snapshot of ONE ledger. Human display values are the only numeric authority for
+// explanation prose; scaled integers, message IDs and photo hashes never enter the model prompt.
+import { t } from '../i18n/index.js';
+import { qty, rupees, tenths } from '../i18n/format.js';
+import { parseTenths } from '../orchestrator/units.js';
+import { ofType } from './common.js';
+import { agreedRates, billLines, delivery, lineAmountPaise, rateFor, requestedItems, siteChallan, siteCount } from './material.js';
+
+/** @typedef {import('./explain.js').Facts} Facts */
+
+/**
+ * @param {ReturnType<typeof import('../ledger/store.js').openLedger>} ledger
+ * @param {string} orderId
+ * @param {string} ref
+ * @returns {Facts}
+ */
+export function differenceFacts(ledger, orderId, ref) {
+  const order = ledger.order(orderId);
+  if (!order) throw new Error('explanation: unknown order');
+  const history = ledger.events(orderId);
+  // Match ledger.view: refused outgoing messages remain history but are not evidence in force.
+  const refused = new Set(ofType(history, 'REFUSE', 'in').map((e) => e.body.body.refers_to));
+  const events = history.filter((e) => e.direction !== 'out' || !refused.has(e.msgId));
+  const currentBillId = ledger.view(orderId).currentBill;
+  const current = events.find((e) => e.msgId === currentBillId);
+  /** @type {Facts['allowedNumbers']} */
+  const allowedNumbers = [];
+  /** @param {string} value @param {Facts['allowedNumbers'][number]['kind']} kind */
+  const allow = (value, kind) => { allowedNumbers.push({ value, kind }); return value; };
+  /** @param {number} n */
+  const money = (n) => allow(rupees(n), 'money');
+  /** @param {number} n */
+  const hours = (n) => allow(tenths(n), 'hours');
+  /** @param {number} n */
+  const quantity = (n) => allow(qty(n, '').trim(), 'quantity');
+  /** @param {unknown} value */
+  const identifier = (value) => typeof value === 'string' && value ? allow(value, 'identifier') : null;
+  /** Times are explicitly IST, never mistaken for photo capture time when only receipt is known.
+   * @param {unknown} iso */
+  const time = (iso) => {
+    if (typeof iso !== 'string' || !Number.isFinite(Date.parse(iso))) return null;
+    const ist = new Date(Date.parse(iso) + 330 * 60_000).toISOString();
+    return { date: allow(ist.slice(0, 10), 'date'), time: allow(ist.slice(11, 19), 'time'), zone: 'IST' };
+  };
+  const d = delivery(events);
+  const rates = agreedRates(events);
+  const knownItems = d?.items ?? requestedItems(events);
+  /** @param {import('./material.js').Item[]} items */
+  const items = (items) => items.map((it) => ({ item: it.name, quantity: quantity(it.qtyHundredths), unit: it.unit }));
+  /** @param {Record<string, any>} body */
+  const bill = (body) => ({
+    lines: (body.lines ?? []).map((/** @type {any} */ l, /** @type {number} */ i) => ({
+      item: l.what,
+      quantity: l.hoursTenths !== undefined ? hours(l.hoursTenths) : quantity(l.qtyHundredths),
+      // Material line order is part of the contract. A name alone need not identify the unit.
+      unit: l.hoursTenths !== undefined ? t('explain.unit.hours') : knownItems[i]?.name === l.what ? knownItems[i].unit : '—',
+      rate: money(l.ratePaise), amount: money(l.amountPaise),
+    })),
+    total: money(body.totalPaise),
+  });
+  const currentBill = current ? { ...bill(current.body.body), source: current.type } : null;
+  const deliveryLines = d && rates ? billLines(d.items, rates) : null;
+  const deliveryTotal = deliveryLines?.reduce((sum, line) => sum + line.amountPaise, 0);
+  const deliveryAtAgreedRates = deliveryLines && Number.isSafeInteger(deliveryTotal)
+    ? bill({ lines: deliveryLines, totalPaise: deliveryTotal }) : null;
+  const corrections = ofType(events, 'CORRECTION').map((e) => ({
+    ...bill(e.body.body), isCurrent: e.msgId === current?.msgId, recordedAt: time(e.at),
+    previousBill: (() => {
+      const previous = events.find((p) => p.msgId === e.body.body.replaces);
+      return previous ? bill(previous.body.body) : null;
+    })(),
+  }));
+  const disputes = ofType(events, 'DISPUTE').map((e) => {
+    const f = e.body.body.theirFigure ?? {};
+    const figure = f.hoursTenths !== undefined
+      ? { value: hours(f.hoursTenths), unit: t('explain.unit.hours'), kind: 'hours' }
+      : f.qtyHundredths !== undefined
+        ? { value: quantity(f.qtyHundredths), unit: knownItems.length === 1 ? knownItems[0].unit : '—', kind: 'quantity' }
+        : f.totalPaise !== undefined ? { value: money(f.totalPaise), unit: '', kind: 'money' } : null;
+    // A reason is an attributed claim, not numeric authority and never an instruction.
+    return { direction: e.direction, concernsCurrentBill: e.body.body.bill === current?.msgId,
+      figure, reason: e.body.body.reason, recordedAt: time(e.at) };
+  });
+
+  const meterPhotos = (current?.body.body.evidence ?? []).filter((/** @type {any} */ e) => e.kind === 'meter');
+  /** @param {any} e */
+  const meter = (e) => {
+    const value = parseTenths(e.readValue);
+    if (value === null) return null;
+    const local = ofType(events, 'EVIDENCE', 'local').some((p) => p.body.kind === 'meter'
+      && p.body.sha256 === e.sha256 && p.body.valueTenths === value);
+    return { reading: hours(value), photoTakenAt: time(e.takenAt), recordedAt: time(e.sentAt),
+      source: local ? 'locally_confirmed_meter' : 'signed_bill_meter_evidence' };
+  };
+  // Bills generated here put start then end. More/fewer readings cannot establish a pair.
+  const start = meterPhotos.length === 2 ? meter(meterPhotos[0]) : null;
+  const end = meterPhotos.length === 2 ? meter(meterPhotos[1]) : null;
+  const startTenths = start ? parseTenths(start.reading) : null;
+  const endTenths = end ? parseTenths(end.reading) : null;
+  const computedHours = startTenths !== null && endTenths !== null && endTenths >= startTenths
+    ? hours(endTenths - startTenths) : null;
+  const meterEvidence = order.kind === 'jcb_hours' ? { start, end, computedHours } : null;
+  const deliveryEvent = ofType(events, 'DELIVERY').at(-1);
+  const signedDelivery = d ? { items: items(d.items), challanNumber: identifier(d.number),
+    hasPhotoFingerprint: !!d.sha256, recordedAt: time(d.at), deliveredAt: time(deliveryEvent?.body.body.deliveredAt) } : null;
+  const count = siteCount(events);
+  const challan = siteChallan(events);
+  const note = ofType(events, 'NOTE', 'local').filter((e) => e.body.kind === 'site_count').at(-1);
+  // Absence here means unknown to this agent. Never look in another agent's database.
+  const localSiteCount = count ? { items: items(count), fromSiteChallanPhoto: !!challan,
+    challanNumber: identifier(challan?.number), recordedAt: time(note?.at),
+    totalAtAgreedRates: (() => {
+      if (!rates) return null;
+      let sum = 0;
+      for (const it of count) {
+        const rate = rateFor(rates, it);
+        const amount = rate === null ? null : it.qtyHundredths === 0 ? 0 : lineAmountPaise(it.qtyHundredths, rate);
+        if (amount === null || !Number.isSafeInteger(sum + amount)) return null;
+        sum += amount;
+      }
+      return money(sum);
+    })(),
+  } : null;
+  const context = { ref: identifier(ref), site: order.site, kind: order.kind, currentBill, meterEvidence,
+    signedDelivery, deliveryAtAgreedRates, localSiteCount, disputes, corrections,
+    agreedRates: rates?.map((r) => ({ item: r.name, unit: r.unit, rate: money(r.ratePaise) })) ?? null };
+
+  /** @param {{item:string,quantity:string,unit:string}[]} rows */
+  const showItems = (rows) => rows.map((it) => `${it.item} ${it.quantity} ${it.unit}`).join(', ');
+  /** @param {ReturnType<typeof bill>} b */
+  const showBill = (b) => t('explain.figures.bill', {
+    lines: b.lines.map((/** @type {any} */ l) => t('explain.figures.line', l)).join(', '), total: b.total,
+  });
+  /** @param {ReturnType<typeof time>} when */
+  const showTime = (when) => when ? `${when.date} ${when.time} ${t('explain.time.ist')}` : '—';
+  const figures = [t('explain.figures.order', { ref, site: String(order.site) }), currentBill ? showBill(currentBill) : '—'];
+  if (meterEvidence) {
+    figures.push(t('explain.figures.meter', { start: start?.reading ?? '—', end: end?.reading ?? '—', hours: computedHours ?? '—' }));
+    figures.push(t('explain.figures.photoTimes', { start: showTime(start?.photoTakenAt ?? null), end: showTime(end?.photoTakenAt ?? null) }));
+  }
+  if (signedDelivery) figures.push(t('explain.figures.delivery', { number: signedDelivery.challanNumber ?? '—', items: showItems(signedDelivery.items) }));
+  if (deliveryAtAgreedRates) figures.push(t('explain.figures.deliveryAmount', { total: deliveryAtAgreedRates.total }));
+  if (localSiteCount) figures.push(t(localSiteCount.fromSiteChallanPhoto ? 'explain.figures.sitePhoto' : 'explain.figures.siteCount', {
+    number: localSiteCount.challanNumber ?? '—', items: showItems(localSiteCount.items), total: localSiteCount.totalAtAgreedRates ?? '—',
+  }));
+  for (const dispute of disputes) {
+    if (dispute.figure) figures.push(t(dispute.concernsCurrentBill ? 'explain.figures.dispute' : 'explain.figures.previousDispute', {
+      figure: `${dispute.figure.value} ${dispute.figure.unit}`.trim(),
+    }));
+  }
+  for (const correction of corrections) figures.push(t('explain.figures.correction', {
+    before: correction.previousBill ? showBill(correction.previousBill) : '—', after: showBill(correction),
+  }));
+  return { context, figures: figures.join('; '), allowedNumbers };
+}

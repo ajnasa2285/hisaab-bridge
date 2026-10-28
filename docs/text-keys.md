@@ -166,3 +166,25 @@ Commands are parsed by code before the model (`src/agents/office.js`, `parseComm
 | `office.stock` | lines | `stock [item]` on the contractor's agent: `office.stock_site` (site), `office.stock_line` (name, qty), `office.stock_line_differs` (name, qty, challan); `office.stock_none` when empty |
 | `office.stock_not_here` | — | `stock` on another agent |
 | `help.contractor`, `help.supervisor`, `help.jcb_owner`, `help.supplier` | — | each now ends with the commands that role can use |
+
+## Explanations (Astra drafted, Fable to polish)
+
+Existing messages are sent first. These are extra display-only notices; none proposes a step.
+The model writes only `{explanation}`. All `{figures}` fragments below come from code and one ledger.
+
+| Key | Params | When |
+|---|---|---|
+| `explain.wrapper` | explanation, figures | accepted neutral model prose plus code's figures (existing text) |
+| `explain.unavailable` | figures | unsupported number, unsafe/invalid prose, timeout or model failure (existing text) |
+| `explain.unit.hours` / `explain.time.ist` | — | hour unit / explicit timezone label |
+| `explain.figures.order` | ref, site | identify this ledger's order |
+| `explain.figures.line` | item, quantity, unit, rate, amount | formatted current or historical bill line |
+| `explain.figures.bill` | lines, total | bill figures, including corrections |
+| `explain.figures.meter` | start, end, hours | bill's meter evidence and integer-computed difference |
+| `explain.figures.photoTimes` | start, end | known photo capture times, or em dash when unknown |
+| `explain.figures.delivery` | number, items | signed supplier delivery/challan |
+| `explain.figures.deliveryAmount` | total | delivery valued at the agreed rates by code |
+| `explain.figures.sitePhoto` | number, items, total | local count confirmed from the site's challan photo |
+| `explain.figures.siteCount` | items, total | local typed count, without inferring a photo |
+| `explain.figures.dispute` / `explain.figures.previousDispute` | figure | attributed objection to the current / previous bill |
+| `explain.figures.correction` | before, after | previous and replacement bill figures |

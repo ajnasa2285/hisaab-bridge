@@ -248,6 +248,21 @@ export const hi = Object.freeze({
   // --- Explanation wrapper: the model's words, the ledger's figures --------------------------
   'explain.wrapper': '{explanation}\n\nहर आँकड़ा बही से: {figures}',
   'explain.unavailable': 'अभी समझा नहीं पा रहे। बही के आँकड़े: {figures}',
+  // Astra drafted, Fable to polish: deterministic figures below the model's explanation.
+  'explain.unit.hours': 'घंटे',
+  'explain.time.ist': 'भारतीय समय',
+  'explain.figures.order': 'काम {ref}, {site}',
+  'explain.figures.line': 'मद: {item} {quantity} {unit} × {rate} = {amount}',
+  'explain.figures.bill': 'बिल: {lines}; कुल {total}',
+  'explain.figures.meter': 'मीटर: {start} से {end} घंटे; दर्ज अंतर {hours} घंटे',
+  'explain.figures.photoTimes': 'मीटर फ़ोटो का समय: शुरू {start}, अंत {end}',
+  'explain.figures.delivery': 'आपूर्तिकर्ता का दर्ज चालान {number}: {items}',
+  'explain.figures.deliveryAmount': 'दर्ज डिलीवरी का तय दरों पर कुल: {total}',
+  'explain.figures.sitePhoto': 'साइट की चालान फ़ोटो {number}: {items}; तय दर पर कुल {total}',
+  'explain.figures.siteCount': 'साइट की दर्ज गिनती: {items}; तय दर पर कुल {total}',
+  'explain.figures.dispute': 'मौजूदा बिल पर आपत्ति में बताई गई गिनती या रक़म: {figure}',
+  'explain.figures.previousDispute': 'पिछले बिल पर आपत्ति में बताई गई गिनती या रक़म: {figure}',
+  'explain.figures.correction': 'बिल में बदलाव: पहले {before}; बाद में {after}',
 
   // --- Payment: received, confirm, settled -------------------------------------------------
   'payment.how_to_report': 'भुगतान की UPI फ़ोटो भेजें, या लिखें: रक़म, UTR, तारीख़।',

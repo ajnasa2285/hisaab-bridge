@@ -118,10 +118,10 @@ export function createApp(cfg) {
       }
     };
     const agent = a.kind === 'jcb'
-      ? createJcbAgent({ agent: core, link, tell })
+      ? createJcbAgent({ agent: core, link, tell, spark: cfg.spark })
       : a.kind === 'supplier'
-        ? createSupplierAgent({ agent: core, link, tell })
-        : createContractorAgent({ agent: core, link, tell, jcbAgentId: /** @type {string} */ (a.jcbAgentId), supplierAgentId: a.supplierAgentId });
+        ? createSupplierAgent({ agent: core, link, tell, spark: cfg.spark })
+        : createContractorAgent({ agent: core, link, tell, spark: cfg.spark, jcbAgentId: /** @type {string} */ (a.jcbAgentId), supplierAgentId: a.supplierAgentId });
     /** @type {import('./agents/conversation.js').Reply} */
     const reply = (p, key, params) => sendTo(p, t(key, params));
     // References, exact commands, and (contractor) approvals with this agent's limits.

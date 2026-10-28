@@ -20,7 +20,7 @@ export const SHA_C = 'c'.repeat(64);
 /** @param {string} role @param {string} agent @returns {Person} */
 export const person = (role, agent) => ({ line: 'line', phone: '919000000001', agent, role: /** @type {any} */ (role), name: role });
 
-/** @param {{onTell?: (side: string, role: string, key: string, params: any, expect: any) => void, siteLedgerFile?: string}} [o] */
+/** @param {{onTell?: (side: string, role: string, key: string, params: any, expect: any) => void, siteLedgerFile?: string, spark?: (req: any) => Promise<any>}} [o] */
 export async function setup(o = {}) {
   const jk = generateKeys();
   const ck = generateKeys();
@@ -70,9 +70,9 @@ export async function setup(o = {}) {
   const jcbLink = createLink(jcbCore, { peerUrls, transport });
   const siteLink = createLink(siteCore, { peerUrls, transport });
   const supLink = createLink(supCore, { peerUrls, transport });
-  const jcb = createJcbAgent({ agent: jcbCore, link: jcbLink, tell: tellFor('jcb') });
-  const site = createContractorAgent({ agent: siteCore, link: siteLink, tell: tellFor('site'), jcbAgentId: 'agent:jcb-1', supplierAgentId: 'agent:supplier-1' });
-  const sup = createSupplierAgent({ agent: supCore, link: supLink, tell: tellFor('supplier') });
+  const jcb = createJcbAgent({ agent: jcbCore, link: jcbLink, tell: tellFor('jcb'), spark: o.spark });
+  const site = createContractorAgent({ agent: siteCore, link: siteLink, tell: tellFor('site'), spark: o.spark, jcbAgentId: 'agent:jcb-1', supplierAgentId: 'agent:supplier-1' });
+  const sup = createSupplierAgent({ agent: supCore, link: supLink, tell: tellFor('supplier'), spark: o.spark });
 
   /** @type {import('node:http').Server[]} */
   const servers = [];

@@ -29,6 +29,7 @@ const SAMPLE = {
   ref: 'J-1', step: 'शिवपुरी पर 29 अक्टूबर 2026 को 8 बजे से 6 घंटे के लिए JCB माँगें?', note: 'ठीक है', decision: 'मंज़ूर',
   awaited: 'बिल का इंतज़ार', bill: '₹7,320', challan: '50 बोरी',
   names: 'बालू (cft), गिट्टी (brass)', siteNo: '96', challanNo: '97',
+  quantity: '50', unit: 'बोरी', number: '412', figure: '48 बोरी', before: '₹17,500', after: '₹16,800',
 };
 
 test('every key has a non-empty Hindi text and fills with its parameters', () => {
@@ -68,6 +69,25 @@ test('the flows the brief names are covered', () => {
   for (const s of ['requested', 'approved', 'declined', 'sent', 'done']) assert.ok(hi[`request.status.${s}`], s);
   for (const s of ['requested', 'offered', 'declined', 'booked', 'working', 'delivered', 'billed', 'disputed', 'accepted', 'payment_claimed', 'settled']) assert.ok(hi[`state.${s}`], s);
   assert.ok(hi['meter.retake'] && hi['payment.retake'], 'retake requests');
+});
+
+test('explanation figures have exactly the parameters their code supplies', () => {
+  const expected = {
+    'explain.unit.hours': [], 'explain.time.ist': [],
+    'explain.figures.order': ['ref', 'site'],
+    'explain.figures.line': ['item', 'quantity', 'unit', 'rate', 'amount'],
+    'explain.figures.bill': ['lines', 'total'],
+    'explain.figures.meter': ['start', 'end', 'hours'],
+    'explain.figures.photoTimes': ['start', 'end'],
+    'explain.figures.delivery': ['number', 'items'],
+    'explain.figures.deliveryAmount': ['total'],
+    'explain.figures.sitePhoto': ['number', 'items', 'total'],
+    'explain.figures.siteCount': ['items', 'total'],
+    'explain.figures.dispute': ['figure'], 'explain.figures.previousDispute': ['figure'],
+    'explain.figures.correction': ['before', 'after'],
+    'explain.wrapper': ['explanation', 'figures'], 'explain.unavailable': ['figures'],
+  };
+  for (const [key, params] of Object.entries(expected)) assert.deepEqual(paramsOf(key), params, key);
 });
 
 test('t is strict: unknown key and missing parameter throw', () => {

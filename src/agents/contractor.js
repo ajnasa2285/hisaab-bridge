@@ -9,6 +9,8 @@ import { tenths as hours, rupees, day as dayName, qty } from '../i18n/format.js'
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
 import { agreedRates, billFollows, countDifferences, delivery, itemsText, lineAmountPaise, linesText, materialBillBody, rateFor, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, validItems } from './material.js';
 import { openRefs } from '../ledger/refs.js';
+import { explainDifference } from './explain.js';
+import { differenceFacts } from './explain-facts.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -22,6 +24,7 @@ const UTR_RE = /^[A-Za-z0-9]{6,35}$/;
  *   agent: Parameters<typeof import('../protocol/exchange.js').prepare>[0],
  *   link: ReturnType<typeof import('./link.js').createLink>,
  *   tell: Tell,
+ *   spark?: import('./explain.js').Spark,
  *   jcbAgentId: string,
  *   supplierAgentId?: string,
  * }} o
@@ -357,6 +360,8 @@ export function createContractorAgent(o) {
     if (!d || !rates || !billFollows(/** @type {{lines: any[], totalPaise: number}} */ (b), d.items, rates, { sameQty: m.type === 'BILL' })) {
       const want = d && rates ? materialBillBody(d.items, rates, { sha256: d.sha256, number: d.number, sentAt: d.at }) : null;
       await tell('contractor', 'site.material_bill_mismatch', { ref, site, lines, total, expected: want && d ? linesText(want.lines, d.items) : '—', expectedTotal: want ? rupees(want.totalPaise) : '—' });
+      const explanation = await explainDifference({ spark: o.spark, audience: 'buyer', facts: differenceFacts(ledger, m.order_id, ref) });
+      await tell('contractor', explanation.key, explanation.params);
       return;
     }
     const count = siteCount(events);
@@ -370,6 +375,8 @@ export function createContractorAgent(o) {
         return s + (it.qtyHundredths === 0 || rate === null ? 0 : lineAmountPaise(it.qtyHundredths, rate) ?? 0);
       }, 0);
       await tell('contractor', 'site.material_bill_count_differs', { ref, site, lines, total, count: itemsText(count), siteTotal: rupees(siteTotal) });
+      const explanation = await explainDifference({ spark: o.spark, audience: 'buyer', facts: differenceFacts(ledger, m.order_id, ref) });
+      await tell('contractor', explanation.key, explanation.params);
       return;
     }
     const params = { ref, site, lines, total, photos: Array.isArray(b.evidence) ? b.evidence.length : 0 };

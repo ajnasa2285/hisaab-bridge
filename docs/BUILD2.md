@@ -109,3 +109,29 @@ site's record of what arrived, with the photo as evidence.
 | `claude/challan` | `hb-challan` | `readChallan` (Muse Spark, strict schema, tests with a stand-in), eval support for challans |
 
 Claude (lead) merges in the order challan -> supplier -> office and resolves the seams.
+
+## Explanations
+
+`src/agents/explain-facts.js` snapshots one agent's own ledger: the bill in force and corrections,
+meter evidence and code-computed hours, signed delivery, the local site count and its photo
+provenance, and attributed dispute figures/reasons. Refused outgoing messages do not count.
+Human display values authorize numbers; stored paise/tenths, fingerprints, message IDs and numbers
+inside free-text reasons do not. Capture times remain unknown when absent; recorded times are
+separate and displayed in IST. Material totals use the existing integer rounding rules.
+
+`explainDifference({spark, facts, audience})` requests strict JSON from injected Muse Spark. It
+accepts only short Hindi prose with supported complete numeric tokens (including normalized
+Devanagari digits, grouping, money and hour units). References, dates and times are indivisible;
+their digits cannot authorize quantities. Unknown numbers, malformed responses, tool calls,
+common directives/blame/payment/causal language, errors and timeouts discard the entire prose.
+The number check proves numeric support, not every semantic claim in free text; the prompt and
+conservative language checks also restrict the explanation to neutral descriptions of evidence.
+Accepted prose uses `explain.wrapper`; otherwise `explain.unavailable` contains the same plain
+figures assembled by code. Requests have a 30-second attempt timeout and a 95-second total bound
+(including the existing client's retries). The existing discrepancy notice is sent before waiting.
+
+The sellers explain after their existing DISPUTE notice; the contractor explains after a material
+bill/count or bill/rate mismatch notice. There is no JCB buyer count-mismatch hook in this build.
+`app.js` passes its existing Spark injection to these agents; the runtime client remains
+`src/meta/client.js`. Explanations carry no confirmation expectation, tool, ledger entry or state
+change. Full tests and typecheck remain the lead's AWS checks, per the explanation brief.
