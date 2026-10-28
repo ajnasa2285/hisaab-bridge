@@ -107,3 +107,56 @@ test('a JCB job by conversation: every committing step is read back and runs onl
     await s.close();
   }
 });
+
+test('a request with a value left out keeps the rest and asks only for that value', async () => {
+  /** @type {{name: string, args: any}[]} */
+  let nextCalls = [];
+  let calls = 0;
+  const spark = async () => {
+    calls += 1;
+    return { ok: /** @type {const} */ (true), toolCalls: nextCalls };
+  };
+  /** @type {[string, string][]} [key, text] */
+  const said = [];
+  const s = await setup();
+  try {
+    const reply = (/** @type {any} */ _p, /** @type {string} */ key, /** @type {any} */ params) => { said.push([key, t(key, params)]); };
+    const talk = createConversation({ ledger: s.siteCore.ledger, tools: s.site.tools, spark, reply, now: s.siteCore.now });
+    const last = () => said.at(-1) ?? ['', ''];
+
+    // No site named and none known: one question, for the site only.
+    nextCalls = [{ name: 'request_material', args: { site: 'साइट', day: 'tomorrow', time: 'null', items: [{ name: 'सीमेंट', quantity: 'pachaas', unit: 'बोरी' }] } }];
+    await talk.onText(supervisor, 'कल साइट पर सीमेंट पचास बोरी चाहिए');
+    assert.equal(last()[0], 'ask.missing');
+    assert.equal(last()[1], t('ask.missing', { questions: t('ask.site') }));
+    // The site typed alone is read by code; then the usual read-back with everything kept.
+    nextCalls = [];
+    calls = 0;
+    await talk.onText(supervisor, 'Rampur');
+    assert.equal(calls, 0);
+    assert.equal(last()[0], 'step.request_material');
+    assert.ok(last()[1].includes('Rampur') && last()[1].includes('50 बोरी'), last()[1]);
+    assert.equal(s.siteCore.ledger.orders().length, 0, 'nothing sent before yes');
+    await talk.onText(supervisor, 'हाँ');
+    assert.equal(last()[0], 'site.material_requested');
+    assert.equal(s.siteCore.ledger.orders().length, 1);
+
+    // A missing quantity is asked by item; "नहीं" cancels and nothing is sent.
+    nextCalls = [{ name: 'request_material', args: { site: 'Rampur', day: 'tomorrow', time: null, items: [{ name: 'रेत', quantity: null, unit: 'ट्रॉली' }] } }];
+    await talk.onText(supervisor, 'kal Rampur ret chahiye trolley');
+    assert.equal(last()[1], t('ask.missing', { questions: t('ask.qty', { name: 'रेत', unit: 'ट्रॉली' }) }));
+    await talk.onText(supervisor, 'नहीं');
+    assert.equal(last()[0], 'step.cancelled');
+    assert.equal(s.siteCore.ledger.orders().length, 1);
+
+    // With one open job, its site is the one meant; the day is asked. Help instead of an answer: the question lapses.
+    nextCalls = [{ name: 'request_jcb', args: { site: null, day: null, time: null, hours: null } }];
+    await talk.onText(supervisor, 'JCB chahiye');
+    assert.equal(last()[1], t('ask.missing', { questions: t('ask.day') }));
+    await talk.onText(supervisor, 'मदद');
+    assert.equal(last()[0], 'help.supervisor');
+    assert.equal(talk.pending(supervisor), null);
+  } finally {
+    await s.close();
+  }
+});

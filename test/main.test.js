@@ -77,6 +77,15 @@ test('three agents: the contractor has two peers, each seller one; the supplier 
     assert.throws(() => loadConfig(env(dir)), /role 'supplier'/);
     writeFileSync(join(dir, 'people.json'), JSON.stringify([{ line: 'site', phone: '919000000021', agent: 'shop', role: 'supplier', name: 'X' }]));
     assert.throws(() => loadConfig(env(dir)), /agent 'jcb'\|'contractor'\|'supplier'/);
+
+    // A person's usual site is optional; when given it is a short name.
+    writeFileSync(join(dir, 'people.json'), JSON.stringify([
+      { line: 'site', phone: '919000000011', agent: 'contractor', role: 'supervisor', name: 'S', site: ' Rampur ' },
+      { line: 'site', phone: '919000000012', agent: 'contractor', role: 'contractor', name: 'C' },
+    ]));
+    assert.deepEqual(loadConfig(env(dir)).people.map((p) => p.site), ['Rampur', undefined]);
+    writeFileSync(join(dir, 'people.json'), JSON.stringify([{ line: 'site', phone: '919000000011', agent: 'contractor', role: 'supervisor', name: 'S', site: '  ' }]));
+    assert.throws(() => loadConfig(env(dir)), /site must be a name/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

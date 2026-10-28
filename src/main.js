@@ -5,7 +5,9 @@
 // Data folder (HB_DATA_DIR), private to the server:
 //   keys/jcb.pem, keys/contractor.pem, keys/supplier.pem
 //                                       Ed25519 private keys (created on first start, mode 600)
-//   people.json                         who is who: [{line: 'jcb'|'site'|'supplier', phone, agent: 'jcb'|'contractor'|'supplier', role, name}]
+//   people.json                         who is who: [{line: 'jcb'|'site'|'supplier', phone, agent: 'jcb'|'contractor'|'supplier', role, name, site?}]
+//                                       (site, optional: where this person usually works, e.g. a supervisor's one site;
+//                                       a JCB or material request that names no site is for this one)
 //                                       (a supplier's people have role 'supplier', on the supplier's own line when
 //                                       HB_WA_SUPPLIER_* is set, otherwise on a shared line)
 //   jcb.db, contractor.db, supplier.db, wa.db   the ledgers and the WhatsApp store
@@ -108,7 +110,10 @@ export function loadConfig(env) {
     if (!lineId || !agent) throw new Error(`config: people.json entry ${i + 1} needs line ${Object.keys(lineIds).map((n) => `'${n}'`).join('|')} and agent 'jcb'|'contractor'|'supplier'`);
     // The supplier agent has one role, and that role belongs to no other agent.
     if ((p.agent === 'supplier') !== (p.role === 'supplier')) throw new Error(`config: people.json entry ${i + 1}: role 'supplier' goes with agent 'supplier' and only with it`);
-    return { line: lineId, phone: String(p.phone), agent, role: p.role, name: String(p.name ?? '') };
+    // Optional: the site this person usually works on; a request that names no site is for it.
+    const site = p.site === undefined || p.site === null ? undefined : String(p.site).trim();
+    if (site !== undefined && (!site || site.length > 80)) throw new Error(`config: people.json entry ${i + 1}: site must be a name of 1 to 80 characters`);
+    return { line: lineId, phone: String(p.phone), agent, role: p.role, name: String(p.name ?? ''), ...(site ? { site } : {}) };
   });
 
   return {
