@@ -131,7 +131,9 @@ The judge page runs locally with `node web/serve.js` on the bundled sample expor
 
 ## Disclosure
 
-All code in this repository was written during the event, from 27 October 2026. The design draws on what we learned running private WhatsApp agents for our own businesses: a brick-kiln bookkeeping agent in production since October 2026, a JCB hours agent and a contractor site-office agent. No code from them is used, and none of them is part of this entry. The organisers confirmed that mentioning the existing pilot as context is fine.
+Our application proposed a WhatsApp site office that turns contractors' field photos and messages into checked records for the owner. We built it during the event, and it grew into a bridge: the contractor's site office now settles hours, deliveries and payments with its suppliers' agents (a JCB owner's and a sand/cement supplier's) over signed A2A messages. The contractor, JCB and supplier agents are all new, and all code in this repository was written during the event, from 27 October 2026.
+
+Our previous private project is Bhatta Munshi, a WhatsApp bookkeeping agent running daily at our own brick kiln, described in our application. What we learned there (the person confirms before anything is recorded, code checks every figure the model reads) shaped this design. No code from it is used, and it is not part of this entry. The organisers confirmed that mentioning it as context is fine.
 
 Pilot users: a JCB owner and a contractor we work with, with their consent. All data in this repository is invented; real photos, phone numbers and payments stay on the private server.
 
