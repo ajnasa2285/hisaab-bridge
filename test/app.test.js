@@ -127,6 +127,11 @@ test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents
     assert.equal((await fetch(`${base}/agents/jcb/export`, { headers: { authorization: 'Bearer wrong' } })).status, 404);
     const side = await (await fetch(`${base}/agents/jcb/export`, { headers: { authorization: 'Bearer test-export-token' } })).json();
     assert.deepEqual([side.agentId, side.chain.ok, side.events[0].type], ['agent:jcb-1', true, 'BOOKING_REQUEST']);
+    // Each side's own references ride along, one per order.
+    assert.deepEqual(side.refs, { [orderId]: 'J-1' });
+    const siteSide = await (await fetch(`${base}/agents/site/export`, { headers: { authorization: 'Bearer test-export-token' } })).json();
+    assert.equal(siteSide.refs[orderId], 'J-1');
+    assert.equal(Object.keys(siteSide.refs).length, siteSide.orders.length);
   } finally {
     app.close();
     await new Promise((r) => server.close(() => r(undefined)));

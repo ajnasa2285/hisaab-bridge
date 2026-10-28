@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
   <title>Hisaab Bridge</title>
   <link rel="stylesheet" href="judge.css">
 </head>
@@ -18,25 +19,31 @@
     </div>
   </header>
 
+  <section class="live">
+    <h2 data-t="live_title"></h2>
+    <form id="live-form" class="live-form" autocomplete="off">
+      <label for="key" data-t="key_label"></label>
+      <input id="key" type="password" autocomplete="off" spellcheck="false">
+      <button id="load-live" class="btn" type="submit" data-t="load_live"></button>
+      <button id="use-sample" class="btn" type="button" data-t="use_sample"></button>
+    </form>
+    <p class="hint" data-t="live_hint"></p>
+  </section>
+
   <p id="notice" class="notice" hidden></p>
 
   <section id="summary" class="summary" hidden>
-    <div class="cell"><span class="k" data-t="order"></span><span id="order"></span></div>
+    <div class="cell"><span class="k" data-t="source"></span><span id="source"></span></div>
+    <div class="cell"><span class="k" data-t="orders"></span><span id="order"></span></div>
     <div class="cell"><span class="k" data-t="exported_at"></span><span id="exported"></span></div>
   </section>
 
-  <main class="ledgers">
-    <section class="ledger" id="ledger-jcb">
-      <h2 data-t="ledger_jcb"></h2>
-      <dl class="meta"></dl>
-      <ol class="events"></ol>
-    </section>
-    <section class="ledger" id="ledger-contractor">
-      <h2 data-t="ledger_contractor"></h2>
-      <dl class="meta"></dl>
-      <ol class="events"></ol>
-    </section>
-  </main>
+  <section id="ledgers" class="ledger-cards" hidden>
+    <h2 data-t="ledgers"></h2>
+    <div id="ledger-cards" class="cards"></div>
+  </section>
+
+  <main id="orders"></main>
 
   <section class="results">
     <h2 data-t="results"></h2>

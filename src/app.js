@@ -8,9 +8,13 @@
 //   /agents/<name>/.well-known/agent-card.json      Agent Card
 //   /agents/<name>/a2a                              A2A JSON-RPC
 //   /agents/<name>/export                           one side of the ledgers for the judge page (token only)
+//   /judge/                                         the judge page (web/, an allow-list of its own files)
+//   /judge/results/                                 the aggregate reader results (eval/results/*.json)
 //   /health                                         "ok"
 
+import { readdir, readFile } from 'node:fs/promises';
 import { openLedger } from './ledger/store.js';
+import { openRefs } from './ledger/refs.js';
 import { agentCardJson, createA2AHandler } from './transport/a2a.js';
 import { publicKeyText } from './protocol/keys.js';
 import { createLink } from './agents/link.js';
@@ -29,6 +33,27 @@ import { t } from './i18n/index.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 
 const RETRY_MS = 60 * 1000;
+
+// The judge page is served from web/ by the app itself, file by file from this list and nothing
+// else: no directory listing, no `web/serve.js`, no `web/sample/make-sample.js`, no path that is
+// not spelled here. The reader results are the aggregate files of eval/results/ (names only).
+const WEB_DIR = new URL('../web/', import.meta.url);
+const RESULTS_DIR = new URL('../eval/results/', import.meta.url);
+/** @type {Record<string, string>} published path → content type */
+const JUDGE_FILES = {
+  'index.html': 'text/html; charset=utf-8',
+  'judge.css': 'text/css; charset=utf-8',
+  'judge.js': 'text/javascript; charset=utf-8',
+  'texts.js': 'text/javascript; charset=utf-8',
+  'sample/export.json': 'application/json; charset=utf-8',
+};
+const RESULT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.json$/;
+const JUDGE_HEADERS = {
+  'content-security-policy': "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'",
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer',
+  'cache-control': 'no-cache',
+};
 
 /** @typedef {import('./protocol/messages.js').Peer} Peer */
 /** @typedef {import('./wa/directory.js').Person} Person */
@@ -171,6 +196,10 @@ export function createApp(cfg) {
       return;
     }
     if (await wa.handle(req, res)) return;
+    if (path === '/judge' || path.startsWith('/judge/')) {
+      await serveJudge(path, req, res);
+      return;
+    }
     const m = /^\/agents\/([a-z0-9-]{1,32})\//.exec(path);
     const entry = m ? [...agents.values()].find((x) => x.cfg.name === m[1]) : undefined;
     if (entry && req.method === 'GET' && path === `/agents/${entry.cfg.name}/export`) {
@@ -187,12 +216,85 @@ export function createApp(cfg) {
     res.writeHead(404).end();
   }
 
-  /** One side in the judge page's `hb-export/0.1` shape (web/README.md). @param {any} entry */
+  /**
+   * The judge page and its results, GET only, each response with the page's headers.
+   * @param {string} path
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   */
+  async function serveJudge(path, req, res) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { ...JUDGE_HEADERS, allow: 'GET, HEAD' }).end();
+      return;
+    }
+    if (path === '/judge') {
+      res.writeHead(302, { ...JUDGE_HEADERS, location: '/judge/' }).end();
+      return;
+    }
+    /** @param {number} status @param {string} type @param {Uint8Array | string} body */
+    const send = (status, type, body) => {
+      res.writeHead(status, { ...JUDGE_HEADERS, 'content-type': type });
+      res.end(req.method === 'HEAD' ? undefined : body);
+    };
+    // The path is matched as sent, after decoding, against the allow-list only: there is no file
+    // system lookup for anything else, so "..", encoded slashes and the like can reach nothing.
+    let rel;
+    try {
+      rel = decodeURIComponent(path.slice('/judge/'.length));
+    } catch {
+      send(404, 'text/plain; charset=utf-8', 'not found');
+      return;
+    }
+    if (rel === '') rel = 'index.html';
+    try {
+      if (rel === 'results/') {
+        send(200, 'application/json; charset=utf-8', JSON.stringify(await resultNames()));
+        return;
+      }
+      if (rel.startsWith('results/')) {
+        const name = rel.slice('results/'.length);
+        if (!RESULT_NAME.test(name) || !(await resultNames()).includes(name)) {
+          send(404, 'text/plain; charset=utf-8', 'not found');
+          return;
+        }
+        send(200, 'application/json; charset=utf-8', await readFile(new URL(name, RESULTS_DIR)));
+        return;
+      }
+      const type = Object.hasOwn(JUDGE_FILES, rel) ? JUDGE_FILES[rel] : null;
+      if (type === null) {
+        send(404, 'text/plain; charset=utf-8', 'not found');
+        return;
+      }
+      send(200, type, await readFile(new URL(rel, WEB_DIR)));
+    } catch {
+      send(404, 'text/plain; charset=utf-8', 'not found');
+    }
+  }
+
+  /** The aggregate result files, names only, sorted. */
+  async function resultNames() {
+    try {
+      return (await readdir(RESULTS_DIR)).filter((n) => RESULT_NAME.test(n)).sort();
+    } catch {
+      return [];
+    }
+  }
+
+  /** One side in the judge page's `hb-export/0.1` shape (web/README.md, CONTRACTS section 10). @param {any} entry */
   function exportSide(entry) {
     const ledger = entry.core.ledger;
     const orders = ledger.orders();
     const events = orders.flatMap((/** @type {{order_id: string}} */ o) => ledger.events(o.order_id)).sort((/** @type {any} */ a, /** @type {any} */ b) => a.seq - b.seq);
-    return { v: 'hb-export/0.1', exportedAt: new Date(now()).toISOString(), agentId: entry.cfg.id, publicKey: publicKeyText(entry.cfg.privateKey), orders, events, chain: ledger.verifyChain() };
+    // This side's own references (J-n / P-n), one per order; optional in the shape, so an older
+    // page still reads the export.
+    const refs = openRefs(ledger);
+    /** @type {Record<string, string>} */
+    const refByOrder = {};
+    for (const o of orders) {
+      const ref = refs.refOf(o.order_id);
+      if (ref !== null) refByOrder[o.order_id] = ref;
+    }
+    return { v: 'hb-export/0.1', exportedAt: new Date(now()).toISOString(), agentId: entry.cfg.id, publicKey: publicKeyText(entry.cfg.privateKey), orders, events, chain: ledger.verifyChain(), refs: refByOrder };
   }
 
   return {

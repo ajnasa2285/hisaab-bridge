@@ -40,6 +40,7 @@ Do this once for each number, in the Meta app dashboard under WhatsApp, Configur
 - `sudo systemctl status hisaab` shows whether it is running.
 - `sudo journalctl -u hisaab -f` shows what it is doing, live. Press Ctrl+C to stop watching.
 - Send a WhatsApp message from one of the listed phones to the matching number.
+- The judge page is at `https://<your address>/judge/`; to see the live ledgers on it, the viewer types the access key, which is `HB_EXPORT_TOKEN` from the settings file, shared privately (never in a chat, a link or the repository).
 
 ## Updating to a new version
 

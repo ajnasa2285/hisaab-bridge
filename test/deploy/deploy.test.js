@@ -49,10 +49,10 @@ test('the env example lists every variable src/ reads, and holds no secret', () 
   assert.equal(example.HB_WA_GRAPH_VERSION, '');
 });
 
-test('the Caddyfile proxies only /wa/*, /agents/* and /health and answers 404 to the rest', () => {
+test('the Caddyfile proxies only /wa/*, /agents/*, /health and the judge page, and answers 404 to the rest', () => {
   const c = read('Caddyfile');
   const matcher = /^\s*@\w+\s+path\s+(.+)$/m.exec(c);
-  assert.deepEqual(matcher?.[1].trim().split(/\s+/).sort(), ['/agents/*', '/health', '/wa/*']);
+  assert.deepEqual(matcher?.[1].trim().split(/\s+/).sort(), ['/agents/*', '/health', '/judge', '/judge/*', '/wa/*']);
   assert.equal(c.match(/reverse_proxy/g)?.length, 1, 'one proxy only');
   assert.match(c, /reverse_proxy 127\.0\.0\.1:\{\$HB_PORT:8080\}/);
   assert.match(c, /respond "Not found" 404/);

@@ -184,4 +184,23 @@ Approval limit: requests above `CONTRACTOR_APPROVAL_LIMIT_PAISE` (estimated valu
 
 ## 10. Judge page (`web/`)
 
-Read-only, from a JSON export of both ledgers (`GET /export/<agent>` on the server, invented data in the repo for development). Shows one order from request to settled for both sides, every message with "signature verified ✅", evidence fingerprints, receipts, disputes, and the results from `eval/results/`.
+Read-only, from a JSON export of the ledgers (invented data in the repo for development, the live ledgers on the server). Shows every order from request to settled with the contractor's ledger beside the counterparty's (JCB for a `J-n` order, supplier for a `P-n` order), every message with "signature verified ✅" (checked in the browser), chains recomputed, the state replayed, evidence fingerprints, receipts, disputes and corrections, material items with rates, challan number and fingerprint, the site's count against the challan, and the results from `eval/results/`.
+
+Served by the app itself at `/judge/` (`GET /judge` redirects there): only an allow-list of the page's own files (`index.html`, `judge.css`, `judge.js`, `texts.js`, `sample/export.json`), never `web/serve.js` or `web/sample/make-sample.js`, no directory listing, no path traversal; every response carries `Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-cache`. `GET /judge/results/` lists the aggregate files of `eval/results/` by name (`*.json`); `GET /judge/results/<name>` serves one, by validated name only.
+
+**Export shape `hb-export/0.1`** — `GET /agents/<name>/export` (`jcb`, `site`, `supplier`), only with `Authorization: Bearer <HB_EXPORT_TOKEN>`, 404 otherwise and always when no token is configured. One side per call:
+
+```json
+{
+  "v": "hb-export/0.1",
+  "exportedAt": "2026-10-30T05:20:00.000Z",
+  "agentId": "agent:contractor-1",
+  "publicKey": "ed25519:<base64 of the raw 32-byte key>",
+  "orders": [{ "order_id": "uuid", "kind": "jcb_hours", "counterparty": "agent:jcb-1", "site": "Shivpuri", "created_at": "..." }],
+  "events": [{ "seq": 1, "orderId": "uuid", "direction": "out", "type": "BOOKING_REQUEST", "msgId": "uuid", "body": { "...the whole signed message..." }, "at": "...", "prevHash": "<64 hex>", "hash": "<64 hex>" }],
+  "chain": { "ok": true, "events": 26 },
+  "refs": { "uuid": "J-1" }
+}
+```
+
+`events` are the rows of `src/ledger/store.js` in `seq` order (a local event's `body` is its own body); `chain` is `verifyChain()` at export time. `refs` (optional, added in Build 2) maps `order_id` to this side's own reference (`openRefs(ledger).refOf`); a page that does not know the field ignores it. The page combines the sides as `{v, exportedAt, jcb?, contractor?, supplier?}` and shows a missing side as "not available". The viewer types the token into the page; it is kept in `sessionStorage` only, never in the address or `localStorage`.

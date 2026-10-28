@@ -1,6 +1,11 @@
-// The judge page: reads a JSON export of both ledgers (web/README.md), shows one order from request
-// to settled on both sides, and verifies every signature here in the browser with WebCrypto Ed25519
+// The judge page: reads a JSON export of the ledgers (web/README.md), shows every order from
+// request to settled with the contractor's ledger beside the counterparty's (JCB for J orders,
+// supplier for P orders), and verifies every signature here in the browser with WebCrypto Ed25519
 // over RFC 8785 canonical JSON, the same bytes src/protocol/canonical.js signs. Plain JS, no build.
+//
+// Sources: the bundled sample (default), a file from disk, or the live ledgers of the server the
+// page is served from (`../agents/<name>/export` with the access key as a Bearer header). The key
+// lives in sessionStorage only: never in the address, never in localStorage.
 
 import { TEXTS } from './texts.js';
 
@@ -10,11 +15,19 @@ import { TEXTS } from './texts.js';
  * @typedef {{seq: number, orderId: string, direction: 'in'|'out'|'local', type: string, msgId: string|null,
  *   body: any, at: string, prevHash: string, hash: string}} Ev
  */
-/** @typedef {{agentId: string, publicKey: string, orders: any[], events: Ev[], chain: {ok: boolean, events?: number, brokenAt?: number}}} LedgerExport */
-/** @typedef {{v: string, exportedAt: string, jcb: LedgerExport, contractor: LedgerExport}} Export */
+/** @typedef {{order_id: string, kind: string, counterparty: string, site: string, created_at: string}} Order */
+/** @typedef {{agentId: string, publicKey: string, orders: Order[], events: Ev[], chain: {ok: boolean, events?: number, brokenAt?: number}, refs?: Record<string, string>}} LedgerExport */
+/** @typedef {'jcb'|'contractor'|'supplier'} SideName */
+/** @typedef {{v: string, exportedAt: string, jcb?: LedgerExport|null, contractor?: LedgerExport|null, supplier?: LedgerExport|null}} Export */
+/** @typedef {{kind: 'sample'|'file'|'live', missing: SideName[]}} Source */
 
 const GENESIS = '0'.repeat(64);
 const STORAGE_LANG = 'hb-judge-lang';
+const SESSION_KEY = 'hb-judge-key';
+/** The server's agent names per side (src/app.js). @type {Record<SideName, string>} */
+const AGENT_PATH = { jcb: 'jcb', contractor: 'site', supplier: 'supplier' };
+/** @type {SideName[]} */
+const SIDES = ['jcb', 'contractor', 'supplier'];
 
 /** @type {Lang} */
 let lang = 'hi';
@@ -25,6 +38,8 @@ try {
 
 /** @type {Export|null} */
 let current = null;
+/** @type {Source} */
+let source = { kind: 'sample', missing: [] };
 
 /** @returns {Texts} */
 const T = () => TEXTS[lang];
@@ -123,6 +138,20 @@ function tenths(t) {
   const n = /** @type {number} */ (t);
   return `${Math.trunc(n / 10)}.${Math.abs(n) % 10}`;
 }
+/** A quantity in hundredths: 5000 → "50", 250 → "2.5", 1234 → "12.34". @param {unknown} h */
+function hundredths(h) {
+  if (!Number.isSafeInteger(h)) return '—';
+  const n = /** @type {number} */ (h);
+  const frac = Math.abs(n) % 100;
+  const whole = `${n < 0 ? '-' : ''}${Math.trunc(Math.abs(n) / 100)}`;
+  if (frac === 0) return whole;
+  return `${whole}.${String(frac).padStart(2, '0').replace(/0$/, '')}`;
+}
+/** @param {unknown} it an item {name, qtyHundredths, unit} */
+function itemText(it) {
+  const x = /** @type {any} */ (it) ?? {};
+  return `${x.name ?? '—'} ${hundredths(x.qtyHundredths)} ${x.unit ?? ''}`.trim();
+}
 /** @param {unknown} s @param {number} [head] */
 function short(s, head = 10) {
   if (typeof s !== 'string') return '—';
@@ -135,31 +164,70 @@ function when(iso) {
   return `${d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })} IST`;
 }
 
-// --- Order state, replayed from the events (same rules as src/ledger/states.js) -------------
+// --- Order state, replayed from the events (the rules of src/ledger/states.js) ---------------
 
-/** @param {Ev[]} events */
+/**
+ * Replays one order's events. A sent message the other side REFUSED does not count; local events
+ * (EVIDENCE, NOTE) and RECEIPT/REFUSE never change the state except that the first meter photo on
+ * a booked JCB order means work has started. `fits` is false when the history breaks the rules.
+ * @param {Ev[]} events
+ */
 function stateOf(events) {
-  const refused = new Set(events.filter((e) => e.direction === 'in' && e.type === 'REFUSE').map((e) => e.body.body.refers_to));
+  const refused = new Set(events.filter((e) => e.direction === 'in' && e.type === 'REFUSE').map((e) => e.body.body?.refers_to));
   let state = 'none';
+  /** @type {string|null} */
   let kind = null;
+  /** @type {string|null} */
   let currentBill = null;
+  /** @type {string|null} */
+  let payment = null;
+  let billRev = 0;
+  let fits = true;
   for (const e of events) {
     if (e.direction === 'out' && refused.has(e.msgId)) continue;
-    const b = e.direction === 'local' ? e.body : e.body.body ?? {};
+    const b = e.direction === 'local' ? e.body ?? {} : e.body.body ?? {};
     switch (e.type) {
-      case 'BOOKING_REQUEST': state = 'requested'; kind = b.kind; break;
-      case 'BOOKING_REPLY': state = b.answer === 'yes' ? 'booked' : b.answer === 'no' ? 'declined' : 'offered'; break;
-      case 'EVIDENCE': if (state === 'booked' && kind === 'jcb_hours') state = 'working'; break;
-      case 'DELIVERY': state = 'delivered'; break;
-      case 'BILL': case 'CORRECTION': state = 'billed'; currentBill = e.msgId; break;
-      case 'ACCEPT': state = 'accepted'; break;
-      case 'DISPUTE': state = 'disputed'; break;
-      case 'PAYMENT_CLAIM': state = 'payment_claimed'; break;
-      case 'SETTLED': state = 'settled'; break;
-      default: break;
+      case 'BOOKING_REQUEST':
+        if (state !== 'none' && state !== 'offered') fits = false;
+        state = 'requested'; kind = b.kind ?? null; break;
+      case 'BOOKING_REPLY':
+        if (state !== 'requested') fits = false;
+        if (b.answer === 'yes' && (kind === 'material') !== Array.isArray(b.rates)) fits = false;
+        state = b.answer === 'yes' ? 'booked' : b.answer === 'no' ? 'declined' : 'offered'; break;
+      case 'EVIDENCE':
+        if (state === 'booked' && kind === 'jcb_hours') state = 'working';
+        else if (state === 'none' || state === 'declined' || state === 'settled') fits = false;
+        break;
+      case 'DELIVERY':
+        if (state !== 'booked' || kind !== 'material') fits = false;
+        state = 'delivered'; break;
+      case 'BILL': {
+        const meter = Array.isArray(b.evidence) && b.evidence.some((/** @type {any} */ x) => x && x.kind === 'meter');
+        const ready = kind === 'jcb_hours' ? (state === 'booked' || state === 'working') && meter : state === 'delivered';
+        if (!ready) fits = false;
+        state = 'billed'; currentBill = e.msgId; billRev += 1; break;
+      }
+      case 'CORRECTION':
+        if ((state !== 'billed' && state !== 'disputed') || b.replaces !== currentBill) fits = false;
+        state = 'billed'; currentBill = e.msgId; billRev += 1; break;
+      case 'ACCEPT':
+        if ((state !== 'billed' && state !== 'disputed') || b.bill !== currentBill) fits = false;
+        state = 'accepted'; break;
+      case 'DISPUTE':
+        if (state !== 'billed' || b.bill !== currentBill) fits = false;
+        state = 'disputed'; break;
+      case 'PAYMENT_CLAIM':
+        if ((state !== 'accepted' && state !== 'payment_claimed') || b.bill !== currentBill) fits = false;
+        state = 'payment_claimed'; payment = e.msgId; break;
+      case 'SETTLED':
+        if (state !== 'payment_claimed' || b.bill !== currentBill || b.payment !== payment) fits = false;
+        state = 'settled'; break;
+      case 'RECEIPT': case 'REFUSE': break;
+      case 'NOTE': break; // the site's own count stays local and never moves the state
+      default: fits = false;
     }
   }
-  return { state, currentBill };
+  return { state, kind, currentBill, billRev, fits };
 }
 
 // --- Rendering --------------------------------------------------------------------------------
@@ -172,107 +240,156 @@ function el(tag, cls, text) {
   return n;
 }
 
-/** @param {HTMLElement} grid @param {string} k @param {string} v @param {boolean} [mono] */
-function row(grid, k, v, mono = false) {
-  grid.append(el('span', 'k', k), el('span', mono ? 'v mono' : 'v', v));
+/** @param {HTMLElement} grid @param {string} k @param {string} v @param {string} [cls] extra classes on the value */
+function row(grid, k, v, cls = '') {
+  grid.append(el('span', 'k', k), el('span', `v${cls ? ` ${cls}` : ''}`, v));
 }
+
+/** @param {HTMLElement} grid @param {Texts} t @param {any[]} lines */
+function billLines(grid, t, lines) {
+  row(grid, t.lines, lines.map((/** @type {any} */ l) => {
+    const qty = l.hoursTenths !== undefined ? `${tenths(l.hoursTenths)} ${t.hours}` : hundredths(l.qtyHundredths);
+    return `${l.what}: ${qty} × ${rupees(l.ratePaise)} = ${rupees(l.amountPaise)}`;
+  }).join('\n'));
+}
+
+/**
+ * What the page knows about the order around one event: the signed DELIVERY (to set the site's
+ * count against the challan).
+ * @typedef {{delivery: any|null}} OrderCtx
+ */
 
 /**
  * The lines of one event's body, per type.
  * @param {Ev} e
  * @param {Texts} t
+ * @param {OrderCtx} ctx
  * @returns {HTMLElement}
  */
-function bodyOf(e, t) {
+function bodyOf(e, t, ctx) {
   const grid = el('div', 'body');
-  const b = e.direction === 'local' ? e.body : e.body.body ?? {};
+  const b = e.direction === 'local' ? e.body ?? {} : e.body.body ?? {};
   switch (e.type) {
     case 'BOOKING_REQUEST':
+      row(grid, t.kind, b.kind === 'material' ? t.kind_material : t.kind_jcb);
       row(grid, t.site, String(b.site ?? '—'));
       row(grid, t.day, String(b.day ?? '—'));
       if (b.time) row(grid, t.time, String(b.time));
       if (b.hoursTenths !== undefined) row(grid, t.hours, tenths(b.hoursTenths));
+      if (Array.isArray(b.items)) row(grid, t.items, b.items.map(itemText).join('\n'));
       break;
     case 'BOOKING_REPLY':
       row(grid, t.answer, b.answer === 'yes' ? t.yes : b.answer === 'no' ? t.no : t.other_time);
       if (b.day) row(grid, t.day, String(b.day));
+      if (b.time) row(grid, t.time, String(b.time));
       if (b.ratePaise !== undefined) row(grid, t.rate, `${rupees(b.ratePaise)} / ${t.hours}`);
+      if (Array.isArray(b.rates)) row(grid, t.rates, b.rates.map((/** @type {any} */ r) => `${r.name}: ${rupees(r.ratePaise)} / ${r.unit}`).join('\n'));
       break;
     case 'EVIDENCE':
       row(grid, t.meter, `${b.which === 'start' ? t.start : b.which === 'end' ? t.end : '—'} ${tenths(b.valueTenths)}`);
-      row(grid, t.photo, short(b.sha256, 12), true);
+      row(grid, t.photo, short(b.sha256, 12), 'mono');
       if (b.takenAt) row(grid, t.taken, when(b.takenAt));
       break;
+    case 'DELIVERY':
+      row(grid, t.items, (Array.isArray(b.items) ? b.items : []).map(itemText).join('\n'));
+      row(grid, t.challan_no, String(b.challan?.number ?? '—'));
+      row(grid, t.challan_hash, short(b.challan?.sha256, 12), 'mono');
+      if (b.deliveredAt) row(grid, t.delivered_at, when(b.deliveredAt));
+      break;
+    case 'NOTE': {
+      if (b.kind !== 'site_count') { row(grid, '', JSON.stringify(b), 'mono'); break; }
+      const items = Array.isArray(b.items) ? b.items : [];
+      const delivered = Array.isArray(ctx.delivery?.items) ? ctx.delivery.items : [];
+      for (const it of items) {
+        const match = delivered.find((/** @type {any} */ d) => d.name === it.name && d.unit === it.unit);
+        if (!match) { row(grid, t.site_count, `${itemText(it)} (${t.no_delivery})`); continue; }
+        const same = match.qtyHundredths === it.qtyHundredths;
+        row(grid, t.site_count, `${itemText(it)} — ${t.vs_challan} ${hundredths(match.qtyHundredths)} ${it.unit ?? ''}: ${same ? t.matches : t.differs}`, same ? 'same' : 'diff');
+      }
+      break;
+    }
     case 'BILL':
     case 'CORRECTION': {
-      const lines = Array.isArray(b.lines) ? b.lines : [];
-      row(grid, t.lines, lines.map((/** @type {any} */ l) => `${l.what}: ${l.hoursTenths !== undefined ? `${tenths(l.hoursTenths)} ${t.hours}` : tenths(l.qtyHundredths)} × ${rupees(l.ratePaise)} = ${rupees(l.amountPaise)}`).join('\n'));
+      billLines(grid, t, Array.isArray(b.lines) ? b.lines : []);
       row(grid, t.total, rupees(b.totalPaise));
       const ev = Array.isArray(b.evidence) ? b.evidence : [];
-      row(grid, t.evidence, ev.map((/** @type {any} */ x) => `${x.kind === 'meter' ? t.meter : x.kind} ${x.readValue ?? '—'} — ${short(x.sha256, 12)}`).join('\n'), true);
-      if (b.replaces) row(grid, t.replaces, short(b.replaces, 8), true);
+      row(grid, t.evidence, ev.map((/** @type {any} */ x) => `${x.kind === 'meter' ? t.meter : x.kind === 'challan' ? t.challan : x.kind} ${x.readValue ?? '—'} — ${short(x.sha256, 12)}`).join('\n'), 'mono');
+      if (b.replaces) row(grid, t.replaces, short(b.replaces, 8), 'mono');
       break;
     }
     case 'RECEIPT':
-      row(grid, t.receipt_for, short(b.receipt_for, 8), true);
-      row(grid, t.entry_hash, short(b.entry_hash, 12), true);
-      row(grid, t.chain_head, short(b.chain_head, 12), true);
+      row(grid, t.receipt_for, short(b.receipt_for, 8), 'mono');
+      row(grid, t.entry_hash, short(b.entry_hash, 12), 'mono');
+      row(grid, t.chain_head, short(b.chain_head, 12), 'mono');
       break;
     case 'ACCEPT':
-      row(grid, t.bill, short(b.bill, 8), true);
+      row(grid, t.bill, short(b.bill, 8), 'mono');
       break;
     case 'DISPUTE': {
       const f = b.theirFigure ?? {};
-      const figure = f.hoursTenths !== undefined ? `${tenths(f.hoursTenths)} ${t.hours}` : f.totalPaise !== undefined ? rupees(f.totalPaise) : f.qtyHundredths !== undefined ? tenths(f.qtyHundredths) : '—';
-      row(grid, t.bill, short(b.bill, 8), true);
+      const figure = f.hoursTenths !== undefined ? `${tenths(f.hoursTenths)} ${t.hours}` : f.totalPaise !== undefined ? rupees(f.totalPaise) : f.qtyHundredths !== undefined ? `${t.qty} ${hundredths(f.qtyHundredths)}` : '—';
+      row(grid, t.bill, short(b.bill, 8), 'mono');
       row(grid, t.their, figure);
       row(grid, t.reason, String(b.reason ?? '—'));
       break;
     }
     case 'PAYMENT_CLAIM':
-      row(grid, t.bill, short(b.bill, 8), true);
+      row(grid, t.bill, short(b.bill, 8), 'mono');
       row(grid, t.amount, rupees(b.amountPaise));
-      row(grid, t.utr, String(b.utr ?? '—'), true);
+      row(grid, t.utr, String(b.utr ?? '—'), 'mono');
       row(grid, t.paid_on, String(b.paidOn ?? '—'));
-      row(grid, t.screenshot, short(b.screenshot?.sha256, 12), true);
+      row(grid, t.screenshot, short(b.screenshot?.sha256, 12), 'mono');
       break;
     case 'SETTLED':
-      row(grid, t.bill, short(b.bill, 8), true);
-      row(grid, t.payment, short(b.payment, 8), true);
+      row(grid, t.bill, short(b.bill, 8), 'mono');
+      row(grid, t.payment, short(b.payment, 8), 'mono');
       row(grid, t.amount, rupees(b.amountPaise));
       break;
     case 'REFUSE':
-      row(grid, t.msg_id, short(b.refers_to, 8), true);
+      row(grid, t.msg_id, short(b.refers_to, 8), 'mono');
       row(grid, t.code, String(b.code ?? '—'));
       break;
     default:
-      row(grid, '', JSON.stringify(b), true);
+      row(grid, '', JSON.stringify(b), 'mono');
   }
   return grid;
 }
+
+/** @param {Ev} e @param {Texts} t */
+function typeLabel(e, t) {
+  const b = e.direction === 'local' ? e.body ?? {} : e.body.body ?? {};
+  const types = /** @type {Record<string, string>} */ (t.types);
+  if (e.type === 'BOOKING_REQUEST' && b.kind === 'material') return types.MATERIAL_REQUEST;
+  if (e.type === 'NOTE' && b.kind === 'site_count') return types.SITE_COUNT;
+  return types[e.type] ?? e.type;
+}
+
+/** Badges waiting for their signature check, collected while rendering. @type {{badge: HTMLElement, message: any}[]} */
+let pendingBadges = [];
 
 /**
  * @param {Ev} e
  * @param {Texts} t
  * @param {Set<string>} replaced msg ids of bills a correction replaced
+ * @param {OrderCtx} ctx
  */
-function eventCard(e, t, replaced) {
+function eventCard(e, t, replaced, ctx) {
   const li = el('li', `ev ${e.direction}`);
   const isReplaced = e.msgId !== null && replaced.has(e.msgId);
   if (isReplaced) li.classList.add('replaced');
   const head = el('div', 'head');
   head.append(el('span', 'seq', `#${e.seq}`));
-  head.append(el('span', 'type', t.types[/** @type {keyof Texts['types']} */ (e.type)] ?? e.type));
+  head.append(el('span', 'type', typeLabel(e, t)));
   head.append(el('span', 'dir', e.direction === 'in' ? t.dir_in : e.direction === 'out' ? t.dir_out : t.dir_local));
   if (e.direction !== 'local') {
     const badge = el('span', 'badge', t.sig_checking);
-    badge.dataset.msg = e.msgId ?? '';
     head.append(badge);
+    pendingBadges.push({ badge, message: e.body });
   }
   head.append(el('span', 'when', when(e.at)));
   li.append(head);
   if (isReplaced) li.append(el('div', 'note', t.replaced));
-  li.append(bodyOf(e, t));
+  li.append(bodyOf(e, t, ctx));
   const foot = el('div', 'foot');
   const parts = [];
   if (e.direction !== 'local') parts.push(`${t.from} ${e.body.from} → ${e.body.to}`, `${t.msg_id} ${short(e.msgId, 8)}`);
@@ -282,19 +399,29 @@ function eventCard(e, t, replaced) {
   return li;
 }
 
+/** @param {SideName} name @param {Texts} t */
+const sideTitle = (name, t) => (name === 'jcb' ? t.ledger_jcb : name === 'supplier' ? t.ledger_supplier : t.ledger_contractor);
+
 /**
- * @param {HTMLElement} section
- * @param {LedgerExport} side
+ * One ledger's card at the top: agent, key, events, chain check over the whole ledger.
+ * @param {SideName} name
+ * @param {LedgerExport|null|undefined} side
  * @param {Texts} t
- * @param {{ok: boolean, brokenAt?: number}} chain
+ * @param {{ok: boolean, brokenAt?: number}|null} chain
  */
-function renderLedger(section, side, t, chain) {
-  const meta = /** @type {HTMLElement} */ (section.querySelector('.meta'));
-  meta.replaceChildren();
+function ledgerCard(name, side, t, chain) {
+  const card = el('div', 'card');
+  card.append(el('h3', undefined, sideTitle(name, t)));
+  if (!side || !chain) {
+    card.classList.add('missing');
+    card.append(el('p', undefined, t.side_missing));
+    return card;
+  }
+  const meta = el('dl', 'meta');
   /** @param {string} k @param {string} v @param {boolean} [bad] */
   const add = (k, v, bad = false) => {
     meta.append(el('dt', undefined, k));
-    const dd = el('dd', bad ? 'bad' : undefined, v);
+    const dd = el('dd', undefined, v);
     if (bad) dd.style.color = 'var(--bad)';
     meta.append(dd);
   };
@@ -302,37 +429,139 @@ function renderLedger(section, side, t, chain) {
   add(t.key, short(side.publicKey, 16));
   const signed = side.events.filter((e) => e.direction !== 'local').length;
   add(t.events, `${side.events.length} (${t.signed}: ${signed})`);
+  add(t.orders, String(side.orders.length));
   add(t.chain, chain.ok ? t.chain_ok : t.chain_broken.replace('{n}', String(chain.brokenAt)), !chain.ok);
-  const { state } = stateOf(side.events);
-  add(t.state, t.states[/** @type {keyof Texts['states']} */ (state)] ?? state);
-
-  const replaced = new Set(side.events.filter((e) => e.type === 'CORRECTION').map((e) => String(e.body.body?.replaces)));
-  const list = /** @type {HTMLElement} */ (section.querySelector('.events'));
-  list.replaceChildren(...side.events.map((e) => eventCard(e, t, replaced)));
+  card.append(meta);
+  return card;
 }
 
 /**
- * Fills the badge of every signed message from the verification map, verifying what is new.
+ * One side's column inside an order block: its view of this order and the events.
+ * @param {SideName} name
+ * @param {LedgerExport|null|undefined} side
+ * @param {string} orderId
+ * @param {Texts} t
+ */
+function orderColumn(name, side, orderId, t) {
+  const section = el('section', 'ledger');
+  section.append(el('h2', undefined, sideTitle(name, t)));
+  if (!side) {
+    section.append(el('p', 'hint', t.side_missing));
+    return section;
+  }
+  const events = side.events.filter((e) => e.orderId === orderId);
+  const meta = el('dl', 'meta');
+  /** @param {string} k @param {string} v @param {boolean} [bad] */
+  const add = (k, v, bad = false) => {
+    meta.append(el('dt', undefined, k));
+    const dd = el('dd', undefined, v);
+    if (bad) dd.style.color = 'var(--bad)';
+    meta.append(dd);
+  };
+  add(t.ref, side.refs?.[orderId] ?? '—');
+  const v = stateOf(events);
+  add(t.state, `${t.states[/** @type {keyof Texts['states']} */ (v.state)] ?? v.state}${v.billRev > 1 ? ` (${t.bill} rev ${v.billRev})` : ''}${v.fits ? '' : ' ❌'}`, !v.fits);
+  add(t.order_chain, String(events.length));
+  section.append(meta);
+
+  const delivery = [...events].reverse().find((e) => e.type === 'DELIVERY');
+  /** @type {OrderCtx} */
+  const ctx = { delivery: delivery ? delivery.body.body : null };
+  const replaced = new Set(events.filter((e) => e.type === 'CORRECTION').map((e) => String(e.body.body?.replaces)));
+  const list = el('ol', 'events');
+  list.append(...events.map((e) => eventCard(e, t, replaced, ctx)));
+  section.append(list);
+  return section;
+}
+
+/**
+ * Every order known to any side, the contractor's first, in order of creation: the counterparty
+ * side on the left, the contractor on the right.
+ * @param {Export} x
+ * @returns {{orderId: string, order: Order, seller: SideName}[]}
+ */
+function allOrders(x) {
+  /** @type {Map<string, {orderId: string, order: Order, seller: SideName}>} */
+  const out = new Map();
+  /** @param {Order} o @param {SideName} from */
+  const put = (o, from) => {
+    if (out.has(o.order_id)) return;
+    /** @type {SideName} */
+    let seller = o.kind === 'material' ? 'supplier' : 'jcb';
+    if (from !== 'contractor') seller = from;
+    else if (x.supplier && o.counterparty === x.supplier.agentId) seller = 'supplier';
+    else if (x.jcb && o.counterparty === x.jcb.agentId) seller = 'jcb';
+    out.set(o.order_id, { orderId: o.order_id, order: o, seller });
+  };
+  for (const o of x.contractor?.orders ?? []) put(o, 'contractor');
+  for (const o of x.jcb?.orders ?? []) put(o, 'jcb');
+  for (const o of x.supplier?.orders ?? []) put(o, 'supplier');
+  return [...out.values()].sort((a, b) => (a.order.created_at < b.order.created_at ? -1 : a.order.created_at > b.order.created_at ? 1 : 0));
+}
+
+/** Does any site count on this order differ from the delivery? @param {Ev[]} events */
+function countDiffers(events) {
+  const delivery = [...events].reverse().find((e) => e.type === 'DELIVERY');
+  if (!delivery) return false;
+  const delivered = Array.isArray(delivery.body.body?.items) ? delivery.body.body.items : [];
+  return events.some((e) => e.type === 'NOTE' && e.body?.kind === 'site_count' && (e.body.items ?? []).some((/** @type {any} */ it) => {
+    const d = delivered.find((/** @type {any} */ m) => m.name === it.name && m.unit === it.unit);
+    return !d || d.qtyHundredths !== it.qtyHundredths;
+  }));
+}
+
+/**
+ * @param {Export} x
+ * @param {Texts} t
+ */
+function renderOrders(x, t) {
+  const host = /** @type {HTMLElement} */ (document.getElementById('orders'));
+  host.replaceChildren();
+  for (const { orderId, order, seller } of allOrders(x)) {
+    const block = el('article', 'order');
+    const head = el('div', 'order-head');
+    const ref = x.contractor?.refs?.[orderId] ?? x[seller]?.refs?.[orderId] ?? short(orderId, 8);
+    head.append(el('span', 'ref', ref));
+    head.append(el('span', undefined, `${t.kind}: ${order.kind === 'material' ? t.kind_material : t.kind_jcb}`));
+    head.append(el('span', undefined, `${t.site}: ${order.site}`));
+    const req = (x.contractor ?? x[seller])?.events.find((e) => e.orderId === orderId && e.type === 'BOOKING_REQUEST');
+    head.append(el('span', undefined, `${t.day}: ${req?.body?.body?.day ?? '—'}`));
+    head.append(el('span', undefined, `${t.counterparty}: ${order.counterparty}`));
+    const theirRef = x[seller]?.refs?.[orderId];
+    if (theirRef) head.append(el('span', undefined, `${t.their_ref}: ${theirRef}`));
+    head.append(el('span', 'mono', `${t.order}: ${short(orderId, 8)}`));
+    if (x.contractor && countDiffers(x.contractor.events.filter((e) => e.orderId === orderId))) head.append(el('span', 'diffmark', `${t.site_count}: ${t.differs}`));
+    block.append(head);
+    const cols = el('div', 'ledgers');
+    cols.append(orderColumn(seller, x[seller], orderId, t), orderColumn('contractor', x.contractor, orderId, t));
+    block.append(cols);
+    host.append(block);
+  }
+}
+
+/**
+ * Checks every badge collected while rendering with the public key of the message's sender.
+ * Verified afresh on every render: the page never trusts a result it computed earlier for a
+ * message whose bytes may have changed (another export loaded, a tampered copy).
  * @param {Export} x
  */
 async function verifyAll(x) {
-  const keys = new Map([[x.jcb.agentId, x.jcb.publicKey], [x.contractor.agentId, x.contractor.publicKey]]);
-  for (const [side, sectionId] of /** @type {const} */ ([[x.jcb, 'ledger-jcb'], [x.contractor, 'ledger-contractor']])) {
-    // The same message id sits in both ledgers; each side's badge shows that side's own check.
-    const section = /** @type {HTMLElement} */ (document.getElementById(sectionId));
-    for (const e of side.events) {
-      if (e.direction === 'local' || e.msgId === null) continue;
-      // Verified afresh on every render: the page must never trust a result it computed earlier
-      // for a message whose bytes may have changed (another export loaded, a tampered copy).
-      const key = keys.get(e.body.from);
-      const result = key ? await verifySignature(e.body, key) : 'bad';
-      for (const badge of section.querySelectorAll(`.badge[data-msg="${e.msgId}"]`)) {
-        const b = /** @type {HTMLElement} */ (badge);
-        const t = T();
-        b.textContent = result === 'ok' ? t.sig_ok : result === 'bad' ? t.sig_bad : t.sig_unsupported;
-        b.classList.toggle('bad', result !== 'ok');
-      }
-    }
+  /** @type {Map<string, string>} */
+  const keys = new Map();
+  for (const name of SIDES) {
+    const side = x[name];
+    if (side) keys.set(side.agentId, side.publicKey);
+  }
+  const t = T();
+  const batch = pendingBadges;
+  pendingBadges = [];
+  for (const { badge, message } of batch) {
+    const key = keys.get(message?.from);
+    // No key for the sender (its side is not in this export) is not a bad signature: it is unchecked.
+    const result = key ? await verifySignature(message, key) : 'no_key';
+    badge.textContent = result === 'ok' ? t.sig_ok : result === 'bad' ? t.sig_bad : result === 'no_key' ? t.sig_no_key : t.sig_unsupported;
+    badge.classList.toggle('bad', result === 'bad');
+    badge.classList.toggle('warn', result === 'no_key' || result === 'unsupported');
   }
 }
 
@@ -346,22 +575,25 @@ async function render(x) {
     if (typeof v === 'string') n.textContent = v;
   }
   /** @type {HTMLElement} */ (document.getElementById('lang')).textContent = t.toggle;
+  /** @type {HTMLInputElement} */ (document.getElementById('key')).placeholder = t.key_placeholder;
 
-  const summary = /** @type {HTMLElement} */ (document.getElementById('summary'));
-  const order = x.contractor.orders[0] ?? x.jcb.orders[0];
-  const req = x.contractor.events.find((e) => e.type === 'BOOKING_REQUEST');
-  const b = req?.body?.body ?? {};
-  /** @type {HTMLElement} */ (document.getElementById('order')).textContent = order ? `${order.site} · ${b.day ?? '—'} · ${short(order.order_id, 8)}` : '—';
+  const orders = allOrders(x);
+  /** @type {HTMLElement} */ (document.getElementById('source')).textContent = source.kind === 'live' ? t.source_live : source.kind === 'file' ? t.source_file : t.source_sample;
+  /** @type {HTMLElement} */ (document.getElementById('order')).textContent = orders.length ? orders.map((o) => x.contractor?.refs?.[o.orderId] ?? x[o.seller]?.refs?.[o.orderId] ?? short(o.orderId, 8)).join(' · ') : '—';
   /** @type {HTMLElement} */ (document.getElementById('exported')).textContent = x.exportedAt ? when(x.exportedAt) : '—';
-  summary.hidden = false;
+  /** @type {HTMLElement} */ (document.getElementById('summary')).hidden = false;
 
-  const [jcbChain, siteChain] = await Promise.all([checkChain(x.jcb.events), checkChain(x.contractor.events)]);
-  renderLedger(/** @type {HTMLElement} */ (document.getElementById('ledger-jcb')), x.jcb, t, jcbChain);
-  renderLedger(/** @type {HTMLElement} */ (document.getElementById('ledger-contractor')), x.contractor, t, siteChain);
+  const chains = await Promise.all(SIDES.map((name) => (x[name] ? checkChain(/** @type {LedgerExport} */ (x[name]).events) : Promise.resolve(null))));
+  const cards = /** @type {HTMLElement} */ (document.getElementById('ledger-cards'));
+  cards.replaceChildren(...SIDES.map((name, i) => ledgerCard(name, x[name], t, chains[i])));
+  /** @type {HTMLElement} */ (document.getElementById('ledgers')).hidden = false;
+
+  pendingBadges = [];
+  renderOrders(x, t);
   await verifyAll(x);
 }
 
-// --- Results panel: eval/results/*.json when the server lists them, else "—" -----------------
+// --- Results panel: eval/results/*.json as the server lists them at results/, else "—" --------
 
 /** @param {unknown} r a {numerator, denominator, basisPoints} ratio */
 function ratio(r) {
@@ -409,11 +641,11 @@ async function renderResults() {
   const t = T();
   const host = /** @type {HTMLElement} */ (document.getElementById('results-body'));
   try {
-    const list = await fetch('../eval/results/').then((r) => (r.ok ? r.json() : null));
+    const list = await fetch('results/', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null));
     if (!Array.isArray(list) || list.length === 0) throw new Error('none');
     host.replaceChildren();
-    for (const name of list.filter((n) => typeof n === 'string' && n.endsWith('.json'))) {
-      const data = await fetch(`../eval/results/${name}`).then((r) => (r.ok ? r.json() : null));
+    for (const name of list.filter((n) => typeof n === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*\.json$/.test(n))) {
+      const data = await fetch(`results/${encodeURIComponent(name)}`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null));
       if (!data || typeof data !== 'object') continue;
       host.append(el('h3', undefined, `${data.reader ?? name} · ${data.dateIST ?? '—'} · ${data.partition ?? '—'} · ${data.model ?? '—'} · ${data.status ?? '—'}`));
       const table = el('table');
@@ -430,50 +662,119 @@ async function renderResults() {
   }
 }
 
-// --- Wiring -----------------------------------------------------------------------------------
+// --- Sources: sample, file, live ---------------------------------------------------------------
 
-/** @param {string} text */
-function notice(text) {
+/** The notice as a function of the texts, so a language switch redraws it. @type {(t: Texts) => string} */
+let lastNotice = () => '';
+
+/** @param {(t: Texts) => string} make */
+function notice(make) {
+  lastNotice = make;
   const n = /** @type {HTMLElement} */ (document.getElementById('notice'));
+  const text = make(T());
   n.textContent = text;
   n.hidden = text === '';
 }
 
-/** @param {unknown} x @returns {x is Export} */
-const isExport = (x) => !!x && typeof x === 'object' && 'jcb' in x && 'contractor' in x;
+/** @param {unknown} s @returns {s is LedgerExport} */
+const isSide = (s) => !!s && typeof s === 'object' && typeof (/** @type {any} */ (s)).agentId === 'string' && Array.isArray((/** @type {any} */ (s)).events) && Array.isArray((/** @type {any} */ (s)).orders);
+/** An export with at least one ledger in it. @param {unknown} x @returns {x is Export} */
+const isExport = (x) => !!x && typeof x === 'object' && SIDES.some((n) => isSide((/** @type {any} */ (x))[n]));
 
-async function loadDefault() {
+/** @param {Export} x @param {Source} from */
+async function show(x, from) {
+  current = x;
+  source = from;
+  notice(() => '');
+  await render(x);
+}
+
+async function loadSample() {
   try {
     const x = await fetch('sample/export.json').then((r) => (r.ok ? r.json() : null));
     if (!isExport(x)) throw new Error('shape');
-    current = x;
-    notice('');
-    await render(x);
+    await show(x, { kind: 'sample', missing: [] });
   } catch {
-    notice(T().no_export);
+    notice((t) => t.no_export);
   }
+}
+
+/**
+ * One side from the server, with the key as a Bearer header; null when it is not there (404: no
+ * such agent, no token configured, or a wrong key — the server does not say which).
+ * @param {SideName} name
+ * @param {string} key
+ * @returns {Promise<LedgerExport|null>}
+ */
+async function fetchSide(name, key) {
+  try {
+    const r = await fetch(`../agents/${AGENT_PATH[name]}/export`, { headers: { authorization: `Bearer ${key}` }, cache: 'no-store', credentials: 'omit' });
+    if (!r.ok) return null;
+    const x = await r.json();
+    return isSide(x) ? x : null;
+  } catch {
+    return null;
+  }
+}
+
+/** @param {string} key @returns {Promise<boolean>} whether anything was shown */
+async function loadLive(key) {
+  const t = T();
+  notice((tt) => tt.live_loading);
+  const sides = await Promise.all(SIDES.map((n) => fetchSide(n, key)));
+  /** @type {SideName[]} */
+  const missing = SIDES.filter((_, i) => sides[i] === null);
+  if (missing.length === SIDES.length) {
+    notice((tt) => tt.key_rejected);
+    return false;
+  }
+  // Each side carries its own exportedAt; the first present one stands for the whole.
+  const first = /** @type {{exportedAt?: string} | undefined} */ (sides.find((s) => s));
+  /** @type {Export} */
+  const x ={ v: 'hb-export/0.1', exportedAt: first?.exportedAt ?? '', jcb: sides[0], contractor: sides[1], supplier: sides[2] };
+  await show(x, { kind: 'live', missing });
+  if (missing.length) notice((tt) => tt.live_partial.replace('{sides}', missing.map((n) => sideTitle(n, tt)).join(', ')));
+  return true;
+}
+
+/** The key the viewer typed, from this tab's sessionStorage only. */
+function savedKey() {
+  try { return sessionStorage.getItem(SESSION_KEY) ?? ''; } catch { return ''; }
 }
 
 /** @type {HTMLButtonElement} */ (document.getElementById('lang')).addEventListener('click', () => {
   lang = lang === 'hi' ? 'en' : 'hi';
   try { localStorage.setItem(STORAGE_LANG, lang); } catch { /* ignore */ }
-  if (current) void render(current); else notice(T().no_export);
+  if (current) void render(current); else notice((t) => t.no_export);
+  notice(lastNotice);
   void renderResults();
 });
 
 /** @type {HTMLInputElement} */ (document.getElementById('file')).addEventListener('change', async (ev) => {
-  const file = /** @type {HTMLInputElement} */ (ev.target).files?.[0];
+  const input = /** @type {HTMLInputElement} */ (ev.target);
+  const file = input.files?.[0];
   if (!file) return;
   try {
     const x = JSON.parse(await file.text());
     if (!isExport(x)) throw new Error('shape');
-    current = x;
-    notice('');
-    await render(x);
+    await show(x, { kind: 'file', missing: [] });
   } catch {
-    notice(T().no_export);
+    notice((t) => t.no_export);
   }
+  input.value = '';
 });
 
-await loadDefault();
+/** @type {HTMLFormElement} */ (document.getElementById('live-form')).addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const key = /** @type {HTMLInputElement} */ (document.getElementById('key')).value.trim();
+  if (!key) { notice((t) => t.key_missing); return; }
+  try { sessionStorage.setItem(SESSION_KEY, key); } catch { /* the key then lives in the field only */ }
+  await loadLive(key);
+});
+
+/** @type {HTMLButtonElement} */ (document.getElementById('use-sample')).addEventListener('click', () => { void loadSample(); });
+
+const key0 = savedKey();
+/** @type {HTMLInputElement} */ (document.getElementById('key')).value = key0;
+if (!(key0 && await loadLive(key0))) await loadSample();
 await renderResults();
