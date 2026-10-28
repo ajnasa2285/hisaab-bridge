@@ -1,6 +1,8 @@
 # Hisaab Bridge
 
-**One contractor, two suppliers, one bridge.** Three small WhatsApp agents (a JCB owner's, a contractor's and a sand/cement supplier's) keep their own signed ledgers and agree on hours, deliveries, bills and payments by exchanging signed messages over A2A. Muse Spark reads and explains, code checks, people decide.
+**Every business gets its own agent that runs its books, and the agents talk to each other to get work done, so small businesses grow together instead of arguing.**
+
+Each agent works for its own owner on WhatsApp: it keeps that business's ledger, asks the owner before committing anything, and connects to the agents of the businesses it deals with. Every deal leaves the same signed record on both sides. In this entry, three agents (a contractor's site office, a JCB owner's and a sand/cement supplier's) agree on bookings, hours, deliveries, bills and payments over A2A. **Muse reads, understands, plans and explains; code checks every figure; people decide.**
 
 Built during the Meta Global AI Developer Hackathon (Startup track, *Build for Your World*), 27 October to 4 November 2026.
 
@@ -64,7 +66,8 @@ flowchart LR
 - **WhatsApp** (`src/wa/`): one webhook per line, `X-Hub-Signature-256` checked on the raw bytes before parsing, each message handled once, replies only inside the 24-hour window. A line is only transport: people are routed by `{line, phone}` to `{agent, role}`, so one phone can be a JCB owner on one number and a contractor on another.
 - **Conversation** (`src/agents/conversation.js`): Muse Spark turns a message into one proposed tool call; the agent reads it back in Hindi and acts only on the person's हाँ. Exact commands are parsed by code before any model: `status J-1`, `pending`, `stock`, `ok P-2`, `no P-2 <reason>`, `help` / `मदद`.
 - **Approvals** (`src/agents/office.js`): a supervisor's order or payment above the contractor's limit (or with no estimate) is held under its reference until the contractor replies `ok` or `no`. Nobody approves their own entry; a decision is made once.
-- **Readers** (`src/readers/`): Muse Spark with a strict JSON schema reads the hour meter, the UPI screenshot and the delivery challan. Amounts become integer paise, quantities integer hundredths. An unsure reading says so and the person is asked; a value is never guessed.
+- **Readers** (`src/readers/`): Muse Spark with a strict JSON schema decides what a photo is (meter, UPI receipt, challan, other) and reads the hour meter, the UPI screenshot and the delivery challan, printed and handwritten. Amounts become integer paise, quantities integer hundredths. An unsure reading says so and the person is asked; a value is never guessed.
+- **Explanations** (`src/agents/explain.js`): when two sides' figures differ, each agent gives Muse Spark the facts from its own ledger and gets back a short, neutral Hindi explanation of where the figures differ and what each rests on. Code checks that every number in it exists in the ledger and that it takes no side, tells no one to pay and invents no reason; otherwise only the plain figures go out.
 
 ## Where Meta's models do the work
 
@@ -72,9 +75,10 @@ Every model called at runtime is Meta's, through the Meta Model API. A test (`te
 
 | Job | Model |
 |---|---|
-| Understanding a Hindi/Hinglish message and choosing the step | Muse Spark |
-| Reading the hour meter, the UPI screenshot, the delivery challan | Muse Spark (vision, strict schema) |
-| Explaining a difference between two figures to both sides, in Hindi | Muse Spark |
+| Understanding a Hindi/Hinglish message (typed, forwarded or spoken), choosing the step, and asking only for what is missing | Muse Spark (tool calling) |
+| Deciding what a photo is: hour meter, UPI receipt, delivery challan or other (measured; being wired into the conversation) | Muse Spark (vision, strict schema) |
+| Reading the hour meter, the UPI screenshot, the delivery challan (printed and handwritten on one page) | Muse Spark (vision, strict schema) |
+| Explaining a difference between two parties' figures to each side, in Hindi, from that side's evidence | Muse Spark (strict schema, every number checked by code) |
 | Voice notes from the site | Muse Voice Transcribe |
 | Hours, continuity, rates, amounts, matching payment to bill, signatures, permissions | Code, never a model |
 
@@ -87,17 +91,21 @@ Accuracy is measured on real photos from our pilot, labelled by a person, with t
 | Hour meter | held-out, 10 real photos, split frozen 28 Oct | 6 / 10 | 4 / 10 | **0** | 9.0 s |
 | Hour meter | development, 11 photos | 9 / 11 | 2 / 11 | 0 | |
 | UPI screenshot | development, 9 PhonePe receipts | 6 / 9 whole receipts; amount, date, UTR, status and payee 9 / 9 each | 3 / 9 | 0 | 8.5 s |
+| Kind of photo | held-out, 10 real meter photos | 10 / 10 | 0 | 0 | 6.1 s |
+| Kind of photo | development, 11 meter + 9 UPI | 20 / 20 | 0 | 0 | 6.9 s |
 
-The figure that matters most is the last-but-one column: across 30 real images the readers were never confidently wrong. When unsure they ask the person, which costs one WhatsApp reply instead of a wrong bill. The held-out meter run cost about US$0.11 for 10 photos.
+The figure that matters most is the "wrong but confident" column: across all real images the readers were never confidently wrong. When unsure they ask the person, which costs one WhatsApp reply instead of a wrong bill. The held-out meter run cost about US$0.11 for 10 photos.
 
-Not yet measured: UPI on unseen screenshots and other UPI apps, and the challan reader on real challans. Sample sizes are small and stated as such.
+**Explanations**, live with Muse Spark on 8 invented disputes (JCB hours, material counts, corrections): 8 / 8 passed the number and wording checks, median 3.75 s, slowest 5.6 s (`docs/explanation-live-check.md`). Eight cases show the path works; they are not a measured pass rate.
 
-**Tests:** 254 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and answered with the same receipt), whole jobs between agents with both ledgers agreeing at every step, the approval rules, and the judge page's file serving.
+Not yet measured: UPI on unseen screenshots and other UPI apps, the challan reader and the photo-kind reader on real challans. Sample sizes are small and stated as such.
+
+**Tests:** 338 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and answered with the same receipt), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, the explanation checks, and the judge page's file serving.
 
 ## What works today, honestly
 
 - Running live on EC2 with HTTPS: three agents, their keys and ledgers, the webhooks, the judge page.
-- The JCB WhatsApp number works end to end on real phones.
+- The JCB WhatsApp number works end to end on real phones. Since 28 October all three agents run on it, each phone routed to its own agent and role (contractor, supervisor, supplier, JCB operator), while the contractor-side flow is tested with real people.
 - The site and supplier numbers are Meta test numbers in separate business portfolios. As of 28 October the site number's business account is locked by Meta (error 131031), which we are resolving with Meta; until then all three agents can run on one number, routed by the sender's phone.
 - Real pilot jobs with a JCB owner and a contractor we work with start only after our own full run passes.
 
