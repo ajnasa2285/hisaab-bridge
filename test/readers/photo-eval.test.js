@@ -22,9 +22,13 @@ function fixture(meterHeldout = true) {
   /** @type {Record<string,Record<string,any>>} */
   const saved = { meter: {}, upi: {}, challan: {} };
   /** @type {string[]} */
-  const opened = [], hashed = [];
+  const opened = [];
+  /** @type {string[]} */
+  const hashed = [];
   /** @type {any[]} */
-  const logs = [], aggregates = [];
+  const logs = [];
+  /** @type {any[]} */
+  const aggregates = [];
   /** @type {Record<string,import('../../eval/photo-metrics.js').Cost[]>} */
   const costs = {};
   /** @type {(kind:import('../../eval/private-data.js').DatasetKind)=>ReturnType<typeof import('../../eval/private-data.js').createPrivateData>} */
