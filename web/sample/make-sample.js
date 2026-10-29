@@ -253,7 +253,7 @@ function paymentExample(x, s) {
   const group = { id: randomUUID(), totalPaise: 130000, orders: ids };
   const shares = allocate(group.totalPaise, ids.map((id) => ({ orderId: id, duePaise: paymentSummary(x.contractor.events.filter((e) => e.orderId === id)).duePaise })));
   for (const share of shares ?? []) {
-    const i = ids.indexOf(share.orderId);
+    const i = ids.indexOf(/** @type {any} */ (share.orderId));
     const claim = send(share.orderId, 'PAYMENT_CLAIM', { bill: bills[i], method: 'upi', amountPaise: share.amountPaise, paidOn: '2026-11-02', utr: '000000000003', screenshot: { sha256: 'e'.repeat(64) }, group }, false);
     send(share.orderId, 'PAYMENT_ACK', { payment: claim, amountPaise: share.amountPaise, received: true }, true);
   }
