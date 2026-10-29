@@ -71,7 +71,7 @@ test('unknown fields are omitted, uncertainty stays visible, and no placeholder 
   assert.equal(s.last()?.key, 'cash_receipt.preview_unclear');
   assert.match(s.last()?.text ?? '', /03\/04\/2026/);
   assert.match(s.last()?.text ?? '', /निशान साफ़ नहीं/);
-  assert.doesNotMatch(s.last()?.text ?? '', /—|रक़म:|प्राप्तकर्ता का नाम:|पर्ची क्रमांक:/);
+  assert.doesNotMatch(s.last()?.text ?? '', /—|रक़म:|लेने वाले का नाम:|पर्ची नंबर:/);
   assert.equal(s.calls.payment + s.calls.persist, 0);
 });
 

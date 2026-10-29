@@ -52,7 +52,7 @@ test('paidAt shown: the owner and the payer see the time; ask-anything payments 
     const r = await runTool(j.s.site.tools, contractor, { tool: 'claim_payment', args: { orderId: j.orderId, amountPaise: 732000, utr: '412300000002', paidOn: '2026-10-23', paidAt: '14:05', screenshotSha256: SHA_C } });
     // Since 30 Oct (CONTRACTS 4.1) every receipt carries the balance.
     assert.equal(r.key, 'pay.site.claimed');
-    assert.equal(t(r.key, r.params), 'J-1: JCB मालिक को भुगतान बताया: ₹7,320, 23 अक्टूबर 2026, 14:05 बजे, UTR 412300000002। बाक़ी ₹7,320; इसमें ₹7,320 पुष्टि के इंतज़ार में।');
+    assert.equal(t(r.key, r.params), 'J-1: JCB मालिक को भुगतान बताया: ₹7,320, 23 अक्टूबर 2026, 14:05 बजे, UTR 412300000002। बाक़ी ₹7,320; इसमें ₹7,320 पक्का होना बाक़ी।');
     await j.settle();
     const told = j.said.find(([w, k]) => w === 'jcb:jcb_owner' && k === 'pay.seller.claimed');
     assert.ok(told?.[2].includes('23 अक्टूबर 2026, 14:05 बजे') && told?.[2].includes('UTR 412300000002'), told?.[2]);
@@ -86,7 +86,7 @@ test('paidAt absent: the old text for the owner, no time phrase and no "—" any
     const facts = orderFacts(j.s.siteCore.ledger);
     const p = runLookup('payments', { site: null, kind: null, period: 'all', from: null, to: null }, { ledger: j.s.siteCore.ledger, side: 'buyer', nowMs: Date.parse('2026-10-29T06:00:00Z'), facts });
     assert.equal('paid_at' in p.data.list[0], false);
-    assert.ok(!p.lines[0].includes('बजे') && !p.lines[0].includes('—') && p.lines[0].includes('पुष्टि बाक़ी · 23 अक्टूबर 2026'), p.lines[0]);
+    assert.ok(!p.lines[0].includes('बजे') && !p.lines[0].includes('—') && p.lines[0].includes('पक्का होना बाक़ी · 23 अक्टूबर 2026'), p.lines[0]);
     // A bad time is refused before anything is sent.
     const bad = await runTool(j.s.site.tools, contractor, { tool: 'claim_payment', args: { orderId: j.orderId, amountPaise: 732000, utr: '412300000003', paidOn: '2026-10-23', paidAt: '2 बजे', screenshotSha256: SHA_C } });
     assert.equal(bad.key, 'common.bad_args');

@@ -29,7 +29,7 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `jcb.meter_end_saved` | reading, hours | to operator: end reading saved, hours worked |
 | `jcb.start_first` | — | to operator: send the start photo first |
 | `jcb.end_not_after_start` | start | to operator: the end reading must be more than the start |
-| `jcb.meter_hours_impossible` | start, end, hours | to operator/owner: more than 24 h between the readings, so not this job (another machine or a misread); nothing recorded; send the right photo or type the digits (Claude drafted, Fable to polish) |
+| `jcb.meter_hours_impossible` | start, end, hours | to operator/owner: more than 24 h between the readings, so not this job (another machine or a misread); nothing recorded; send the right photo or type the digits (Claude drafted, Fable polished 29 Oct) |
 | `jcb.meter_done` | hours | to owner: the job's hours are in |
 | `jcb.readings_missing` | — | to owner: no bill without both meter readings |
 | `jcb.bill_sent` | hours, rate, total | to owner: bill sent with photos |
@@ -54,7 +54,7 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `site.payment_claimed` | ref, payment | the payment details (amount, day, time when visible, UTR) were sent to the JCB owner |
 | `site.settled` | ref, site, amount | the JCB owner confirmed the money arrived |
 
-## Material (Build 2; Claude drafted the Hindi, Fable to polish)
+## Material (Build 2; Claude drafted the Hindi, Fable polished 29 Oct)
 
 Items arrive formatted as `सीमेंट 50 बोरी, रेत 2 ट्रॉली`, rates as `सीमेंट ₹350/बोरी`, bill lines as `सीमेंट 50 बोरी × ₹350 = ₹17,500` (joined by commas). Every order notice carries `ref` (`P-n` on that agent's side). A line's amount is qty × rate / 100 rounded to the nearest paisa, half a paisa up (`lineAmountPaise`, `src/agents/material.js`). For a material order the contractor side uses the `site.material_*` twin of a JCB key (`keyFor` in `src/agents/contractor.js`).
 
@@ -72,14 +72,14 @@ Contractor side (contractor, supervisor):
 | `site.count_differs` | ref, site, challan, count | to the contractor: the site's count differs from the challan (both figures) |
 | `site.count_already` | ref, count | a one-word "हाँ" to the delivery notice after a count is already recorded: nothing changes (type figures to change it) |
 | `site.count_changed` | ref, site, old, count, challan | a recorded count changed by typed figures; to the person and to the contractor (old and new) |
-| `site.challan_no_order` | — | the site sent a challan photo but no material order is booked/delivered and still uncounted; nothing recorded; how to make an order (Claude drafted, Fable to polish) |
-| `site.challan_which_order` | lines | several orders could be this challan's: which reference? one `site.challan_order_line` (ref, site, what) per order, with the exact reply `"P-n"` (Claude drafted, Fable to polish) |
-| `site.challan_ask_person` | ref, raw, names | the site's challan was not read clearly: type the quantities in the order's order (`names` = `बालू (cft), गिट्टी (brass)`), 0 for what did not come (Claude drafted, Fable to polish) |
-| `site.challan_figures` | ref, names | typed figures do not fit the order: one per ordered item, in order (Claude drafted, Fable to polish) |
-| `site.challan_count_saved` | ref, site, items, challan | the site's count from its challan photo is recorded; the supplier's delivery has not come yet (Claude drafted, Fable to polish) |
-| `site.challan_count_matches` | ref, site, items, challan | recorded, and it agrees with the supplier's signed delivery (Claude drafted, Fable to polish) |
-| `site.challan_count_differs` | ref, site, count, siteNo, challan, challanNo | the site's challan and the supplier's delivery differ (quantities or challan numbers): both figures; a dispute with the site's figure once the bill comes. To the person who counted and the contractor; on a later DELIVERY to contractor and supervisor (Claude drafted, Fable to polish) |
-| `site.delivery_matches_count` | ref, site, count, siteNo, challan, challanNo | a DELIVERY arrived for an order the site already counted from its challan, and it agrees; nobody is asked again (Claude drafted, Fable to polish) |
+| `site.challan_no_order` | — | the site sent a challan photo but no material order is booked/delivered and still uncounted; nothing recorded; how to make an order (Claude drafted, Fable polished 29 Oct) |
+| `site.challan_which_order` | lines | several orders could be this challan's: which reference? one `site.challan_order_line` (ref, site, what) per order, with the exact reply `"P-n"` (Claude drafted, Fable polished 29 Oct) |
+| `site.challan_ask_person` | ref, raw, names | the site's challan was not read clearly: type the quantities in the order's order (`names` = `बालू (cft), गिट्टी (brass)`), 0 for what did not come (Claude drafted, Fable polished 29 Oct) |
+| `site.challan_figures` | ref, names | typed figures do not fit the order: one per ordered item, in order (Claude drafted, Fable polished 29 Oct) |
+| `site.challan_count_saved` | ref, site, items, challan | the site's count from its challan photo is recorded; the supplier's delivery has not come yet (Claude drafted, Fable polished 29 Oct) |
+| `site.challan_count_matches` | ref, site, items, challan | recorded, and it agrees with the supplier's signed delivery (Claude drafted, Fable polished 29 Oct) |
+| `site.challan_count_differs` | ref, site, count, siteNo, challan, challanNo | the site's challan and the supplier's delivery differ (quantities or challan numbers): both figures; a dispute with the site's figure once the bill comes. To the person who counted and the contractor; on a later DELIVERY to contractor and supervisor (Claude drafted, Fable polished 29 Oct) |
+| `site.delivery_matches_count` | ref, site, count, siteNo, challan, challanNo | a DELIVERY arrived for an order the site already counted from its challan, and it agrees; nobody is asked again (Claude drafted, Fable polished 29 Oct) |
 | `site.material_bill_received` | ref, site, lines, total, photos | a material bill that follows from the delivery, the agreed rates and the site's count; "हाँ" accepts |
 | `site.material_correction_received` | ref, site, lines, total, photos | a corrected material bill; "हाँ" accepts |
 | `site.material_bill_mismatch` | ref, site, lines, total, expected, expectedTotal | to the contractor: the bill does not equal delivered qty × agreed rates (no "हाँ" offered) |
@@ -101,14 +101,14 @@ Supplier side (`supplier`):
 | `supplier.delivery_sent` | ref, site, items | the delivery (with the challan fingerprint) went to the contractor |
 | `supplier.delivery_missing` | — | no bill before the delivery is recorded |
 | `supplier.bill_sent` | lines, total | bill sent with the challan as evidence |
-| `supplier.bill_sent_invoice_match` / `_invoice_differs` | lines, total, (invoiceTotal) | the same, with the tax invoice's grand total equal / different (both figures) (30 Oct; drafted, Fable to polish) |
+| `supplier.bill_sent_invoice_match` / `_invoice_differs` | lines, total, (invoiceTotal) | the same, with the tax invoice's grand total equal / different (both figures) (30 Oct; drafted, Fable polished 29 Oct) |
 | `supplier.bill_accepted` | ref, site | the contractor accepted the bill |
 | `supplier.bill_disputed` | ref, site, their, reason, example | the contractor disputes; their figure and reason; how to send a correction ("सुधार {example}", 30 Oct) |
 | `supplier.correction_sent` | lines, total | corrected bill sent |
 | `supplier.payment_claimed` | ref, site, amount, utr, day | the contractor says they paid; please check your account ("हाँ" = confirm_payment) |
 | `supplier.settled_sent` | amount | you confirmed receipt; settled |
 
-## Signed copy and payment time (docs/BUILD2.md section 9; Claude drafted, Fable to polish)
+## Signed copy and payment time (docs/BUILD2.md section 9; Claude drafted, Fable polished 29 Oct)
 
 `count` and `challan` are item lists (`सीमेंट 48 बोरी`); `challanNo` is the number on the supplier's own DELIVERY, `siteNo` the one on the site's copy; `signed` is one of the three `supplier.site_receipt_signed_*` sentences.
 
@@ -138,10 +138,10 @@ Read-backs (each ends with "हाँ / नहीं"):
 | `step.send_material_correction` | site, lines, total | supplier: confirm the corrected bill |
 | `step.request_material` | site, day, time, items | contractor/supervisor: confirm the material request |
 | `step.confirm_count` | site, items | supervisor/contractor: confirm the site's count |
-| `step.site_challan` | ref, site, challan, items, names | supervisor/contractor: confirm what was read from the photo of the site's challan, or type the right figures in order (Claude drafted, Fable to polish) |
+| `step.site_challan` | ref, site, challan, items, names | supervisor/contractor: confirm what was read from the photo of the site's challan, or type the right figures in order (Claude drafted, Fable polished 29 Oct) |
 | `step.confirm_payment` | site, amount | (shared with the JCB owner) the supplier confirms the money arrived |
 
-## Read-back and conversation (Claude drafted the Hindi; Fable to polish)
+## Read-back and conversation (Claude drafted the Hindi; Fable polished 29 Oct)
 
 Every committing step is read back and runs only after "हाँ". Days arrive formatted ("29 अक्टूबर 2026").
 
@@ -186,7 +186,7 @@ Commands are parsed by code before the model (`src/agents/office.js`, `parseComm
 | `office.stock_not_here` | — | `stock` on another agent |
 | `help.contractor`, `help.supervisor`, `help.jcb_owner`, `help.supplier` | — | each now ends with the commands that role can use |
 
-## Explanations (Astra drafted, Fable to polish)
+## Explanations (Astra drafted, Fable polished 29 Oct)
 
 Existing messages are sent first. These are extra display-only notices; none proposes a step.
 The model writes only `{explanation}`. All `{figures}` fragments below come from code and one ledger.
@@ -208,7 +208,7 @@ The model writes only `{explanation}`. All `{figures}` fragments below come from
 | `explain.figures.dispute` / `explain.figures.previousDispute` | figure | attributed objection to the current / previous bill |
 | `explain.figures.correction` | before, after | previous and replacement bill figures |
 
-## Evidence on request (Astra drafted, Fable to polish)
+## Evidence on request (Astra drafted, Fable polished 29 Oct)
 
 Exact commands: `सबूत <ref>`, `saboot <ref>` (also `सबुत` / `sabut`), parsed before the model;
 contractor, supervisor, JCB owner and supplier only. Captions identify the original record's owner
@@ -227,7 +227,7 @@ and recorded time in IST, not an inferred photo capture time. No bytes are inclu
 | `evidence.store_failed` | — | original photo could not be retained before confirming a record |
 | `evidence.too_large` | — | inbound photo exceeds the 5 MiB limit |
 
-## Asking for what is missing (docs/BUILD2.md section 6; Claude drafted, Fable to polish)
+## Asking for what is missing (docs/BUILD2.md section 6; Claude drafted, Fable polished 29 Oct)
 
 | Key | Params | When |
 |---|---|---|
@@ -238,7 +238,7 @@ and recorded time in IST, not an inferred photo capture time. No bytes are inclu
 | `ask.qty_unit` | name | an item has neither quantity nor unit |
 | `ask.unit` | name, qty | an item's unit is not said |
 
-## Any photo, any time (docs/BUILD2.md section 7; Claude drafted, Fable to polish)
+## Any photo, any time (docs/BUILD2.md section 7; Claude drafted, Fable polished 29 Oct)
 
 `kinds` is the list of photos this person may send on this agent, already named (`मीटर, UPI भुगतान, चालान`); `forms` are the exact replies, quoted (`"UPI" / "चालान"`).
 
@@ -250,7 +250,7 @@ and recorded time in IST, not an inferred photo capture time. No bytes are inclu
 | `photo.sent_by_meter` / `_upi` / `_challan` | kinds | a kind this person may not send here: who sends it, and what they can send; nothing recorded |
 | `photo.kind.meter` / `.upi` / `.challan` | — | the names used in `kinds` |
 
-## Cash receipt preview (Astra drafted, Fable to polish)
+## Cash receipt preview (Astra drafted, Fable polished 29 Oct)
 
 The photo-kind model keeps its evaluated classes. For a contractor allowed to claim payments,
 an unsure classification or a clear `other` asks once with the additional answer `नकद पर्ची`.
@@ -271,7 +271,7 @@ person's payment confirmation before keeping the photo or creating a cash claim.
 | `cash_receipt.fig.reference` | number | printed reference/serial, only when present |
 | `cash_receipt.mark.visible` / `.absent` / `.unclear` | | receiver's mark as read; no identity or authenticity claim |
 
-## Ask anything (docs/BUILD2.md section 8; Claude drafted, Fable to polish)
+## Ask anything (docs/BUILD2.md section 8; Claude drafted, Fable polished 29 Oct)
 
 | Key | Params | When |
 |---|---|---|
@@ -297,7 +297,7 @@ person's payment confirmation before keeping the photo or creating a cash claim.
 `help.contractor`, `help.supervisor`, `help.jcb_owner` and `help.supplier` gained one question
 example each; `test/orchestrator/intake.test.js` checks they reach the ask route.
 
-### Payment lookups and explanations (Astra drafted, Fable to polish)
+### Payment lookups and explanations (Astra drafted, Fable polished 29 Oct)
 
 | Key | Params | When |
 |---|---|---|
@@ -315,7 +315,7 @@ The explanation prompt receives these figures; its existing wording guard remain
 payment prose it forbids falls back to the complete code-written figures. Ask-anything treats the
 idiom "एक साथ" as "together"; standalone spelled-out figures remain rejected.
 
-## Fewer steps (docs/BUILD2.md "Fewer steps"; Claude drafted, Fable to polish)
+## Fewer steps (docs/BUILD2.md "Fewer steps"; Claude drafted, Fable polished 29 Oct)
 
 A value that was not given is left out of the sentence, never shown as "—": code picks the variant
 (`variant()` in `src/i18n/index.js`): the base key without the optional part, `_time`, `_hours`,
@@ -351,7 +351,7 @@ A value that was not given is left out of the sentence, never shown as "—": co
 | `office.status_held` / `_estimate` | ref, step, [estimate], decision | `status <ref>` for a held step |
 | `reply.which_order` | refs, ref | an exact reply fits several open orders: write the reference in front |
 
-## Payment trace checks (Astra drafted, Fable to polish)
+## Payment trace checks (Astra drafted, Fable polished 29 Oct)
 
 | Key | Params | When |
 |---|---|---|
@@ -362,7 +362,7 @@ A value that was not given is left out of the sentence, never shown as "—": co
 The judge page's bilingual payment panel labels are in `web/texts.js`; omitted payment dates,
 times, UTRs and screenshots add no placeholder. Group references link to each order's panel.
 
-## GST on material (docs/BUILD2.md, 30 Oct; drafted, Fable to polish)
+## GST on material (docs/BUILD2.md, 30 Oct; drafted, Fable polished 29 Oct)
 
 | Key | Params | When |
 |---|---|---|
@@ -376,7 +376,7 @@ times, UTRs and screenshots add no placeholder. Group references link to each or
 
 `supplier.order_request(_time)` now shows the GST form ("हाँ 350 + 18%"). "GST" is an allowed Latin word in `test/i18n/hi.test.js`.
 
-## Photo guards and owner consent (docs/BUILD2.md, 30 Oct; drafted, Fable to polish)
+## Photo guards and owner consent (docs/BUILD2.md, 30 Oct; drafted, Fable polished 29 Oct)
 
 | Key | Params | When |
 |---|---|---|
@@ -395,7 +395,7 @@ times, UTRs and screenshots add no placeholder. Group references link to each or
 | `evidence.nothing_open` | ref | the owner said yes/no but nothing is waiting |
 | `evidence.not_kept_own` | ref | the owner said yes but the photo is no longer kept; the other side gets `not_kept` |
 
-## Payments: part, cash, advance, clubbed (CONTRACTS 4.1, docs/BUILD2.md, 30 Oct; Claude drafted, Fable to polish)
+## Payments: part, cash, advance, clubbed (CONTRACTS 4.1, docs/BUILD2.md, 30 Oct; Claude drafted, Fable polished 29 Oct)
 
 `balance` is one line from `balanceText` (`src/agents/pay.js`, from `paymentSummary`): `pay.balance.due` / `_waiting`, `.credit` / `_waiting`, `.clear` / `_waiting`, `.no_bill` / `_confirmed` / `_waiting` / `_confirmed_waiting` (variant keys; nothing absent is shown as "—"). `payment` is one payment as `paymentLine` writes it: "₹10,000 नकद, 30 अक्टूबर 2026" or "₹10,000, 30 अक्टूबर 2026, 14:05 बजे, UTR …". `to` / `from` is `pay.to.jcb` or `pay.to.supplier`. `lines` are `pay.share` / `pay.share_advance` (before sending) or `pay.line` (with the balance), one per order.
 
@@ -433,7 +433,7 @@ times, UTRs and screenshots add no placeholder. Group references link to each or
 
 No longer used by the agents (kept for the old texts): `site.payment_claimed`, `site.material_payment_claimed`, `jcb.payment_claimed(_at)`, `supplier.payment_claimed(_at)`, `payment.amount_differs` (a part payment is no mismatch).
 
-## Payments on every screen: status and waiting (Astra drafted, Fable to polish)
+## Payments on every screen: status and waiting (Astra drafted, Fable polished 29 Oct)
 
 | Key | Params | When |
 |---|---|---|

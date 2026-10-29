@@ -251,11 +251,11 @@ test('three agents in one service: a material order goes from the site line to t
     await supplierSays('हाँ, 350।');
     await wait(() => lastTo(SUPPLIER)?.text.includes('₹350/बोरी') === true);
     assert.ok(lastTo(SUPPLIER)?.text.includes('₹350/बोरी') && lastTo(SUPPLIER)?.text.includes('P-1') && !lastTo(SUPPLIER)?.text.includes('हाँ / नहीं'), lastTo(SUPPLIER)?.text);
-    await wait(() => sent.some((s) => s.to === SUPERVISOR && s.text.includes('विक्रेता ने हाँ')));
+    await wait(() => sent.some((s) => s.to === SUPERVISOR && s.text.includes('सप्लायर ने हाँ')));
 
     // The challan photo: read by the supplier's reader only; clear, so recorded at once with a receipt.
     await supplierSays('', [{ type: 'image', image: { id: 'media-challan', mime_type: 'image/jpeg' } }]);
-    await wait(() => sent.some((s) => s.to === SUPERVISOR && s.text.includes('सामान पहुँचा')) && lastTo(SUPPLIER)?.text.includes('पहुँच दर्ज') === true);
+    await wait(() => sent.some((s) => s.to === SUPERVISOR && s.text.includes('सामान पहुँचा')) && lastTo(SUPPLIER)?.text.includes('डिलीवरी दर्ज') === true);
     assert.equal(challanReads.length, 1);
     assert.ok(lastTo(SUPPLIER)?.text.includes('सीमेंट 50 बोरी') && !lastTo(SUPPLIER)?.text.includes('हाँ / नहीं'));
     assert.ok(sent.some((s) => s.to === SUPERVISOR && s.text.includes('चालान 412')));

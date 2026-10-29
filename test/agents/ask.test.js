@@ -176,7 +176,7 @@ test('a number in the answer that no lookup gave: the code-written figures are s
     const [, key, text] = /** @type {[string, string, string]} */ (d.said.at(-1));
     assert.equal(key, 'records.unavailable');
     assert.ok(text.startsWith('पूरा जवाब नहीं बन पाया'));
-    assert.ok(text.includes('J-1 (JCB मालिक, Shivpuri): रक़म ₹7,320 · UPI भुगतान · बिल के लिए · पुष्टि हुई · 29 अक्टूबर 2026'));
+    assert.ok(text.includes('J-1 (JCB मालिक, Shivpuri): रक़म ₹7,320 · UPI भुगतान · बिल के लिए · पक्का · 29 अक्टूबर 2026'));
     assert.ok(!text.includes('₹7,000'));
   } finally { await s.close(); }
 });

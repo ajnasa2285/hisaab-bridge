@@ -21,7 +21,7 @@ test('all payments are summary-backed: part, cash, advance, group, denial, due a
     assert.equal(all.data.total_denied, '₹1,000');
     const p1 = runLookup('order_detail', { ref: 'P-1' }, c);
     assert.deepEqual(p1.data.balance, { ref: 'P-1', billed: '₹10,000', confirmed: '₹5,000', waiting: '₹5,000', due: '₹5,000', credit: '₹0' });
-    assert.equal(p1.data.payments[0].purpose, 'अग्रिम');
+    assert.equal(p1.data.payments[0].purpose, 'एडवांस');
     assert.equal(p1.data.payments[0].method, 'नकद');
     assert.deepEqual(p1.data.payments[2].group, { refs: ['P-1', 'P-2'], total: '₹9,000' });
     assert.equal(runLookup('order_detail', { ref: 'P-3' }, c).data.balance.credit, '₹200');
@@ -89,9 +89,9 @@ test('explanation facts and brief include denied payments and overpayment withou
   const b = paymentBooks();
   try {
     const denied = differenceFacts(b.ledger, b.ids[1], 'P-2');
-    assert.match(denied.figures, /₹1,000.*नकद.*मिलने से इनकार/);
+    assert.match(denied.figures, /₹1,000.*नकद.*नहीं मिला बताया/);
     assert.match(denied.figures, /देना बाक़ी ₹8,000/);
-    assert.match(brief(denied.context, 'buyer'), /₹1,000.*नकद.*मिलने से इनकार/);
+    assert.match(brief(denied.context, 'buyer'), /₹1,000.*नकद.*नहीं मिला बताया/);
     const credit = differenceFacts(b.ledger, b.ids[2], 'P-3');
     assert.match(credit.figures, /मिला ₹1,200.*ज़्यादा जमा ₹200/);
     assert.equal(numbersSupported('₹1,200 मिले, बिल ₹1,000 है, अंतर ₹200 है।', credit.allowedNumbers), true);

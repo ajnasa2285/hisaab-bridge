@@ -20,13 +20,13 @@ test('status uses all confirmed payments and shows waiting separately from due, 
       const result = await o.command(seller, { cmd: 'status', ref: 'P-1' });
       assert.ok(result);
       const text = t(result.key, result.params);
-      for (const part of ['बिल ₹10,000', 'पक्का भुगतान ₹5,000', 'पुष्टि बाक़ी ₹5,000', 'देना बाक़ी ₹5,000', 'जमा ज़्यादा ₹0', 'एक साथ P-1, P-2: ₹9,000']) assert.ok(text.includes(part), part);
+      for (const part of ['बिल ₹10,000', 'पक्का भुगतान ₹5,000', 'पक्का होना बाक़ी ₹5,000', 'देना बाक़ी ₹5,000', 'ज़्यादा जमा ₹0', 'एक साथ P-1, P-2: ₹9,000']) assert.ok(text.includes(part), part);
       assert.doesNotMatch(text, /—/);
       const advance = orderPaymentText(b.ledger, b.ids[3]);
-      assert.match(advance, /बिल अभी नहीं आया.*पक्का अग्रिम ₹0.*पुष्टि बाक़ी ₹600/);
-      assert.match(advance, /नकद, अग्रिम/);
+      assert.match(advance, /बिल अभी नहीं आया.*पक्का एडवांस ₹0.*पक्का होना बाक़ी ₹600/);
+      assert.match(advance, /नकद, एडवांस/);
       assert.doesNotMatch(advance, /देना बाक़ी|—/);
-      assert.match(orderPaymentText(b.ledger, b.ids[2]), /देना बाक़ी ₹0 · जमा ज़्यादा ₹200/);
+      assert.match(orderPaymentText(b.ledger, b.ids[2]), /देना बाक़ी ₹0 · ज़्यादा जमा ₹200/);
     }
   } finally { b.close(); }
 });
@@ -39,9 +39,9 @@ test('seller pending lists a clubbed claim once and excludes answered claims', a
     const text = t(result.key, result.params);
     assert.equal((text.match(/एक साथ कुल ₹9,000/g) ?? []).length, 1);
     assert.match(text, /P-1 का हिस्सा ₹5,000, P-2 का हिस्सा ₹4,000/);
-    assert.match(text, /P-4.*नकद, अग्रिम.*आपकी पुष्टि बाक़ी ₹600/);
+    assert.match(text, /P-4.*नकद, एडवांस.*आपका पक्का करना बाक़ी ₹600/);
     assert.match(text, /P-1:.*बिल ₹10,000.*पक्का भुगतान ₹5,000.*देना बाक़ी ₹5,000/);
-    assert.doesNotMatch(text, /—\s*—|आपकी पुष्टि बाक़ी ₹1,000/);
+    assert.doesNotMatch(text, /—\s*—|आपका पक्का करना बाक़ी ₹1,000/);
     const group = b.ledger.events(b.ids[0]).find((e) => e.body.body?.group);
     assert.ok(group);
     b.put(b.ids[0], 'PAYMENT_ACK', { payment: group.msgId, received: true, amountPaise: 500000 });
