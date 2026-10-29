@@ -1478,7 +1478,29 @@
         },
         "ms": 40
       }
-    ]
+    ],
+    "learning": {
+      "v": "hb-learn/0.1",
+      "on": true,
+      "kinds": {
+        "meter": {
+          "recorded": 5,
+          "readsWithMemory": 8,
+          "correctedAfterMemory": 1,
+          "readBackByMemory": 2
+        },
+        "voice": {
+          "recorded": 3,
+          "readsWithMemory": 4,
+          "correctedAfterMemory": 0,
+          "readBackByMemory": 1
+        }
+      },
+      "recorded": 8,
+      "readsWithMemory": 12,
+      "correctedAfterMemory": 1,
+      "readBackByMemory": 3
+    }
   },
   "contractor": {
     "agentId": "agent:contractor-1",
@@ -5687,7 +5709,41 @@
           "creditPaise": 5000
         }
       }
-    ]
+    ],
+    "learning": {
+      "v": "hb-learn/0.1",
+      "on": true,
+      "kinds": {
+        "challan": {
+          "recorded": 4,
+          "readsWithMemory": 6,
+          "correctedAfterMemory": 1,
+          "readBackByMemory": 1
+        },
+        "site_challan": {
+          "recorded": 2,
+          "readsWithMemory": 3,
+          "correctedAfterMemory": 0,
+          "readBackByMemory": 1
+        },
+        "upi": {
+          "recorded": 1,
+          "readsWithMemory": 0,
+          "correctedAfterMemory": 0,
+          "readBackByMemory": 0
+        },
+        "voice": {
+          "recorded": 2,
+          "readsWithMemory": 2,
+          "correctedAfterMemory": 0,
+          "readBackByMemory": 0
+        }
+      },
+      "recorded": 9,
+      "readsWithMemory": 11,
+      "correctedAfterMemory": 1,
+      "readBackByMemory": 2
+    }
   },
   "supplier": {
     "agentId": "agent:supplier-1",
@@ -8518,6 +8574,34 @@
           "creditPaise": 5000
         }
       }
-    ]
+    ],
+    "learning": {
+      "v": "hb-learn/0.1",
+      "on": true,
+      "kinds": {
+        "invoice": {
+          "recorded": 3,
+          "readsWithMemory": 5,
+          "correctedAfterMemory": 1,
+          "readBackByMemory": 1
+        },
+        "challan": {
+          "recorded": 2,
+          "readsWithMemory": 2,
+          "correctedAfterMemory": 0,
+          "readBackByMemory": 0
+        },
+        "upi": {
+          "recorded": 1,
+          "readsWithMemory": 1,
+          "correctedAfterMemory": 0,
+          "readBackByMemory": 0
+        }
+      },
+      "recorded": 6,
+      "readsWithMemory": 8,
+      "correctedAfterMemory": 1,
+      "readBackByMemory": 1
+    }
   }
 }

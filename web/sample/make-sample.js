@@ -46,6 +46,7 @@ import { traceLedger, traceLink, traceReceived, traceSpark, traceTools, traceTra
  * @property {{ok: true, events: number} | {ok: false, brokenAt: number}} chain  verifyChain() at export time
  * @property {Record<string, string>} [refs]    this side's reference (J-n / P-n) per order_id
  * @property {TraceEntry[]} [trace]             this agent's trace (inside the agent), oldest first
+ * @property {LearningStats} [learning]         this agent's learning-from-corrections counts (invented in the sample)
  */
 /** @typedef {{v: 'hb-export/0.1', exportedAt: string, jcb: LedgerExport, contractor: LedgerExport, supplier: LedgerExport}} Export */
 
@@ -194,6 +195,34 @@ async function said(rec, who, text, muse, step, name) {
 /** An invented Muse Spark step, as the service's wrapper records it. @param {Recorder} rec @param {string} title @param {Record<string, any>} detail @param {number} ms */
 const muse = (rec, title, detail, ms) => rec.add('model', title, { model: MODEL, reasoningEffort: 'default', ok: true, ...detail }, { ms });
 const none = () => {};
+
+/** @typedef {{recorded: number, readsWithMemory: number, correctedAfterMemory: number, readBackByMemory: number}} LearnCounts */
+/** @typedef {{v: 'hb-learn/0.1', on: boolean, kinds: Record<string, LearnCounts>} & LearnCounts} LearningStats */
+
+/** Invented counts per agent and kind: [recorded, readsWithMemory, correctedAfterMemory, readBackByMemory]. */
+const LEARNING = /** @type {const} */ ({
+  jcb: { meter: [5, 8, 1, 2], voice: [3, 4, 0, 1] },
+  contractor: { challan: [4, 6, 1, 1], site_challan: [2, 3, 0, 1], upi: [1, 0, 0, 0], voice: [2, 2, 0, 0] },
+  supplier: { invoice: [3, 5, 1, 1], challan: [2, 2, 0, 0], upi: [1, 1, 0, 0] },
+});
+
+/**
+ * Each side's `learning` field in the shape of src/learn/corrections.js `stats()`, with invented
+ * numbers: the sample runs no corrections, so these only show how the judge page's card reads.
+ * @param {Export} x
+ */
+export function learningExample(x) {
+  for (const name of /** @type {const} */ (['jcb', 'contractor', 'supplier'])) {
+    /** @type {Record<string, LearnCounts>} */
+    const kinds = {};
+    for (const [kind, [recorded, readsWithMemory, correctedAfterMemory, readBackByMemory]] of Object.entries(LEARNING[name])) {
+      kinds[kind] = { recorded, readsWithMemory, correctedAfterMemory, readBackByMemory };
+    }
+    const sum = (/** @type {keyof LearnCounts} */ f) => Object.values(kinds).reduce((n, k) => n + k[f], 0);
+    x[name].learning = { v: 'hb-learn/0.1', on: true, kinds, recorded: sum('recorded'), readsWithMemory: sum('readsWithMemory'),
+      correctedAfterMemory: sum('correctedAfterMemory'), readBackByMemory: sum('readBackByMemory') };
+  }
+}
 
 /**
  * Build 5's contract-only example, independent of the parallel recording-tools branch. These
@@ -405,6 +434,7 @@ export async function buildSample() {
     };
     const exported = { v: /** @type {const} */ ('hb-export/0.1'), exportedAt: new Date(s.jcbCore.now()).toISOString(), jcb: dump(s.jcbCore, s.traces.jcb), contractor: dump(s.siteCore, s.traces.site), supplier: dump(s.supCore, s.traces.sup) };
     paymentExample(exported, s);
+    learningExample(exported);
     return exported;
   } finally {
     await s.close();

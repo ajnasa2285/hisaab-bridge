@@ -2,6 +2,10 @@ import { museSpark } from '../meta/client.js';
 
 export const UPI_VERSION = 'upi-v1';
 
+/** The request with this sender's past corrections after it, as data (src/learn/corrections.js promptBlock).
+ * @param {string} text @param {{memory?: string} | undefined} opts */
+const withMemory = (text, opts) => (typeof opts?.memory === 'string' && opts.memory.length > 0 && opts.memory.length <= 4000 ? `${text}\n\n${opts.memory}` : text);
+
 const FIELD = {
   type: 'object', additionalProperties: false,
   properties: {
@@ -153,9 +157,10 @@ function plainText(value) { return value.length > 0 && value === value.trim() &&
  * | {ok:true,kind:'not_upi',model:string,latencyMs:number}
  * | {ok:false,transient:boolean,reason:string}} UpiReading */
 
-/** @param {import('../meta/client.js').ImageInput} image @returns {Promise<UpiReading>} */
-export async function readUpi(image) {
-  const result = await museSpark({ system: SYSTEM, text: 'Transcribe the visible fields of one UPI transaction screenshot.', images: [image], schema: UPI_SCHEMA });
+/** `memory` (src/learn/corrections.js promptBlock): past corrections for this sender, as data after the request.
+ * @param {import('../meta/client.js').ImageInput} image @param {{memory?: string}} [opts] @returns {Promise<UpiReading>} */
+export async function readUpi(image, opts) {
+  const result = await museSpark({ system: SYSTEM, text: withMemory('Transcribe the visible fields of one UPI transaction screenshot.', opts), images: [image], schema: UPI_SCHEMA });
   if (!result.ok) return { ok: false, transient: result.transient, reason: result.reason };
   const v = result.json, meta = { model: result.model, latencyMs: result.latencyMs };
   if (v.kind === 'not_upi') return { ok: true, kind: 'not_upi', ...meta };

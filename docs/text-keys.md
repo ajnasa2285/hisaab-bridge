@@ -450,3 +450,21 @@ No longer used by the agents (kept for the old texts): `site.payment_claimed`, `
 | `office.state_unknown`, `office.step_unknown` | none | an unavailable state/step description |
 | `office.site_receipt_no_number` | count, signed | signed-copy text when no serial was read |
 | `state.part_paid`, `office.await.buyer.part_paid`, `office.await.seller.part_paid` | none | partially confirmed payment, without chasing |
+
+## Learning from corrections (all three agents; `src/learn/corrections.js`)
+
+| Key | Params | When |
+|---|---|---|
+| `learn.read_back_meter` | reading | a meter photo read with past corrections gave another figure than without them: read back once ("हाँ", "नहीं" or the right digits) |
+| `learn.read_back_challan` | items | the same for the supplier's challan photo (the quantities, in the order's order) |
+| `learn.read_back_site` | ref, items | the same for the site's copy of the challan |
+| `learn.forgot` | ref, n | "भूल जाओ P-1": n corrections from that order are no longer used |
+| `learn.forgot_none` | ref | "भूल जाओ P-1" on an order nothing was learnt from |
+| `learn.forget_which` | — | "भूल जाओ" without a known reference |
+| `learn.forget_not_allowed` | — | operator or supervisor asked to forget (owner or contractor only) |
+| `learn.misreads` | n, lines | "कितनी बार ग़लत पढ़ा गया?": corrections recorded, one line per kind, counts by code |
+| `learn.misreads_none` | — | the same, with nothing recorded yet |
+| `learn.misreads_line` | kind, n | one kind's count inside `learn.misreads` |
+| `learn.memory_line` | reads, again | readings that used memory, and how many of them still needed a correction |
+| `learn.memory_off` | — | `HB_LEARN=0`: memory is not used (corrections are still recorded) |
+| `learn.kind.meter` / `.challan` / `.invoice` / `.upi` / `.site_challan` / `.voice` | — | kind names inside `learn.misreads_line` |

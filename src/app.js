@@ -31,6 +31,8 @@ import { traceLedger, traceLink, traceReader, traceReceived, traceSpark, traceTo
 import { join } from 'node:path';
 import { createEvidenceService, forwardEvidence } from './agents/evidence.js';
 import { openMediaStore } from './media/store.js';
+import { normaliseVoice, openLearn } from './learn/corrections.js';
+import { traceCheck } from './trace/trace.js';
 import { createDirectory } from './wa/directory.js';
 import { openWaStore } from './wa/store.js';
 import { createWa } from './wa/wa.js';
@@ -58,6 +60,7 @@ const JUDGE_FILES = {
   'trace-view.js': 'text/javascript; charset=utf-8',
   'payments-view.js': 'text/javascript; charset=utf-8',
   'order-state.js': 'text/javascript; charset=utf-8',
+  'learning-view.js': 'text/javascript; charset=utf-8',
   'sample/export.json': 'application/json; charset=utf-8',
 };
 const RESULT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.json$/;
@@ -101,6 +104,7 @@ const JUDGE_HEADERS = {
  *   transport?: (baseUrl: string, m: any) => Promise<unknown>,
  *   exportToken?: string,
  *   traceText?: boolean,
+ *   learn?: boolean,
  *   now?: () => number,
  *   log?: (line: string) => void,
  * }} cfg
@@ -141,7 +145,7 @@ export function createApp(cfg) {
   }
 
   /** @type {Map<string, {cfg: AgentConfig, core: any, agent: {tools: any, onApplied: (m: any) => Promise<void>, waiting?: (role: string) => {key: string, params: Record<string, string | number>}[]}, link: ReturnType<typeof createLink>, talk: ReturnType<typeof createConversation>, a2a: ReturnType<typeof createA2AHandler>,
-   *   trace: import('./trace/trace.js').Recorder, transcribe: ((req: {audio: Uint8Array, mime: string, language?: 'hi'}) => Promise<{ok: true, text: string} | {ok: false, transient: boolean, reason: string}>) | undefined}>} */
+   *   trace: import('./trace/trace.js').Recorder, learn: import('./learn/corrections.js').Learn, transcribe: ((req: {audio: Uint8Array, mime: string, language?: 'hi'}) => Promise<{ok: true, text: string} | {ok: false, transient: boolean, reason: string}>) | undefined}>} */
   const agents = new Map();
   // People's own words go into the trace only when asked for (the demo), digits masked.
   const traceText = cfg.traceText ?? process.env.HB_TRACE_TEXT === '1';
@@ -158,6 +162,9 @@ export function createApp(cfg) {
     const trace = openTrace({ file: cfg.dataDir ? join(cfg.dataDir, `${a.name}.trace.db`) : undefined, agent: a.name, text: traceText, now,
       secret: createHash('sha256').update(a.privateKey.export({ type: 'pkcs8', format: 'der' })).update('trace').digest() });
     traceLedger(core.ledger, trace);
+    // Learning from corrections (src/learn/): this agent's own memory, in its own file, never sent to
+    // another agent. `HB_LEARN=0` (or cfg.learn false) turns its use off; recording goes on.
+    const learn = openLearn({ file: cfg.dataDir ? join(cfg.dataDir, `${a.name}.learn.db`) : undefined, now, enabled: cfg.learn });
     const spark = traceSpark(cfg.spark, trace);
     const readers = {
       readMeter: traceReader('meter', cfg.readMeter, trace), readUpi: traceReader('upi', cfg.readUpi, trace),
@@ -226,7 +233,7 @@ export function createApp(cfg) {
       readCashReceipt: a.kind === 'contractor' ? readers.readCashReceipt : undefined,
       readChallan: a.kind === 'supplier' || a.kind === 'contractor' ? readers.readChallan : undefined,
       classifyPhoto: readers.classifyPhoto, reply, now, office,
-      mediaStore: core.mediaStore,
+      mediaStore: core.mediaStore, learn,
     });
     const card = agentCardJson({ id: a.id, name: a.title, description: a.title, baseUrl: `${cfg.baseUrl}/agents/${a.name}`, publicKeyText: publicKeyText(a.privateKey) });
     const a2a = createA2AHandler(core, card, {
@@ -235,7 +242,7 @@ export function createApp(cfg) {
       },
       onReceived: traceReceived(trace),
     });
-    const entry = { cfg: a, core, agent, link, talk, a2a, trace, transcribe: traceTranscribe(cfg.transcribe, trace) };
+    const entry = { cfg: a, core, agent, link, talk, a2a, trace, learn, transcribe: traceTranscribe(cfg.transcribe, trace) };
     agents.set(a.id, entry);
   }
 
@@ -272,8 +279,12 @@ export function createApp(cfg) {
           if (!said.ok || !said.text.trim()) { await sendTo(person, t('voice.not_understood')); return; }
           const c = currentTrace();
           if (c) c.text = said.text;
+          // Words people corrected at least twice are replaced first (src/learn/corrections.js), then
           // "पीवन" → "P-1" before anything reads it (live, 30 Oct).
-          return entry.talk.onText(person, spokenRefs(said.text));
+          const glossary = entry.learn.glossary();
+          const heard = normaliseVoice(said.text, glossary);
+          if (heard !== said.text.normalize('NFC')) traceCheck('voice: words replaced from corrections people confirmed twice', true, { name: 'learn_glossary', words: glossary.size });
+          return entry.talk.onText(person, spokenRefs(heard), { voice: said.text });
         }
         // Documents are not handled yet.
         { await sendTo(person, t('common.unknown_step')); return; }
@@ -418,7 +429,9 @@ export function createApp(cfg) {
       const ref = refs.refOf(o.order_id);
       if (ref !== null) refByOrder[o.order_id] = ref;
     }
-    return { v: 'hb-export/0.1', exportedAt: new Date(now()).toISOString(), agentId: entry.cfg.id, publicKey: publicKeyText(entry.cfg.privateKey), orders, events, chain: ledger.verifyChain(), refs: refByOrder };
+    return { v: 'hb-export/0.1', exportedAt: new Date(now()).toISOString(), agentId: entry.cfg.id, publicKey: publicKeyText(entry.cfg.privateKey), orders, events, chain: ledger.verifyChain(), refs: refByOrder,
+      // Counts only, from this agent's correction memory (optional in the shape; the judge page's learning card).
+      learning: entry.learn.stats() };
   }
 
   /**
@@ -442,9 +455,10 @@ export function createApp(cfg) {
     agent: (id) => agents.get(id),
     close() {
       clearInterval(timer);
-      for (const { core, trace } of agents.values()) {
+      for (const { core, trace, learn } of agents.values()) {
         core.ledger.close();
         trace.close();
+        learn.close();
       }
       store.close();
     },

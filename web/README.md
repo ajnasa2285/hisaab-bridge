@@ -57,7 +57,8 @@ Labels are in Hindi; the button at the top switches to English for judges. Texts
 - the chain check of each ledger and, per order, the state replayed from its events (the
   material path included; a history that breaks the state rules is marked ❌);
 - a results panel from `eval/results/*.json` (aggregate numbers only); "—" when there are none;
-- **inside the agent** (below), under each side's column.
+- **inside the agent** (below), under each side's column;
+- **learning from corrections** (below), inside each ledger card at the top.
 
 ## Export shape (`hb-export/0.1`)
 
@@ -92,9 +93,35 @@ Labels are in Hindi; the button at the top switches to English for judges. Texts
   `from`. An export therefore carries both public keys and no private material.
 - `refs` (optional) maps `order_id` to that side's own reference, `J-n` or `P-n`.
 - `trace` (optional) is that agent's trace entries, oldest first, in the shape of `GET /agents/<name>/trace` (below).
+- `learning` (optional) is that agent's learning-from-corrections counts, the `stats()` of
+  `src/learn/corrections.js` (shape `hb-learn/0.1`, below). A page or export without it shows nothing.
 - The server's `GET /agents/<name>/export` (CONTRACTS section 10) returns one side in this shape
   (the inner object, with `v` and `exportedAt` of its own); the page combines the sides as above.
   A side may be missing.
+
+## Learning from corrections
+
+Each side may carry `learning`, the agent's own correction memory counted by code:
+
+```json
+{
+  "v": "hb-learn/0.1", "on": true,
+  "kinds": { "challan": { "recorded": 4, "readsWithMemory": 6, "correctedAfterMemory": 1, "readBackByMemory": 1 } },
+  "recorded": 4, "readsWithMemory": 6, "correctedAfterMemory": 1, "readBackByMemory": 1
+}
+```
+
+`on` is whether memory is used (`HB_LEARN=0` turns it off; recording goes on). Per kind (`meter`,
+`challan`, `invoice`, `upi`, `site_challan`, `voice`): `recorded` corrections people made,
+`readsWithMemory` readings whose prompt had past corrections, `correctedAfterMemory` corrections still
+needed on such a reading (should fall over time), `readBackByMemory` readings read back to the person
+because memory changed a figure. The card in each ledger card shows these per kind, a total summed by
+the page over the kinds it knows, and the rate `correctedAfterMemory` / `readsWithMemory` when there
+were readings with memory, with the note: memory only steers the reading; code checks every figure;
+a person decides. The field is checked strictly (`web/learning-view.js`, pure functions,
+`test/web/learning-view.test.js`): `v`, a boolean `on`, non-negative safe integers, a part never
+larger than its whole; unknown kinds are ignored; any other shape shows no card. The sample's numbers
+are invented (`learningExample` in `web/sample/make-sample.js`).
 
 ## Sample data
 

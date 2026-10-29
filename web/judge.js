@@ -10,11 +10,15 @@
 // Inside the agent: under each side's column, that agent's own trace for the order (every Muse call,
 // every code check, every decision, each signed message linked to its ledger row), from the export's
 // `trace` or live from `../agents/<name>/trace`; "live" polls every 3 s while a key is entered.
+//
+// Learning from corrections: each ledger card at the top carries that agent's counts from the
+// export's optional `learning` field (web/learning-view.js), nothing when the field is absent.
 
 import { TEXTS } from './texts.js';
 import { isTrace, orderTrace, summaryText, traceRow, traceSummary } from './trace-view.js';
 import { paymentPanel } from './payments-view.js';
 import { stateOf } from './order-state.js';
+import { learningCard, readLearning } from './learning-view.js';
 
 /** @typedef {'hi'|'en'} Lang */
 /** @typedef {typeof TEXTS['hi']} Texts */
@@ -24,7 +28,7 @@ import { stateOf } from './order-state.js';
  */
 /** @typedef {{order_id: string, kind: string, counterparty: string, site: string, created_at: string}} Order */
 /** @typedef {import('./trace-view.js').TraceEntry} TraceEntry */
-/** @typedef {{agentId: string, publicKey: string, orders: Order[], events: Ev[], chain: {ok: boolean, events?: number, brokenAt?: number}, refs?: Record<string, string>, trace?: TraceEntry[]}} LedgerExport */
+/** @typedef {{agentId: string, publicKey: string, orders: Order[], events: Ev[], chain: {ok: boolean, events?: number, brokenAt?: number}, refs?: Record<string, string>, trace?: TraceEntry[], learning?: unknown}} LedgerExport */
 /** @typedef {'jcb'|'contractor'|'supplier'} SideName */
 /** @typedef {{v: string, exportedAt: string, jcb?: LedgerExport|null, contractor?: LedgerExport|null, supplier?: LedgerExport|null}} Export */
 /** @typedef {{kind: 'sample'|'file'|'live', missing: SideName[]}} Source */
@@ -390,7 +394,35 @@ function ledgerCard(name, side, t, chain) {
   add(t.orders, String(side.orders.length));
   add(t.chain, chain.ok ? t.chain_ok : t.chain_broken.replace('{n}', String(chain.brokenAt)), !chain.ok);
   card.append(meta);
+  const learning = readLearning(side.learning);
+  if (learning) card.append(learningBox(learning, t));
   return card;
+}
+
+/**
+ * The agent's "learning from corrections" box: memory on or off, a small table per kind, the note.
+ * @param {import('./learning-view.js').Learning} l @param {Texts} t
+ */
+function learningBox(l, t) {
+  const c = learningCard(l, t);
+  const box = el('section', 'learning');
+  box.append(el('h4', undefined, c.title), el('p', `learning-status ${c.on ? 'on' : 'off'}`, c.status));
+  if (c.empty) box.append(el('p', 'hint', c.empty));
+  else {
+    const table = el('table', 'learning-table');
+    const head = el('tr');
+    for (const h of c.head) head.append(el('th', undefined, h));
+    table.append(head);
+    for (const r of c.total ? [...c.rows, c.total] : c.rows) {
+      const tr = el('tr', r.kind === 'total' ? 'total' : undefined);
+      tr.append(el('th', undefined, r.label));
+      for (const v of [r.recorded, r.reads, r.again, r.readBack]) tr.append(el('td', undefined, v));
+      table.append(tr);
+    }
+    box.append(table, el('p', 'hint', c.hint));
+  }
+  box.append(el('p', 'learning-note', c.note));
+  return box;
 }
 
 /**

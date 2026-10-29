@@ -2,6 +2,10 @@ import { museSpark } from '../meta/client.js';
 
 // v2 (30 Oct): also copies a date shown on the display (displayDate); the hour reading is unchanged.
 export const METER_VERSION = 'meter-v2';
+
+/** The request with this sender's past corrections after it, as data (src/learn/corrections.js promptBlock).
+ * @param {string} text @param {{memory?: string} | undefined} opts */
+const withMemory = (text, opts) => (typeof opts?.memory === 'string' && opts.memory.length > 0 && opts.memory.length <= 4000 ? `${text}\n\n${opts.memory}` : text);
 export const METER_SCHEMA = {
   type: 'object', additionalProperties: false,
   properties: {
@@ -40,12 +44,13 @@ export function meterTenths(raw) {
   return result <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(result) : null;
 }
 
-/** @param {import('../meta/client.js').ImageInput} image
+/** `memory` (src/learn/corrections.js promptBlock): past corrections for this sender, as data after the request.
+ * @param {import('../meta/client.js').ImageInput} image @param {{memory?: string}} [opts]
  * @returns {Promise<{ok:true,kind:'hour_meter',raw:string,valueTenths:number|null,clear:boolean,dashClock:string|null,displayDate:string|null,model:string,latencyMs:number}
  * | {ok:true,kind:'not_meter',model:string,latencyMs:number}
  * | {ok:false,transient:boolean,reason:string}>} */
-export async function readMeter(image) {
-  const result = await museSpark({ system: SYSTEM, text: 'Read the hour counter and, separately, any dashboard clock and display date.', images: [image], schema: METER_SCHEMA });
+export async function readMeter(image, opts) {
+  const result = await museSpark({ system: SYSTEM, text: withMemory('Read the hour counter and, separately, any dashboard clock and display date.', opts), images: [image], schema: METER_SCHEMA });
   if (!result.ok) return { ok: false, transient: result.transient, reason: result.reason };
   const v = result.json;
   const meta = { model: result.model, latencyMs: result.latencyMs };

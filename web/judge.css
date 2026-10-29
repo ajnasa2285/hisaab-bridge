@@ -109,3 +109,14 @@ h2 { font-size: 1.05rem; margin: 0 0 8px; color: var(--accent); }
 .payment-row.waiting { border-left: 3px solid #a87914; padding-left: 8px; }
 .payment-row.denied { border-left: 3px solid #a73e35; padding-left: 8px; }
 .payment-group a { margin-right: 8px; }
+/* Learning from corrections: a small box per agent inside its ledger card. */
+.learning { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 6px; }
+.learning h4 { font-size: 0.9rem; margin: 0 0 2px; color: var(--accent); }
+.learning-status { margin: 0 0 4px; font-size: 0.85rem; }
+.learning-status.off { color: var(--muted); }
+.learning-table { border-collapse: collapse; width: 100%; font-size: 0.8rem; margin: 0 0 4px; }
+.learning-table th, .learning-table td { border: 1px solid var(--line); padding: 2px 6px; text-align: start; vertical-align: top; }
+.learning-table td { font-family: var(--mono); text-align: end; }
+.learning-table tr:first-child th { font-weight: 600; color: var(--muted); }
+.learning-table tr.total th, .learning-table tr.total td { font-weight: 700; }
+.learning-note { margin: 0; font-size: 0.8rem; color: var(--muted); }

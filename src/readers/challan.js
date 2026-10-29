@@ -4,6 +4,10 @@ import { parseUpiDate, validUpiDate } from './upi.js';
 export const CHALLAN_VERSION = 'challan-v2';
 export const MAX_CHALLAN_ITEMS = 20;
 
+/** The request with this sender's past corrections after it, as data (src/learn/corrections.js promptBlock).
+ * @param {string} text @param {{memory?: string} | undefined} opts */
+const withMemory = (text, opts) => (typeof opts?.memory === 'string' && opts.memory.length > 0 && opts.memory.length <= 4000 ? `${text}\n\n${opts.memory}` : text);
+
 /** Canonical units. Anything not in an alias below is kept as plain printed text or dropped. */
 export const CHALLAN_UNITS = /** @type {const} */ (['bag', 'ton', 'cft', 'brass', 'nos', 'kg', 'm3', 'trip']);
 /** @type {Record<string, typeof CHALLAN_UNITS[number]>} */
@@ -184,9 +188,10 @@ export function gstPercentFrom(cgst, sgst, igst) {
  * | {ok:true,kind:'not_challan',model:string,latencyMs:number}
  * | {ok:false,transient:boolean,reason:string}} ChallanReading */
 
-/** @param {import('../meta/client.js').ImageInput} image @returns {Promise<ChallanReading>} */
-export async function readChallan(image) {
-  const result = await museSpark({ system: SYSTEM, text: 'Transcribe the visible fields and material lines of one delivery challan.', images: [image], schema: CHALLAN_SCHEMA });
+/** `memory` (src/learn/corrections.js promptBlock): past corrections for this sender, as data after the request.
+ * @param {import('../meta/client.js').ImageInput} image @param {{memory?: string}} [opts] @returns {Promise<ChallanReading>} */
+export async function readChallan(image, opts) {
+  const result = await museSpark({ system: SYSTEM, text: withMemory('Transcribe the visible fields and material lines of one delivery challan.', opts), images: [image], schema: CHALLAN_SCHEMA });
   if (!result.ok) return { ok: false, transient: result.transient, reason: result.reason };
   const v = result.json, meta = { model: result.model, latencyMs: result.latencyMs };
   if (v.kind === 'not_challan') return { ok: true, kind: 'not_challan', ...meta };
