@@ -61,7 +61,7 @@ const MAY = {
 };
 /** @param {Role} role @returns {LookupName[]} */
 export const lookupsFor = (role) => MAY[role] ?? [];
-/** The buyer's side is the contractor's agent. @param {Role} role */
+/** The buyer's side is the contractor's agent. @param {Role} role @returns {'buyer' | 'seller'} */
 const sideOf = (role) => (role === 'contractor' || role === 'supervisor' ? 'buyer' : 'seller');
 
 const STATES = ['requested', 'offered', 'declined', 'booked', 'working', 'delivered', 'billed', 'disputed', 'accepted', 'payment_claimed', 'settled'];
@@ -157,7 +157,7 @@ export function orderFacts(ledger) {
       counted: count ? validItems(count) : null,
       bill: bill && nonNegInt(bill.totalPaise) ? {
         totalPaise: bill.totalPaise,
-        hoursTenths: billHours.length ? billHours.reduce((a, b) => a + b, 0) : null,
+        hoursTenths: billHours.length ? billHours.reduce((/** @type {number} */ a, /** @type {number} */ b) => a + b, 0) : null,
         lines: lines.filter((/** @type {any} */ l) => typeof l?.what === 'string' && nonNegInt(l.amountPaise))
           .map((/** @type {any} */ l) => ({ what: l.what, qtyHundredths: nonNegInt(l.qtyHundredths) ? l.qtyHundredths : null, amountPaise: l.amountPaise })),
       } : null,
@@ -370,7 +370,7 @@ function summaryLines(name, s) {
 /**
  * Runs one lookup by name with the model's arguments, each checked by code. A bad argument gives an
  * error the model sees, never a guess.
- * @param {LookupName} name @param {Record<string, any>} a
+ * @param {LookupName} name @param {Record<string, any>} raw
  * @param {{ledger: import('../ledger/store.js').Ledger, side: 'buyer' | 'seller', nowMs: number, facts: OrderFacts[]}} ctx
  * @returns {Lookup}
  */

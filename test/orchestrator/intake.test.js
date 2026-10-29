@@ -160,9 +160,9 @@ test('the reply fills the missing value: by code when it is plainly that value, 
  * Each request example in the help texts, with the arguments a model would give for it and the jobs
  * open at the time. Commands and the bare yes/no are answered by code and need no entry. A question
  * about the records goes to the read-only ask route (src/agents/ask.js).
- * @type {Record<string, Record<string, {call: {name: string, args: any}, orders?: any[], site?: string, kind?: string}>>}
  */
 const QUESTION = { call: { name: 'ask_records', args: {} }, kind: 'ask' };
+/** @type {Record<string, Record<string, {call: {name: string, args: any}, orders?: any[], site?: string, kind?: string}>>} */
 const HELP_EXAMPLES = {
   supervisor: {
     'इस हफ़्ते कितने घंटे JCB का बिल आया?': QUESTION,
