@@ -8,7 +8,7 @@ import { openLedger } from '../../src/ledger/store.js';
 import { openMediaStore } from '../../src/media/store.js';
 import { generateKeys, signMessage, verifyMessage } from '../../src/protocol/keys.js';
 import { buildMessage, TYPES } from '../../src/protocol/messages.js';
-import { receive, prepare, recordAnswer } from '../../src/protocol/exchange.js';
+import { receive, prepare, recordAnswer, evidenceAnswer } from '../../src/protocol/exchange.js';
 import { evidenceRecords, MAX_EVIDENCE_BYTES } from '../../src/protocol/evidence.js';
 import { createLink } from '../../src/agents/link.js';
 
@@ -46,13 +46,30 @@ function fixture(t) {
     const req = prepare(buyer, { type: 'EVIDENCE_REQUEST', to: seller.self.id, orderId, body: { order: orderId, refers_to: record, reason: 'asked' } });
     assert.ok(req); return req;
   }
-  return { buyer, seller, outsider, order, request, keys };
+  /** The seller's owner says yes to a request already received: the signed EVIDENCE that then leaves.
+   * @param {import('../../src/protocol/messages.js').Message} req */
+  function consent(req) {
+    seller.ledger.append({ orderId: req.order_id, direction: 'local', type: 'NOTE', msgId: randomUUID(), at: new Date(NOW).toISOString(),
+      body: { kind: 'evidence_consent', request: req.msg_id, answer: 'yes', by: 'supplier' } });
+    const a = evidenceAnswer(seller, req.order_id, req.msg_id); assert.ok(a.ok);
+    const m = prepare(seller, { type: 'EVIDENCE', to: buyer.self.id, orderId: req.order_id, body: a.ok ? a.body : {} }); assert.ok(m);
+    return m;
+  }
+  /** The request is received (a signed receipt, nothing shared yet), then the owner says yes.
+   * @param {import('../../src/protocol/messages.js').Message} req */
+  function answer(req) {
+    const r = receive(seller, req);
+    assert.equal(r.answer.type, 'RECEIPT'); assert.equal(r.applied, true);
+    assert.equal(recordAnswer(buyer, r.answer).ok, true);
+    return consent(req);
+  }
+  return { buyer, seller, outsider, order, request, consent, answer, keys };
 }
 
 test('real signed request/reply stores private bytes and separately verifiable metadata only', (t) => {
   const f = fixture(t); const { orderId, delivery, photo } = f.order();
   const request = f.request(orderId, delivery.msg_id);
-  const response = receive(f.seller, request);
+  const response = { answer: f.answer(request) };
   assert.equal(response.answer.type, 'EVIDENCE');
   assert.equal(verifyMessage(response.answer, f.keys[1].publicKey), true);
   assert.deepEqual(recordAnswer(f.buyer, response.answer).ok, true);
@@ -88,7 +105,7 @@ test('remote photo provenance uses the signed recording time, not this agent arr
 test('signed byte tampering, unsigned tampering, unsolicited evidence and extra items are refused without storing bytes', (t) => {
   const f = fixture(t); const { orderId, delivery, photo } = f.order();
   const request = f.request(orderId, delivery.msg_id);
-  const response = receive(f.seller, request).answer;
+  const response = f.answer(request);
   const bad = buildMessage({ type: 'EVIDENCE', from: f.seller.self.id, to: f.buyer.self.id, orderId,
     body: { refers_to: request.msg_id, items: [{ ...response.body.items[0], bytes: Buffer.from('tampered').toString('base64') }] }, privateKey: f.seller.self.privateKey, nowMs: NOW });
   const rejected = recordAnswer(f.buyer, bad);
@@ -112,7 +129,7 @@ test('different order, third party, and third-party replay of a real request rec
   const wrong = receive(f.seller, f.request(one.orderId, two.delivery.msg_id));
   assert.equal(wrong.answer.body.code, 'no_such_record');
   const original = f.request(one.orderId, one.delivery.msg_id);
-  assert.equal(receive(f.seller, original).answer.type, 'EVIDENCE');
+  assert.equal(receive(f.seller, original).answer.type, 'RECEIPT', 'recorded; the owner decides');
   const stranger = buildMessage({ type: 'EVIDENCE_REQUEST', from: f.outsider.self.id, to: f.seller.self.id, orderId: one.orderId,
     body: original.body, privateKey: f.outsider.self.privateKey, nowMs: NOW });
   const denied = receive(f.seller, stranger);
@@ -179,16 +196,24 @@ test('link shows only accepted evidence once and records a signed refusal for a 
   const link = createLink(f.buyer, { peerUrls: new Map([[f.seller.self.id, 'memory:seller']]), onEvidence: async () => { shown += 1; },
     transport: async (_url, m) => receive(f.seller, m).answer });
   const result = await link.send({ type: 'EVIDENCE_REQUEST', to: f.seller.self.id, orderId, body: { order: orderId, refers_to: delivery.msg_id, reason: 'asked' } });
-  assert.equal(result.ok, true); assert.equal(shown, 1); assert.equal(link.pending().length, 0);
-  if (result.ok) await link.deliver(result.message);
+  assert.equal(result.ok, true); assert.equal(shown, 0, 'nothing before the owner says yes'); assert.equal(link.pending().length, 0);
+  assert.ok(result.ok);
+  f.consent(result.message);
+  // Delivering the request again after the yes brings the same signed evidence, once.
+  await link.deliver(result.message);
+  assert.equal(shown, 1);
+  await link.deliver(result.message);
   assert.equal(shown, 1);
   const evil = createLink(f.buyer, { peerUrls: new Map([[f.seller.self.id, 'memory:seller']]), onEvidence: async () => { shown += 1; },
     transport: async (_url, m) => {
       const answer = receive(f.seller, m).answer;
-      if (m.type === 'EVIDENCE_REQUEST') answer.body.items[0].bytes = Buffer.from('tampered').toString('base64');
+      if (m.type === 'EVIDENCE_REQUEST' && answer.type === 'EVIDENCE') answer.body.items[0].bytes = Buffer.from('tampered').toString('base64');
       return answer;
     } });
-  const rejected = await evil.send({ type: 'EVIDENCE_REQUEST', to: f.seller.self.id, orderId, body: { order: orderId, refers_to: delivery.msg_id, reason: 'asked' } });
+  const second = await evil.send({ type: 'EVIDENCE_REQUEST', to: f.seller.self.id, orderId, body: { order: orderId, refers_to: delivery.msg_id, reason: 'asked' } });
+  assert.ok(second.ok);
+  f.consent(second.message);
+  const rejected = await evil.deliver(second.message);
   assert.equal(rejected.ok, false); assert.equal(shown, 1);
   assert.equal(f.seller.ledger.events(orderId).some((e) => e.type === 'REFUSE' && e.direction === 'in' && e.body.body.code === 'BAD_SIGNATURE'), true);
 });
@@ -196,7 +221,7 @@ test('link shows only accepted evidence once and records a signed refusal for a 
 test('a signed reply to an older request never completes or displays evidence for a new request', async (t) => {
   const f = fixture(t); const { orderId, delivery } = f.order();
   const first = f.request(orderId, delivery.msg_id);
-  const stale = receive(f.seller, first).answer;
+  const stale = f.answer(first);
   assert.equal(recordAnswer(f.buyer, stale).ok, true);
   let shown = 0;
   const link = createLink(f.buyer, { peerUrls: new Map([[f.seller.self.id, 'memory:seller']]),
@@ -207,4 +232,53 @@ test('a signed reply to an older request never completes or displays evidence fo
   assert.equal(!result.ok && result.reason, 'bad_answer');
   assert.equal(shown, 0);
   assert.equal(link.pending().length, 1, 'the new request remains unanswered');
+});
+
+test('no EVIDENCE can be prepared without the owner\'s recorded yes to that exact request', (t) => {
+  const f = fixture(t); const { orderId, delivery, photo } = f.order();
+  const request = f.request(orderId, delivery.msg_id);
+  assert.equal(receive(f.seller, request).answer.type, 'RECEIPT');
+  assert.equal(evidenceAnswer(f.seller, orderId, request.msg_id).ok, false);
+  const items = [{ record: delivery.msg_id, sha256: photo.sha256, mime: 'image/png', bytes: Buffer.from(`invented-photo-${orderId}`).toString('base64') }];
+  assert.equal(prepare(f.seller, { type: 'EVIDENCE', to: f.buyer.self.id, orderId, body: { refers_to: request.msg_id, items } }), null);
+  f.seller.ledger.append({ orderId, direction: 'local', type: 'NOTE', msgId: randomUUID(), at: new Date(NOW).toISOString(),
+    body: { kind: 'evidence_consent', request: request.msg_id, answer: 'no', by: 'supplier' } });
+  assert.equal(prepare(f.seller, { type: 'EVIDENCE', to: f.buyer.self.id, orderId, body: { refers_to: request.msg_id, items } }), null, 'a no is not a yes');
+  assert.equal(f.seller.ledger.events(orderId).some((e) => e.type === 'EVIDENCE'), false);
+});
+
+test('a declined request is refused with declined_by_owner, and a repeat gets the same signed refusal', (t) => {
+  const f = fixture(t); const { orderId, delivery } = f.order();
+  const request = f.request(orderId, delivery.msg_id);
+  assert.equal(recordAnswer(f.buyer, receive(f.seller, request).answer).ok, true);
+  const refusal = prepare(f.seller, { type: 'REFUSE', to: f.buyer.self.id, orderId, body: { refers_to: request.msg_id, code: 'declined_by_owner' } });
+  assert.ok(refusal);
+  const pushed = receive(f.buyer, refusal);
+  assert.equal(pushed.applied, true); assert.equal(pushed.answer.type, 'RECEIPT');
+  const repeat = receive(f.seller, request);
+  assert.equal(repeat.answer.msg_id, refusal.msg_id);
+  assert.equal(repeat.answer.body.code, 'declined_by_owner');
+  assert.equal(f.buyer.mediaStore.get(delivery.body.challan.sha256), null);
+  for (const core of [f.buyer, f.seller]) assert.equal(core.ledger.verifyChain().ok, true);
+});
+
+test('evidence sent after a yes that could not be delivered is sent again, bytes taken from the private store', async (t) => {
+  const f = fixture(t); const { orderId, delivery, photo } = f.order();
+  const request = f.request(orderId, delivery.msg_id);
+  assert.equal(recordAnswer(f.buyer, receive(f.seller, request).answer).ok, true);
+  f.seller.ledger.append({ orderId, direction: 'local', type: 'NOTE', msgId: randomUUID(), at: new Date(NOW).toISOString(),
+    body: { kind: 'evidence_consent', request: request.msg_id, answer: 'yes', by: 'supplier' } });
+  let up = false;
+  const link = createLink(f.seller, { peerUrls: new Map([[f.buyer.self.id, 'memory:buyer']]),
+    transport: async (_url, m) => { if (!up) throw new Error('offline'); return receive(f.buyer, m).answer; } });
+  const a = evidenceAnswer(f.seller, orderId, request.msg_id); assert.ok(a.ok);
+  const first = await link.send({ type: 'EVIDENCE', to: f.buyer.self.id, orderId, body: a.ok ? a.body : {} });
+  assert.equal(!first.ok && first.reason, 'unreachable');
+  assert.equal(link.pending().length, 1);
+  assert.equal(JSON.stringify(f.seller.ledger.events(orderId)).includes('"bytes"'), false);
+  up = true;
+  const [again] = await link.retryPending();
+  assert.equal(again.ok, true);
+  assert.equal(link.pending().length, 0);
+  assert.deepEqual(f.buyer.mediaStore.get(photo.sha256)?.bytes, f.seller.mediaStore.get(photo.sha256)?.bytes);
 });

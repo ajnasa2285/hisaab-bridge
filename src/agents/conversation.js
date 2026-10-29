@@ -8,6 +8,9 @@
 // this person may send that kind here, and only then that kind's reader reads it (an unsure kind is
 // asked). A clear reading with every figure, that code finds consistent, is recorded at once with a
 // receipt; an unclear one, a missing figure or a mismatch is read back or typed by the person.
+// A meter photo is checked before anything is recorded: a forwarded one is refused, Muse Spark
+// compares it with the other reading's photo (same machine?), and a date on the display must be the
+// job's (src/agents/meter-guard.js).
 // Exact commands (status, pending, stock, ok, no) are answered by code before the model sees
 // anything, and every committing step passes the site office's gate (approvals with limits,
 // src/agents/office.js). A request with a value left out (site, day, quantity, unit) is kept, and only
@@ -19,20 +22,21 @@ import { createHash } from 'node:crypto';
 import { fillStep, proposeStep, orderRefs, pickOrder } from '../orchestrator/orchestrator.js';
 import { parseHundredthsList } from '../orchestrator/units.js';
 import { impossible, meterReadings, MAX_JOB_TENTHS } from './jcb.js';
+import { displayDateWrong, jobDay } from './meter-guard.js';
 import { challanQuantities, countDifferences, delivery, requestedItems, sameChallanNo, siteCount } from './material.js';
 import { exactReply, yesNo } from './replies.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
 import { runTool } from './common.js';
 import { parseCommand } from './office.js';
 import { answerQuestion } from './ask.js';
-import { day as dayName, qty as qtyText, rupees } from '../i18n/format.js';
+import { day as dayName, qty as qtyText, rupees, tenths } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {(person: Person, key: string, params?: Record<string, string | number>) => Promise<void> | void} Reply */
 /**
- * @typedef {{kind: 'confirm', tool: string, args: Record<string, any>, at: number} |
+ * @typedef {{kind: 'confirm', tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}, at: number} |
  *   {kind: 'meter_digits', orderId: string, which: 'start' | 'end', sha256: string, takenAt: string | null, at: number} |
  *   {kind: 'challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number} |
  *   {kind: 'site_challan_order', orderIds: string[], sha256: string, reading: SiteReading, at: number} |
@@ -40,7 +44,8 @@ import { t } from '../i18n/index.js';
  *   {kind: 'fill', tool: string, raw: Record<string, any>, args: Record<string, any>, missing: string[], said: string, at: number} |
  *   {kind: 'photo_kind', image: Photo, at: number}} Pending
  */
-/** @typedef {{mime: string, bytes: Uint8Array, takenAt?: string | null}} Photo */
+/** `forwarded`: WhatsApp marked the message as forwarded (src/wa/webhook.js).
+ * @typedef {{mime: string, bytes: Uint8Array, takenAt?: string | null, forwarded?: boolean}} Photo */
 /** @typedef {'meter' | 'upi' | 'challan'} PhotoKind */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) =>
  *   Promise<import('../readers/photo.js').PhotoClassification>} PhotoClassifier */
@@ -50,8 +55,10 @@ import { t } from '../i18n/index.js';
  *     items: {name: string, qtyHundredths: number | null, unit: string | null, raw: string}[], clear: boolean, signed?: boolean | null} |
  *   {ok: true, kind: 'not_challan'} | {ok: false, transient: boolean, reason: string}>} ChallanReader */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) => Promise<
- *   {ok: true, kind: 'hour_meter', raw: string, valueTenths: number | null, clear: boolean} | {ok: true, kind: 'not_meter'} |
+ *   {ok: true, kind: 'hour_meter', raw: string, valueTenths: number | null, clear: boolean, displayDate?: string | null} | {ok: true, kind: 'not_meter'} |
  *   {ok: false, transient: boolean, reason: string}>} MeterReader */
+/** @typedef {(o: {a: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}, b: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}}) =>
+ *   Promise<import('../readers/same-meter.js').SameMeter>} SameMeterCheck */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) => Promise<
  *   {ok: true, kind: 'upi_payment', amountPaise: number | null, date: string | null, utr: string | null,
  *     clock?: string | null, status: 'success' | 'pending' | 'failed' | null, clear: boolean} | {ok: true, kind: 'not_upi'} |
@@ -84,6 +91,7 @@ const norm = (text) => text.trim().toLowerCase().replace(/[।.!?,]+$/u, '').rep
  *   tools: Record<string, Tool>,
  *   spark: import('../orchestrator/orchestrator.js').Spark,
  *   readMeter?: MeterReader,
+ *   sameMeter?: SameMeterCheck,
  *   readUpi?: UpiReader,
  *   readChallan?: ChallanReader,
  *   classifyPhoto?: PhotoClassifier,
@@ -91,6 +99,7 @@ const norm = (text) => text.trim().toLowerCase().replace(/[।.!?,]+$/u, '').rep
  *   now: () => number,
  *   office?: ReturnType<typeof import('./office.js').createOffice>,
  *   mediaStore?: ReturnType<typeof import('../media/store.js').openMediaStore>,
+ *   log?: (line: string) => void,
  * }} o
  */
 export function createConversation(o) {
@@ -209,6 +218,8 @@ export function createConversation(o) {
       }
       if (NO.has(said)) {
         pending.delete(keyOf(person));
+        // A question whose "no" is itself a decision (the owner declines to share a photo) runs it.
+        if (p.no) return commitNow(person, p.no.tool, p.no.args);
         return o.reply(person, 'step.cancelled');
       }
       // A meter read-back can be answered with the right digits: the person's own figure, recorded at once.
@@ -399,21 +410,37 @@ export function createConversation(o) {
   }
 
   /**
-   * A meter photo from the JCB side is a meter reading for the job that is booked or working.
+   * A meter photo from the JCB side is a meter reading for the job that is booked or working. Before
+   * anything is recorded: a forwarded photo is refused; a photo of another machine than the other
+   * reading's (Muse Spark compares the two) is refused, and an unsure comparison is read back once; a
+   * date on the display that is not the job's day is refused. Then the existing checks.
    * @param {Person} person @param {Photo} image
    */
   async function onMeterImage(person, image) {
     if (!o.readMeter) return o.reply(person, 'orchestrator.try_again');
     if (image.mime !== 'image/jpeg' && image.mime !== 'image/png' && image.mime !== 'image/webp') return o.reply(person, 'meter.not_meter');
+    // A forwarded photo can be of any day and any machine (live, 29 Oct): only a photo taken now counts.
+    if (image.forwarded) return o.reply(person, 'meter.forwarded');
     const picked = pickOrder(orderRefs(o.ledger), null, ['booked', 'working']);
     if (typeof picked === 'string') return o.reply(person, picked === 'common.wrong_state' ? 'orchestrator.no_job_for_photo' : picked);
-    const r = meterReadings(o.ledger.events(picked.orderId));
+    const events = o.ledger.events(picked.orderId);
+    const r = meterReadings(events);
     const which = r.start ? 'end' : 'start';
+    const other = which === 'end' ? r.start : r.end;
     const sha256 = createHash('sha256').update(image.bytes).digest('hex');
     const takenAt = image.takenAt ?? null;
-    const read = await o.readMeter({ mime: image.mime, bytes: image.bytes });
+    /** @type {{mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}} */
+    const photo = { mime: image.mime, bytes: image.bytes };
+    // Reading and comparing run together: one wait for the person.
+    const [read, same] = await Promise.all([o.readMeter(photo), other && other.sha256 !== sha256 ? sameMachine(other.sha256, photo) : null]);
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
     if (read.kind === 'not_meter') return o.reply(person, 'meter.not_meter');
+    if (same && same.same === 'no') {
+      return o.reply(person, 'meter.other_machine', { reason: same.differs.map((d) => t(`meter.differs.${d}`)).join(', ') });
+    }
+    const day = jobDay(events);
+    const dated = displayDateWrong(read.displayDate, day, o.now());
+    if (dated.wrong) return o.reply(person, 'meter.display_date', { raw: dated.shown, day: dayName(/** @type {string} */ (day)) });
     rememberPhoto(person, image);
     if (!read.clear || read.valueTenths === null) {
       pending.set(keyOf(person), { kind: 'meter_digits', orderId: picked.orderId, which, sha256, takenAt, at: o.now() });
@@ -430,9 +457,31 @@ export function createConversation(o) {
       pending.set(keyOf(person), { kind: 'meter_digits', orderId: picked.orderId, which, sha256, takenAt, at: o.now() });
       return o.reply(person, 'jcb.meter_hours_impossible', impossible(/** @type {{valueTenths: number}} */ (r.start).valueTenths, read.valueTenths));
     }
+    // Muse Spark could not tell whether it is the same machine: read back once, "हाँ" records it.
+    if (same && same.same === 'unsure') return propose(person, 'record_meter', args, { key: 'meter.same_unsure', params: { reading: tenths(read.valueTenths) } });
     // A long day (more than LONG_JOB_TENTHS) is possible but unusual: read back once before it counts.
     const long = worked !== null && worked > LONG_JOB_TENTHS;
     return mismatch || long ? propose(person, 'record_meter', args) : commitNow(person, 'record_meter', args);
+  }
+
+  /**
+   * Muse Spark compares the other reading's kept photo with the new one. No kept photo, no checker,
+   * or a model error: null, and the photo goes on as before (work is never blocked by the check).
+   * @param {string} otherSha256 @param {{mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}} photo
+   */
+  async function sameMachine(otherSha256, photo) {
+    if (!o.sameMeter || !o.mediaStore) return null;
+    let kept;
+    try { kept = o.mediaStore.get(otherSha256); } catch { kept = null; }
+    if (!kept || !isImageMime(kept.mime)) return null;
+    try {
+      const r = await o.sameMeter({ a: { mime: /** @type {'image/jpeg'} */ (kept.mime), bytes: kept.bytes }, b: photo });
+      if (r.ok) return r;
+      o.log?.(`meter: same-machine check unavailable (${r.reason}); photo handled as before`);
+    } catch {
+      o.log?.('meter: same-machine check failed; photo handled as before');
+    }
+    return null;
   }
 
   /**
@@ -633,11 +682,13 @@ export function createConversation(o) {
   }
 
   /**
-   * After a notice that asks this person a yes/no question: a plain "yes" runs this step.
+   * After a notice that asks this person a yes/no question: a plain "yes" runs this step, and a
+   * plain "no" runs `no` when given (otherwise nothing happens).
    * @param {Person} person @param {string} tool @param {Record<string, any>} args
+   * @param {{tool: string, args: Record<string, any>}} [no]
    */
-  function expect(person, tool, args) {
-    pending.set(keyOf(person), { kind: 'confirm', tool, args, at: o.now() });
+  function expect(person, tool, args, no) {
+    pending.set(keyOf(person), { kind: 'confirm', tool, args, ...(no ? { no } : {}), at: o.now() });
   }
 
   return { onText, onImage, expect, pending: (/** @type {Person} */ p) => current(p) };

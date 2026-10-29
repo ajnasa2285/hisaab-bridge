@@ -3,6 +3,8 @@
 // Receiving: checkIncoming (identity, signature, expiry, type) -> repeat? answer as before ->
 // register the order -> the ledger checks the state and appends -> signed RECEIPT (or REFUSE).
 // The answer to a repeat is rebuilt from the stored event, so a retry never changes anything.
+// An EVIDENCE_REQUEST is only recorded and acknowledged: the photo's owner decides (a local NOTE
+// `evidence_consent`), and only then does the EVIDENCE (or a REFUSE `declined_by_owner`) leave.
 
 import { buildMessage, checkIncoming } from './messages.js';
 import { signMessage } from './keys.js';
@@ -70,8 +72,10 @@ export function receive(agent, raw) {
       return { answer: refusal('BAD_BODY', m.msg_id, m.from, m.order_id), applied: false, message: m };
     }
     if (m.type === 'EVIDENCE_REQUEST') {
-      const sent = ledger.events(m.order_id).find((e) => e.direction === 'out' && e.type === 'EVIDENCE' && e.body.body.refers_to === m.msg_id);
-      const response = sent ? restoreEvidence(agent, /** @type {Message} */ (sent.body)) : null;
+      // Answered already: the same answer again. Not decided yet: the same receipt.
+      const answered = ledger.events(m.order_id).find((e) => e.direction === 'out' && (e.type === 'EVIDENCE' || e.type === 'REFUSE') && e.body.body.refers_to === m.msg_id);
+      if (!answered) return { answer: receiptFor(agent, m, earlier.hash, nowMs), applied: false, message: m };
+      const response = answered.type === 'EVIDENCE' ? restoreEvidence(agent, /** @type {Message} */ (answered.body)) : /** @type {Message} */ (answered.body);
       return { answer: response ?? refusal('not_kept', m.msg_id, m.from, m.order_id), applied: false, message: m };
     }
     return { answer: receiptFor(agent, m, earlier.hash, nowMs), applied: false, message: m };
@@ -89,18 +93,10 @@ export function receive(agent, raw) {
   }
 
   if (m.type === 'EVIDENCE_REQUEST') {
-    const record = findEvidenceRecord(ledger, m.order_id, m.body.refers_to, self.id);
-    const original = ledger.eventOfMessage(m.body.refers_to);
-    if (!record || !original || original.orderId !== m.order_id || original.direction === 'in') {
-      return { answer: refusal('no_such_record', m.msg_id, m.from, m.order_id), applied: false, message: m };
-    }
-    let image;
-    try { image = agent.mediaStore?.get(record.sha256); } catch { image = null; }
-    if (!image || evidenceHash(image.bytes) !== record.sha256) return { answer: refusal('not_kept', m.msg_id, m.from, m.order_id), applied: false, message: m };
-    ledger.append({ orderId: m.order_id, direction: 'in', type: m.type, msgId: m.msg_id, body: m, at: new Date(nowMs).toISOString() });
-    const answer = prepare(agent, { type: 'EVIDENCE', to: m.from, orderId: m.order_id,
-      body: { refers_to: m.msg_id, items: [{ record: record.record, sha256: record.sha256, mime: image.mime, bytes: Buffer.from(image.bytes).toString('base64') }] } });
-    return { answer: answer ?? refusal('not_kept', m.msg_id, m.from, m.order_id), applied: answer !== null, message: m };
+    // Checked now, so an impossible request is refused at once; the owner is asked only about a
+    // photo that exists and is kept. The answer itself waits for the owner (evidenceAnswer).
+    const found = keptRecord(agent, m.order_id, m.body.refers_to);
+    if (!found.ok) return { answer: refusal(found.code, m.msg_id, m.from, m.order_id), applied: false, message: m };
   }
 
   if (m.type === 'EVIDENCE') {
@@ -127,6 +123,46 @@ export function receive(agent, raw) {
   });
   if (stored === null) return { answer: refusal('WRONG_STATE', m.msg_id, m.from, m.order_id), applied: false, message: m };
   return { answer: receiptFor(agent, m, stored.hash, nowMs), applied: true, message: m };
+}
+
+/**
+ * One of our own photo records of this order, with its bytes kept and unchanged.
+ * @param {Agent} agent @param {string} orderId @param {string} recordId
+ * @returns {{ok: true, record: import('./evidence.js').EvidenceRecord, image: {mime: string, bytes: Uint8Array}} | {ok: false, code: 'no_such_record' | 'not_kept'}}
+ */
+function keptRecord(agent, orderId, recordId) {
+  const record = findEvidenceRecord(agent.ledger, orderId, recordId, agent.self.id);
+  const original = agent.ledger.eventOfMessage(recordId);
+  if (!record || !original || original.orderId !== orderId || original.direction === 'in') return { ok: false, code: 'no_such_record' };
+  let image;
+  try { image = agent.mediaStore?.get(record.sha256); } catch { image = null; }
+  if (!image || evidenceHash(image.bytes) !== record.sha256) return { ok: false, code: 'not_kept' };
+  return { ok: true, record, image };
+}
+
+/**
+ * The owner's decision on a received EVIDENCE_REQUEST, from the local `evidence_consent` NOTE.
+ * @param {Ledger} ledger @param {string} orderId @param {string} requestId @returns {'yes' | 'no' | null}
+ */
+export function consentOf(ledger, orderId, requestId) {
+  const note = ledger.events(orderId).filter((e) => e.direction === 'local' && e.type === 'NOTE'
+    && e.body.kind === 'evidence_consent' && e.body.request === requestId).at(-1);
+  return note ? note.body.answer : null;
+}
+
+/**
+ * The EVIDENCE body for a received request the owner said yes to, with the photo's bytes.
+ * @param {Agent} agent @param {string} orderId @param {string} requestId
+ * @returns {{ok: true, body: Record<string, any>} | {ok: false, code: 'no_such_record' | 'not_kept' | 'not_consented'}}
+ */
+export function evidenceAnswer(agent, orderId, requestId) {
+  const request = agent.ledger.eventOfMessage(requestId);
+  if (!request || request.direction !== 'in' || request.type !== 'EVIDENCE_REQUEST' || request.orderId !== orderId) return { ok: false, code: 'no_such_record' };
+  if (consentOf(agent.ledger, orderId, requestId) !== 'yes') return { ok: false, code: 'not_consented' };
+  const found = keptRecord(agent, orderId, request.body.body.refers_to);
+  if (!found.ok) return found;
+  return { ok: true, body: { refers_to: requestId, items: [{ record: found.record.record, sha256: found.record.sha256, mime: found.image.mime,
+    bytes: Buffer.from(found.image.bytes).toString('base64') }] } };
 }
 
 /**
@@ -159,6 +195,8 @@ export function prepare(agent, o) {
   const existing = agent.ledger.order(o.orderId);
   if ((o.type === 'EVIDENCE_REQUEST' || o.type === 'EVIDENCE') && (!existing || existing.counterparty !== o.to)) return null;
   if (o.type === 'EVIDENCE_REQUEST' && o.body.order !== o.orderId) return null;
+  // A photo leaves only after its owner's recorded yes to that exact request.
+  if (o.type === 'EVIDENCE' && consentOf(agent.ledger, o.orderId, o.body.refers_to) !== 'yes') return null;
   if (agent.ledger.order(o.orderId) === null) {
     if (o.type !== 'BOOKING_REQUEST') return null;
     agent.ledger.ensureOrder({ orderId: o.orderId, kind: o.body.kind, counterparty: o.to, site: o.body.site, at: new Date(nowMs).toISOString() });

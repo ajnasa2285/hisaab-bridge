@@ -310,3 +310,22 @@ A value that was not given is left out of the sentence, never shown as "—": co
 | `office.approval_needed` / `_estimate` | ref, by, [estimate], step | to the contractor; `step` is now the `what.*` statement |
 | `office.status_held` / `_estimate` | ref, step, [estimate], decision | `status <ref>` for a held step |
 | `reply.which_order` | refs, ref | an exact reply fits several open orders: write the reference in front |
+
+## Photo guards and owner consent (docs/BUILD2.md, 30 Oct; drafted, Fable to polish)
+
+| Key | Params | When |
+|---|---|---|
+| `meter.forwarded` | — | a forwarded meter photo; nothing read, nothing recorded |
+| `meter.other_machine` | reason | Muse Spark sees another machine than the other reading's photo; nothing recorded |
+| `meter.differs.display` / `.make` / `.layout` | — | the parts of `reason`, joined with commas |
+| `meter.display_date` | raw, day | the display's date (as printed) is not the job's day; nothing recorded |
+| `meter.same_unsure` | reading | not sure it is the same machine: read back once, "हाँ" records it |
+| `evidence.ask_owner` | ref, who, what, reason | to the photo's owner: the other side asks for it; "हाँ / नहीं" |
+| `evidence.what.meter` / `.challan` / `.site_count` / `.upi` | — | `what` in that question |
+| `evidence.reason.bill_disputed` / `.count_differs` / `.asked` | — | `reason` in that question |
+| `evidence.waiting` | ref, who | to the requester: asked, the photo comes when the other side's owner says yes |
+| `evidence.declined` | ref, who | to the requester: the other side's owner said no |
+| `evidence.shared` | ref, who | to the owner: the photos were sent |
+| `evidence.declined_sent` | ref, who | to the owner: not sent, the other side is told |
+| `evidence.nothing_open` | ref | the owner said yes/no but nothing is waiting |
+| `evidence.not_kept_own` | ref | the owner said yes but the photo is no longer kept; the other side gets `not_kept` |

@@ -79,6 +79,7 @@ const JUDGE_HEADERS = {
  *   waStoreFile: string,
  *   spark: import('./orchestrator/orchestrator.js').Spark,
  *   readMeter?: import('./agents/conversation.js').MeterReader,
+ *   sameMeter?: import('./agents/conversation.js').SameMeterCheck,
  *   readUpi?: import('./agents/conversation.js').UpiReader,
  *   readChallan?: import('./agents/conversation.js').ChallanReader,
  *   classifyPhoto?: import('./agents/conversation.js').PhotoClassifier,
@@ -120,7 +121,7 @@ export function createApp(cfg) {
     const tell = async (role, key, params, expect) => {
       for (const p of directory.people(a.id, role)) {
         await sendTo(p, t(key, params));
-        if (expect) entry.talk.expect(p, expect.tool, expect.args);
+        if (expect) entry.talk.expect(p, expect.tool, expect.args, expect.no);
       }
     };
     const evidence = createEvidenceService({ agent: core, link, kind: a.kind, tell, spark: cfg.spark,
@@ -154,11 +155,14 @@ export function createApp(cfg) {
     /** @type {import('./agents/conversation.js').Reply} */
     const reply = (p, key, params) => sendTo(p, t(key, params));
     // References, exact commands, and (contractor) approvals with this agent's limits.
-    const office = createOffice({ ledger: core.ledger, tools: agent.tools, kind: a.kind, limits: a.limits, tell, reply, now, evidence });
+    // The owner's yes/no to sharing a photo (evidence.tools) is a step like the agent's own.
+    const tools = { ...agent.tools, ...evidence.tools };
+    const office = createOffice({ ledger: core.ledger, tools, kind: a.kind, limits: a.limits, tell, reply, now, evidence });
     // Every agent asks Muse Spark what a photo is; each then reads only its own kinds: meters (JCB),
     // UPI screenshots and the site's copy of a challan (contractor), challans (supplier).
     const talk = createConversation({
-      ledger: core.ledger, tools: agent.tools, spark: cfg.spark, readMeter: a.kind === 'jcb' ? cfg.readMeter : undefined,
+      ledger: core.ledger, tools, spark: cfg.spark, readMeter: a.kind === 'jcb' ? cfg.readMeter : undefined,
+      sameMeter: a.kind === 'jcb' ? cfg.sameMeter : undefined, log,
       readUpi: a.kind === 'contractor' ? cfg.readUpi : undefined,
       readChallan: a.kind === 'supplier' || a.kind === 'contractor' ? cfg.readChallan : undefined,
       classifyPhoto: cfg.classifyPhoto, reply, now, office,
@@ -187,7 +191,7 @@ export function createApp(cfg) {
       if (msg.kind === 'text' || msg.kind === 'button') return entry.talk.onText(person, msg.text ?? '');
       if (msg.kind === 'image' && msg.mediaId) {
         const media = await /** @type {any} */ (clients.get(person.line)).fetchMedia(msg.mediaId, { expectedSha256: undefined });
-        return entry.talk.onImage(person, { mime: media.mimeType, bytes: new Uint8Array(media.bytes), takenAt: null });
+        return entry.talk.onImage(person, { mime: media.mimeType, bytes: new Uint8Array(media.bytes), takenAt: null, forwarded: msg.forwarded === true });
       }
       if (msg.kind === 'audio' && msg.mediaId && cfg.transcribe) {
         // A voice note is read as the text it says; the same read-back follows before anything commits.

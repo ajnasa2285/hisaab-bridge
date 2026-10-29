@@ -2,7 +2,7 @@
 // to our ledger before it leaves (prepare); if the other side cannot be reached it stays pending and
 // is delivered again later, unchanged: the receiver answers a repeat with the same receipt.
 
-import { prepare, recordAnswer } from '../protocol/exchange.js';
+import { consentOf, prepare, recordAnswer, restoreEvidence } from '../protocol/exchange.js';
 import { sendToAgent } from '../transport/a2a.js';
 
 /** @typedef {import('../protocol/messages.js').Message} Message */
@@ -24,6 +24,12 @@ export function createLink(agent, o) {
   async function deliver(m) {
     const url = o.peerUrls.get(m.to);
     if (!url) return { ok: false, reason: 'no_address', message: m };
+    // Our EVIDENCE is kept without bytes; a re-delivery takes them from the private store again.
+    if (m.type === 'EVIDENCE' && m.body.items.some((/** @type {any} */ i) => i.bytes === undefined)) {
+      const full = restoreEvidence(agent, m);
+      if (!full) return { ok: false, reason: 'unreachable', message: m };
+      m = full;
+    }
     let answer;
     try {
       answer = await transport(url, m);
@@ -54,7 +60,10 @@ export function createLink(agent, o) {
       const answered = new Set(events
         .filter((e) => e.direction === 'in' && (e.type === 'RECEIPT' || e.type === 'REFUSE' || e.type === 'EVIDENCE'))
         .map((e) => (e.type === 'RECEIPT' ? e.body.body.receipt_for : e.body.body.refers_to)));
-      for (const e of events) if (e.direction === 'out' && e.type !== 'EVIDENCE' && !answered.has(e.msgId)) out.push(/** @type {Message} */ (e.body));
+      // EVIDENCE sent after the owner's yes waits for its receipt like any message (an older one
+      // was the direct answer to the request and is never sent again).
+      const owed = (/** @type {any} */ e) => e.type !== 'EVIDENCE' || consentOf(agent.ledger, order.order_id, e.body.body.refers_to) === 'yes';
+      for (const e of events) if (e.direction === 'out' && owed(e) && !answered.has(e.msgId)) out.push(/** @type {Message} */ (e.body));
     }
     return out.sort((a, b) => a.created_at.localeCompare(b.created_at));
   }

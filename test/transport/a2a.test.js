@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateKeys, publicKeyFromText, publicKeyText } from '../../src/protocol/keys.js';
 import { openLedger } from '../../src/ledger/store.js';
-import { prepare, recordAnswer, receive } from '../../src/protocol/exchange.js';
+import { evidenceAnswer, prepare, recordAnswer, receive } from '../../src/protocol/exchange.js';
 import { openMediaStore } from '../../src/media/store.js';
 import { agentCardJson, createA2AHandler, sendToAgent } from '../../src/transport/a2a.js';
 
@@ -137,8 +137,15 @@ test('a signed photo larger than the old JSON cap travels over the official A2A 
     assert.ok(bill); recordAnswer(jcb, receive(contractor, bill).answer);
     const request = prepare(contractor, { type: 'EVIDENCE_REQUEST', to: jcb.self.id, orderId, body: { order: orderId, refers_to: record, reason: 'asked' } });
     assert.ok(request);
-    const response = receive(jcb, request).answer;
-    assert.equal(response.type, 'EVIDENCE');
+    // The request is recorded; after the owner's yes the photo leaves as its own signed message.
+    const ack = receive(jcb, request).answer;
+    assert.equal(ack.type, 'RECEIPT');
+    assert.equal(recordAnswer(contractor, ack).ok, true);
+    jcb.ledger.append({ orderId, direction: 'local', type: 'NOTE', msgId: randomUUID(), at, body: { kind: 'evidence_consent', request: request.msg_id, answer: 'yes', by: 'jcb_owner' } });
+    const answer = evidenceAnswer(jcb, orderId, request.msg_id);
+    assert.ok(answer.ok);
+    const response = prepare(jcb, { type: 'EVIDENCE', to: contractor.self.id, orderId, body: answer.ok ? answer.body : {} });
+    assert.ok(response);
     const receipt = await sendToAgent(server.baseUrl, response);
     assert.deepEqual(recordAnswer(jcb, receipt), { ok: true, kind: 'receipt' });
     assert.equal(contractor.mediaStore.get(photo.sha256)?.bytes.length, 300 * 1024);

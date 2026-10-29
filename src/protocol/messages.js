@@ -18,7 +18,7 @@ export const TYPES = /** @type {const} */ ([
 
 export const REFUSAL_CODES = /** @type {const} */ ([
   'UNSUPPORTED', 'NOT_CONNECTED', 'BAD_SIGNATURE', 'NOT_FOR_ME', 'EXPIRED', 'WRONG_STATE', 'BAD_BODY',
-  'no_such_record', 'not_party', 'not_kept',
+  'no_such_record', 'not_party', 'not_kept', 'declined_by_owner',
 ]);
 /** @typedef {typeof REFUSAL_CODES[number]} RefusalCode */
 
