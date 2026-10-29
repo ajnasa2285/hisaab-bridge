@@ -78,13 +78,13 @@ export function paymentWaiting(ledger) {
 
 /**
  * Rebuild only previously missed notices. One group can have missed notices under several refs;
- * send its current text once. The old UPI keys still match after upgrading the read-side renderer.
+ * send its current text once. The old UPI keys and the recording side's pay.seller.* notices both match.
  * @param {{ref: string, key: string}[]} missed
  * @param {{key: string, params: Record<string, string | number>}[]} open
  */
 export function missedWaiting(missed, open) {
   return open.filter((n) => missed.some((m) =>
     (n.params.ref === m.ref && n.key === m.key) ||
-    (n.key === 'payview.waiting' && /^(?:(?:jcb|supplier)\.payment_claimed(?:_at)?|payview\.waiting)$/u.test(m.key)
+    (n.key === 'payview.waiting' && /^(?:(?:jcb|supplier)\.payment_claimed(?:_at)?|pay\.seller\.(?:group_)?claimed(?:_advance)?|payview\.waiting)$/u.test(m.key)
       && String(n.params.refs).split(', ').includes(m.ref))));
 }
