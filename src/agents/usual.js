@@ -72,7 +72,7 @@ export function requestUsualNotes(ledger, peer, items, metric, orderId, estimate
   const notes = usualNotes(ledger, figures, orderId, !estimate);
   if (!estimate) return notes;
   const history = usualFigures(ownEvents(ledger, orderId));
-  let total = 0n; let low = 0n; let high = 0n; let current = 0n; let n = USUAL_RULES.window;
+  let total = 0n; let low = 0n; let high = 0n; let current = 0n; let n = /** @type {number} */ (USUAL_RULES.window);
   for (const it of items) {
     const rate = history.get(usualKey(peer, it.name, it.unit, 'rate'));
     const amount = history.get(usualKey(peer, it.name, it.unit, metric));

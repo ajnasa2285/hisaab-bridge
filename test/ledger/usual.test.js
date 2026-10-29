@@ -80,6 +80,7 @@ test('only acceptance of the bill in force counts; a stale accept and a refused 
 });
 
 test('refused outgoing correction never replaces the accepted bill in the seller ledger', () => {
+  /** @type {LedgerEvent[]} */
   const history = material('p1').map((e) => ({ ...e, direction: /** @type {'in'|'out'} */ (e.direction === 'in' ? 'out' : 'in') }));
   const correction = message('p1', 'CORRECTION', { replaces: history[3].msgId, lines: [{ what: 'सीमेंट', qtyHundredths: 9000, ratePaise: 90000 }] });
   correction.direction = 'out';

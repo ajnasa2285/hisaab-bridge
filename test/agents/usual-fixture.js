@@ -26,8 +26,8 @@ export function usualBooks() {
         to: direction === 'out' ? peer : local, msg_id: msgId, order_id: orderId, created_at: at, body } }), `${type} must fit`);
       return msgId;
     }
-    const buy = o.seller ? 'in' : 'out';
-    const sell = o.seller ? 'out' : 'in';
+    const buy = /** @type {'in' | 'out'} */ (o.seller ? 'in' : 'out');
+    const sell = /** @type {'in' | 'out'} */ (o.seller ? 'out' : 'in');
     put('BOOKING_REQUEST', { kind, site, day: '2026-10-29', ...(kind === 'material' ? { items: [item] } : { hoursTenths: o.hours ?? 70 }) }, buy);
     put('BOOKING_REPLY', { answer: 'yes', ...(kind === 'material' ? { rates: [{ name: item.name, unit, ratePaise: rate, gstPercent: 28 }] } : { ratePaise: rate }) }, sell);
     if (kind === 'material') put('DELIVERY', { items: [item], challan: { sha256: 'a'.repeat(64) }, deliveredAt: at }, sell);
