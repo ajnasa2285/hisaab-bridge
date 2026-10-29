@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -171,12 +172,10 @@ test('a confirmed challan keeps its original bytes privately before the DELIVERY
       items: [{ ...CEMENT, raw: '50' }] }),
   });
   const supplier = /** @type {any} */ (person('supplier', core.self.id));
+  const sha256 = createHash('sha256').update(image.bytes).digest('hex');
+  // A clear challan is recorded at once (fewer steps); its bytes are kept before the DELIVERY leaves.
   await talk.onImage(supplier, image);
-  assert.equal(replies.at(-1), 'step.record_delivery');
-  const pending = /** @type {any} */ (talk.pending(supplier));
-  assert.equal(core.mediaStore.get(pending.args.sha256), null);
-  await talk.onText(supplier, 'हाँ');
   assert.equal(replies.at(-1), 'supplier.delivery_sent');
-  assert.deepEqual(Buffer.from(core.mediaStore.get(pending.args.sha256)?.bytes ?? []), image.bytes);
+  assert.deepEqual(Buffer.from(core.mediaStore.get(sha256)?.bytes ?? []), image.bytes);
   assert.doesNotMatch(JSON.stringify(core.ledger.events(orderId)), /invented photo for confirmation|"bytes"/);
 });

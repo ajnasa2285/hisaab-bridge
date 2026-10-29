@@ -51,7 +51,7 @@ test('paidAt shown: the owner and the payer see the time; ask-anything payments 
   try {
     const r = await runTool(j.s.site.tools, contractor, { tool: 'claim_payment', args: { orderId: j.orderId, amountPaise: 732000, utr: '412300000002', paidOn: '2026-10-23', paidAt: '14:05', screenshotSha256: SHA_C } });
     assert.equal(r.key, 'site.payment_claimed');
-    assert.equal(t(r.key, r.params), 'भुगतान की जानकारी JCB मालिक को भेजी: ₹7,320, 23 अक्टूबर 2026, 14:05 बजे, UTR 412300000002। उनकी पुष्टि आते ही बताया जाएगा।');
+    assert.equal(t(r.key, r.params), 'J-1: भुगतान की जानकारी JCB मालिक को भेजी: ₹7,320, 23 अक्टूबर 2026, 14:05 बजे, UTR 412300000002। उनकी पुष्टि आते ही बताया जाएगा।');
     await j.settle();
     const told = j.said.find(([w, k]) => w === 'jcb:jcb_owner' && k.startsWith('jcb.payment_claimed'));
     assert.equal(told?.[1], 'jcb.payment_claimed_at');
@@ -110,15 +110,15 @@ test('the UPI screenshot\'s clock goes with the claim; a screenshot without one 
       reply: (/** @type {any} */ _p, /** @type {string} */ key, /** @type {any} */ params) => { replies.push([key, t(key, params)]); },
     });
     nextRead = { ok: true, kind: 'upi_payment', amountPaise: 732000, date: '2026-10-23', time: null, clock: '14:05', utr: '412300000004', status: 'success', clear: true };
+    // A clear screenshot for the bill's amount is claimed at once (fewer steps), the clock with it.
+    const claims = () => j.s.siteCore.ledger.events(j.orderId).filter((e) => e.type === 'PAYMENT_CLAIM' && e.direction === 'out');
     await talk.onImage(contractor, { mime: 'image/jpeg', bytes: new Uint8Array([7, 3, 7]) });
-    assert.equal(replies.at(-1)?.[0], 'step.claim_payment');
-    assert.equal(talk.pending(contractor)?.args.paidAt, '14:05');
-    nextRead = { ...nextRead, clock: null };
-    await talk.onImage(contractor, { mime: 'image/jpeg', bytes: new Uint8Array([7, 3, 8]) });
-    assert.equal(replies.at(-1)?.[0], 'step.claim_payment');
-    assert.equal('paidAt' in (talk.pending(contractor)?.args ?? {}), false);
-    await talk.onText(contractor, 'हाँ');
     assert.equal(replies.at(-1)?.[0], 'site.payment_claimed');
+    assert.equal(claims().at(-1)?.body.body.paidAt, '14:05');
+    nextRead = { ...nextRead, clock: null, utr: '412300000005' };
+    await talk.onImage(contractor, { mime: 'image/jpeg', bytes: new Uint8Array([7, 3, 8]) });
+    assert.equal(replies.at(-1)?.[0], 'site.payment_claimed');
+    assert.equal('paidAt' in (claims().at(-1)?.body.body ?? {}), false);
   } finally {
     await j.s.close();
   }

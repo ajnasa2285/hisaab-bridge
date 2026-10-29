@@ -19,7 +19,7 @@ function input(changes = {}) {
 function reading(changes = {}) {
   return {
     ok: true, kind: 'upi_payment', amountPaise: 123450, date: '2026-10-20',
-    time: '2026-10-20T04:30:00.000Z', utr: '123456789012', status: 'success',
+    time: '2026-10-20T04:30:00.000Z', clock: null, utr: '123456789012', status: 'success',
     payeeName: 'काल्पनिक दुकान', payeeVpa: 'example.shop@bank', payerName: 'काल्पनिक ग्राहक', clear: true,
     model: 'muse-spark-1.3', latencyMs: 100, ...changes,
   };

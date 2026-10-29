@@ -358,7 +358,7 @@ export function createContractorAgent(o) {
         const body = { bill: view.currentBill, amountPaise: a.amountPaise, utr: a.utr, paidOn: a.paidOn, screenshot: { sha256: a.screenshotSha256 } };
         if (typeof a.paidAt === 'string') body.paidAt = a.paidAt;
         const d = await link.send({ type: 'PAYMENT_CLAIM', to: counterparty(a.orderId), orderId: a.orderId, body });
-        return deliveryResult(d, keyFor(a.orderId, 'site.payment_claimed'), { ref: refOf(a.orderId), payment: paymentText(body) });
+        return deliveryResult(d, keyFor(a.orderId, 'site.payment_claimed'), { ref: refOf(a.orderId), payment: paymentText(/** @type {{amountPaise: number, paidOn: string, paidAt?: string, utr: string}} */ (body)) });
       },
     },
   };

@@ -64,11 +64,11 @@ async function start() {
       assert.equal(r.key, 'supplier.delivery_sent');
       await settle();
     },
-    /** The site photographs its copy and says "हाँ" to the read-back. */
+    /** The site photographs its copy: recorded at once when it agrees, else read back and "हाँ". */
     photograph: async () => {
       await talk.onImage(supervisor, photo);
-      assert.equal(said.at(-1)?.[1], 'step.site_challan');
-      await talk.onText(supervisor, 'हाँ');
+      if (String(said.at(-1)?.[1]).startsWith('step.site_challan')) await talk.onText(supervisor, 'हाँ');
+      else assert.match(String(said.at(-1)?.[1]), /^site\.challan_count/);
       await settle();
     },
     receipts: () => s.supCore.ledger.events(orderId).filter((e) => e.type === 'SITE_RECEIPT'),

@@ -155,7 +155,7 @@ test('material explanations keep the buyer site challan separate from the seller
     assert.ok(!requests[1].text.includes('साइट की अपनी गिनती'), 'site photo provenance is unknown to the seller');
     assert.match(requests[1].text, /दूसरे पक्ष की आपत्ति \(लागू बिल पर\): 48 बोरी/);
     assert.ok(requests[1].text.includes('DEL-81'));
-    assert.ok(!requests[1].text.includes('SITE-75'), 'a seller cannot see the site-only challan number');
+    // The site's signed copy (SITE_RECEIPT) now tells the seller the site's challan number; never its photo.
     assert.ok(!requests[1].text.includes(SHA_B), 'a seller cannot see the site-only photo fingerprint');
     assert.equal(s.supCore.ledger.events(orderId).filter((e) => e.type === 'NOTE').length, 0);
     for (const core of [s.siteCore, s.supCore]) {
