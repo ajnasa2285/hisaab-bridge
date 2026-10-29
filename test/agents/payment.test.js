@@ -69,7 +69,7 @@ test('a UPI screenshot becomes a confirmed payment claim; the owner\'s one "ह�
     await siteTalk.onImage(contractor, shot);
     assert.equal(last(), 'step.claim_payment');
     await siteTalk.onText(contractor, 'हाँ');
-    assert.equal(last(), 'site.payment_claimed');
+    assert.equal(last(), 'site.payment_claim_sent');
     await new Promise((r) => setImmediate(r));
     assert.equal(s.jcbCore.ledger.view(orderId).state, 'payment_claimed');
     assert.ok(said.some(([w, k]) => w === 'jcb:jcb_owner' && k === 'jcb.payment_claimed'));

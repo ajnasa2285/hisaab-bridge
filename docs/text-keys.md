@@ -105,6 +105,24 @@ Supplier side (`supplier`):
 | `supplier.correction_sent` | lines, total | corrected bill sent |
 | `supplier.payment_claimed` | ref, site, amount, utr, day | the contractor says they paid; please check your account ("हाँ" = confirm_payment) |
 | `supplier.settled_sent` | amount | you confirmed receipt; settled |
+
+## Signed copy and payment time (docs/BUILD2.md section 9; Claude drafted, Fable to polish)
+
+`count` and `challan` are item lists (`सीमेंट 48 बोरी`); `challanNo` is the number on the supplier's own DELIVERY, `siteNo` the one on the site's copy; `signed` is one of the three `supplier.site_receipt_signed_*` sentences.
+
+| Key | Params | When |
+|---|---|---|
+| `supplier.site_receipt_matches` | ref, challanNo, count, signed | the site's signed copy agrees with our DELIVERY (number and every item) |
+| `supplier.site_receipt_differs` | ref, challanNo, count, challan, signed | same challan, the site wrote other quantities; both shown, no verdict |
+| `supplier.site_receipt_number_differs` | ref, siteNo, challanNo, count, challan, signed | the site's copy carries another challan number; both shown, never accepted silently |
+| `supplier.site_receipt_number_unknown` | ref, count, challanNo, challan, siteNo, signed | one of the two numbers was not read, so the number could not be matched |
+| `supplier.site_receipt_other_delivery` | ref, siteNo, count, challanNo, challan, signed | the receipt names a delivery that is not our DELIVERY of this order |
+| `supplier.site_receipt_signed_yes` / `_no` / `_unsure` | — | the receiver's mark: seen / not seen / unclear |
+| `office.status_with_receipt` | ref, what, site, day, state, rate, bill, paid, receipt, awaited | `status <ref>` on the supplier's agent once the site's signed copy came (`office.status` plus one line) |
+| `office.site_receipt` | challanNo, count, signed | that line (`signed`: `office.signed_yes` / `_no` / `_unsure`) |
+| `payment.at_time` | time | "14:05 बजे": the receipt's clock inside a payment line |
+| `jcb.payment_claimed_at` / `supplier.payment_claimed_at` | ref, site, amount, day, time, utr | as `*.payment_claimed`, when the claim carries `paidAt` (else the old key) |
+| `site.payment_claim_sent` / `site.material_payment_claim_sent` | payment | the payer's receipt: "₹35,000, 23 अक्टूबर 2026, 14:05 बजे, UTR …" (time left out when not printed). Replaces `site.payment_claimed` / `site.material_payment_claimed`, which are no longer used |
 | `challan.not_challan` | — | the photo is not a challan |
 | `challan.ask_person` | raw, items | the challan was not read clearly: type the quantities in the order's order (`items` = `सीमेंट (बोरी), रेत (ट्रॉली)`) |
 | `challan.no_order_for_photo` | — | a challan photo came but no order is booked and waiting for delivery |

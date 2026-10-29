@@ -230,7 +230,8 @@ export function createJcbAgent(o) {
         break;
       }
       case 'PAYMENT_CLAIM':
-        await tell('jcb_owner', 'jcb.payment_claimed', { ref: refOf(m.order_id), site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn) }, { tool: 'confirm_payment', args: { orderId: m.order_id } });
+        // With the receipt's clock when it was visible; an old claim without `paidAt` reads as before.
+        await tell('jcb_owner', typeof b.paidAt === 'string' ? 'jcb.payment_claimed_at' : 'jcb.payment_claimed', { ref: refOf(m.order_id), site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn), ...(typeof b.paidAt === 'string' ? { time: b.paidAt } : {}) }, { tool: 'confirm_payment', args: { orderId: m.order_id } });
         break;
       default:
         break;

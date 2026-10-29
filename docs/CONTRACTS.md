@@ -75,7 +75,7 @@ export async function readMeter(image) {}
 ```js
 /**
  * @returns {Promise<{ok: true, kind: 'upi_payment', amountPaise: number|null, date: string|null,
- *   time: string|null, utr: string|null, status: 'success'|'pending'|'failed'|null,
+ *   time: string|null, clock: string|null, utr: string|null, status: 'success'|'pending'|'failed'|null,
  *   payeeName: string|null, payeeVpa: string|null, payerName: string|null, clear: boolean,
  *   model: string, latencyMs: number}
  * | {ok: true, kind: 'not_upi', model: string, latencyMs: number}
@@ -84,18 +84,22 @@ export async function readMeter(image) {}
 export async function readUpi(image) {}
 ```
 
+`time` is an exact UTC instant, only when seconds and a timezone are printed. `clock` (added 29 Oct) is the payment's clock as printed, as `HH:MM` on 24 hours ("2:05 PM" → `14:05`; seconds dropped), `null` when not visible or ambiguous (an hour 1–12 without AM/PM). It needs no timezone and never changes `clear`.
+
 ### 3.3 Delivery challan
 
 ```js
 /**
  * @returns {Promise<{ok: true, kind: 'challan', challanNo: string|null, date: string|null,
  *   items: {name: string, qtyHundredths: number|null, unit: string|null, raw: string}[],
- *   vehicle: string|null, clear: boolean, model: string, latencyMs: number}
+ *   vehicle: string|null, clear: boolean, signed: boolean|null, model: string, latencyMs: number}
  * | {ok: true, kind: 'not_challan', model: string, latencyMs: number}
  * | {ok: false, transient: boolean, reason: string}>}
  */
 export async function readChallan(image) {}
 ```
+
+`signed` (added 29 Oct): whether a handwritten signature or receiver's mark is visible on this copy: `true` visible, `false` the receiver's place is clearly empty, `null` unsure (the model's `signature` field: `visible` / `absent` / `unclear`). A printed name or the supplier's stamp is not a signature. It says nothing about the figures and never changes `clear`.
 
 ### 3.4 Photo kind
 
@@ -152,9 +156,10 @@ Signature: Ed25519 over the RFC 8785 canonical JSON of the message without `sig`
 | `ACCEPT` | buyer → seller | `bill: msg_id` |
 | `DISPUTE` | buyer → seller | `bill: msg_id`, `theirFigure: {hoursTenths?|qtyHundredths?|totalPaise}` (exactly one: hours for a JCB bill, a quantity only for a single-line material bill, else the total), `reason` |
 | `CORRECTION` | seller → buyer | a `BILL` body that always has `replaces: msg_id` (the bill or correction it replaces) |
-| `PAYMENT_CLAIM` | buyer → seller | `bill: msg_id`, `amountPaise`, `utr`, `paidOn`, `screenshot: {sha256}` |
+| `PAYMENT_CLAIM` | buyer → seller | `bill: msg_id`, `amountPaise`, `utr`, `paidOn`, `paidAt?` (`HH:MM` on 24 hours as printed on the receipt, `null` or left out when not visible; a claim without it stays valid), `screenshot: {sha256}` |
 | `SETTLED` | seller → buyer | `bill: msg_id`, `payment: msg_id`, `amountPaise` |
 | `REFUSE` | either | `refers_to: msg_id`, `code` |
+| `SITE_RECEIPT` | buyer → supplier | material only, after the DELIVERY: the site's signed copy of the challan. `delivery: msg_id` (the DELIVERY it answers; the order is the envelope's `order_id`), `challan: {sha256, number}` (the site's photo of its copy; number as read and confirmed, or `null`), `items` (what the site wrote it received, as counted; items at 0 left out), `signed: boolean|null` (the challan reader's receiver's mark). Never changes the state. Not `RECEIPT`: that name is the transport's signed acknowledgement of every message |
 
 Transport: the official A2A JavaScript SDK, `message/send` with the message above as a `data` part (`mediaType: application/json`); Agent Card at `/.well-known/agent-card.json` per agent. If the SDK proves unusable, plain JSON-RPC in the same shape; the README then says so and claims no A2A compatibility.
 
@@ -165,7 +170,7 @@ One SQLite file per agent. Tables are append-only (triggers refuse UPDATE/DELETE
 - `events(seq INTEGER PRIMARY KEY, order_id, direction 'in'|'out'|'local', type, msg_id UNIQUE, body_json, at, prev_hash, hash)` — every message sent or received (the whole signed message) and every local decision or evidence (`EVIDENCE`, `NOTE`); `hash = sha256(prev_hash + canonical(row))`. API: `src/ledger/store.js` (`openLedger`, `ensureOrder`, `append`, `view`, `fits`, `events`, `verifyChain`).
 - `orders(order_id, kind, counterparty, site, created_at)` — identity only; the state is derived from events.
 
-Order states (derived): `requested → booked | declined → working (jcb) | delivered (material) → billed → accepted | disputed → billed (rev n+1) → payment_claimed → settled`. A message that does not fit the current state is refused with `WRONG_STATE`. A `yes` on a material order must carry `rates`, and a `yes` on a JCB order must not. The site's own count of a delivery is a local `NOTE {kind: 'site_count', items, challan?: {sha256, number}}` on the buyer's ledger only (`challan` when the count came from a photo of the site's copy of the challan; it may be recorded before the DELIVERY); it never changes the state.
+Order states (derived): `requested → booked | declined → working (jcb) | delivered (material) → billed → accepted | disputed → billed (rev n+1) → payment_claimed → settled`. A message that does not fit the current state is refused with `WRONG_STATE`. A `yes` on a material order must carry `rates`, and a `yes` on a JCB order must not. The site's own count of a delivery is a local `NOTE {kind: 'site_count', items, challan?: {sha256, number}}` on the buyer's ledger only (`challan` when the count came from a photo of the site's copy of the challan; it may be recorded before the DELIVERY; `challan.signed` is kept when the reader reported it); it never changes the state. When such a count with a challan photo exists together with the DELIVERY, the contractor's agent sends it to the supplier as a `SITE_RECEIPT` (at the count if the DELIVERY is there, else when it arrives); the supplier's ledger keeps it as a received message. `SITE_RECEIPT` fits a material order from `delivered` on and never changes the state.
 
 ## 6. Orchestrator (`src/orchestrator/`)
 

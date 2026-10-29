@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { tenths as hours, rupees, day as dayName, qty } from '../i18n/format.js';
-import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
+import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, paymentText, posInt } from './common.js';
 import { agreedRates, billFollows, countDifferences, delivery, itemsText, lineAmountPaise, linesText, materialBillBody, rateFor, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, validItems } from './material.js';
 import { openRefs } from '../ledger/refs.js';
 import { explainDifference } from './explain.js';
@@ -73,11 +73,16 @@ export function createContractorAgent(o) {
   };
   /** "बालू (cft), सीमेंट (बोरी)": the order's items, for typing figures in order. @param {string} orderId */
   const orderedNames = (orderId) => (isMaterial(orderId) ? requestedItems(ledger.events(orderId)) : []).map((i) => `${i.name} (${i.unit})`).join(', ') || '—';
-  /** A challan as evidence: the photo's fingerprint and the number as read and confirmed. @param {unknown} c */
+  /**
+   * A challan as evidence: the photo's fingerprint, the number as read and confirmed and, optionally,
+   * whether the reader saw the receiver's mark on it (`signed`: true, false or null when unsure).
+   * @param {unknown} c
+   */
   const validChallan = (c) => {
     const x = /** @type {any} */ (c);
     return !!x && typeof x === 'object' && isSha256(x.sha256)
-      && (x.number === null || (typeof x.number === 'string' && x.number.trim().length > 0 && x.number.length <= 40));
+      && (x.number === null || (typeof x.number === 'string' && x.number.trim().length > 0 && x.number.length <= 40))
+      && (x.signed === undefined || x.signed === null || typeof x.signed === 'boolean');
   };
   /**
    * The site's count against the supplier's signed delivery: the quantity of each item and, when both
@@ -301,11 +306,15 @@ export function createContractorAgent(o) {
       async run(_p, a) {
         if (!known(a.orderId)) return no('common.no_such_order');
         if (!posInt(a.amountPaise) || typeof a.utr !== 'string' || !UTR_RE.test(a.utr) || !isDay(a.paidOn) || !isSha256(a.screenshotSha256)) return no('common.bad_args');
+        // `paidAt`: the clock printed on the receipt (HH:MM), sent only when it was visible.
+        if (a.paidAt !== undefined && a.paidAt !== null && !isTime(a.paidAt)) return no('common.bad_args');
         const view = ledger.view(a.orderId);
         if (view.currentBill === null) return no('common.wrong_state');
+        /** @type {Record<string, any>} */
         const body = { bill: view.currentBill, amountPaise: a.amountPaise, utr: a.utr, paidOn: a.paidOn, screenshot: { sha256: a.screenshotSha256 } };
+        if (typeof a.paidAt === 'string') body.paidAt = a.paidAt;
         const d = await link.send({ type: 'PAYMENT_CLAIM', to: counterparty(a.orderId), orderId: a.orderId, body });
-        return deliveryResult(d, keyFor(a.orderId, 'site.payment_claimed'), { amount: rupees(a.amountPaise) });
+        return deliveryResult(d, keyFor(a.orderId, 'site.payment_claim_sent'), { payment: paymentText(body) });
       },
     },
   };
@@ -324,7 +333,9 @@ export function createContractorAgent(o) {
     if (items === null) return no('site.challan_figures', { ref, names: orderedNames(a.orderId) });
     const before = siteCount(ledger.events(a.orderId));
     if (before !== null && a.sameAsChallan === true) return no('site.count_already', { ref, count: itemsText(before) });
+    /** @type {{sha256: string, number: string | null, signed?: boolean | null}} */
     const challan = { sha256: a.challan.sha256, number: a.challan.number === null ? null : a.challan.number.trim() };
+    if (a.challan.signed !== undefined) challan.signed = a.challan.signed;
     const stored = ledger.append({
       orderId: a.orderId, direction: 'local', type: 'NOTE', msgId: randomUUID(),
       body: { kind: 'site_count', items, challan }, at: new Date(agent.now()).toISOString(),
@@ -332,6 +343,7 @@ export function createContractorAgent(o) {
     if (stored === null) return no('common.wrong_state');
     const site = siteOf(a.orderId);
     const d = delivery(ledger.events(a.orderId));
+    if (d !== null) await sendSiteReceipt(a.orderId);
     if (before !== null && !sameItems(before, items) && person.role !== 'contractor') {
       await tell('contractor', 'site.count_changed', { ref, site, old: itemsText(before), count: itemsText(items), challan: d ? itemsText(d.items) : '—' });
     }
@@ -341,6 +353,23 @@ export function createContractorAgent(o) {
     // Code compares; the contractor is told both figures (in the reply, when the contractor counted).
     if (person.role !== 'contractor') await tell('contractor', 'site.challan_count_differs', c.params);
     return ok('site.challan_count_differs', c.params);
+  }
+
+  /**
+   * The site's signed copy of the challan goes back to the supplier (docs/BUILD2.md, "Signed copy and
+   * payment time"): what the site wrote it received, on which challan, and whether the reader saw the
+   * receiver's mark. Only for a count read from the site's own challan photo, and only once the
+   * supplier's DELIVERY is here. A message that cannot be delivered stays pending and goes again.
+   * @param {string} orderId
+   */
+  async function sendSiteReceipt(orderId) {
+    const events = ledger.events(orderId);
+    const d = delivery(events);
+    const note = ofType(events, 'NOTE', 'local').filter((e) => e.body.kind === 'site_count').at(-1);
+    if (!d || !note || !validChallan(note.body.challan)) return;
+    const c = note.body.challan;
+    const body = { delivery: d.msgId, challan: { sha256: c.sha256, number: c.number ?? null }, items: note.body.items, signed: c.signed ?? null };
+    await link.send({ type: 'SITE_RECEIPT', to: counterparty(orderId), orderId, body });
   }
 
   /**
@@ -414,6 +443,7 @@ export function createContractorAgent(o) {
           const key = c.same ? 'site.delivery_matches_count' : 'site.challan_count_differs';
           await tell('contractor', key, c.params);
           await tell('supervisor', key, c.params);
+          await sendSiteReceipt(m.order_id);
           break;
         }
         // The site is asked for its own count; a plain "हाँ" means "the same as the challan".

@@ -235,3 +235,43 @@ Muse Spark plans and phrases; code produces every figure (`src/agents/ask.js`).
   about it. A passing answer goes out with the references it came from (`records.answer`). Otherwise
   code's own lines from the last lookup that worked (`records.unavailable`), or `records.no_answer`
   when none did (also on a timeout or outage before any lookup).
+
+## 9. Signed copy and payment time (29 Oct 2026)
+
+**The site's signed copy goes back to the supplier.** A supplier's challan comes in two copies: the
+site keeps one and signs the other, which goes back to the supplier as proof of receipt. When the
+site's count is recorded from the photo of its copy (section 2a), the contractor's agent now also
+tells the supplier's agent, signed:
+
+* A new message `SITE_RECEIPT` (contractor → supplier; CONTRACTS section 4). Not `RECEIPT`, which is
+  the transport's acknowledgement of every message. Body: `delivery` (the DELIVERY's msg_id),
+  `challan: {sha256, number}` (the site's photo), `items` (what the site wrote it received) and
+  `signed`. It never changes the order's state and fits a material order from `delivered` on.
+* `signed` comes from Muse Spark's challan reader, which now also reports a receiver's mark
+  (`signature: visible|absent|unclear` → `true|false|null`). A printed name or the supplier's stamp is
+  not a signature. It never makes a reading unclear, since the figures do not depend on it.
+* When: at the "हाँ" (or typed figures) if the DELIVERY is already there, else as soon as the DELIVERY
+  arrives. Only a count from a challan photo; a typed count without a photo is not the signed copy. A
+  changed count sends a new receipt; the latest is the one shown. Not delivered → pending, sent again
+  with the other pending messages.
+* The supplier's code checks it against its own DELIVERY: the challan number (`sameChallanNo`:
+  ignoring case, spaces and leading zeros) and every item by name and unit (`countDifferences`), and
+  tells the supplier: "P-1: साइट ने चालान 96 पर सीमेंट 48 बोरी प्राप्त लिखी (आपके चालान पर सीमेंट 50
+  बोरी)। साइट की प्रति पर दस्तख़त नहीं दिखे।", or "… प्राप्त लिखी, मिलान ठीक।" when equal. A different
+  number is shown with both numbers, never accepted silently; a number missing on either side is said
+  so. No verdict, no reminder, nothing asked.
+* `स्थिति P-1` on the supplier's agent adds one line ("साइट की प्रति: चालान 96 पर सीमेंट 48 बोरी प्राप्त
+  लिखी, दस्तख़त हैं"), and ask-anything's `order_detail` carries `site_signed_copy` (received, challan
+  number, signed). The contractor's agent's status is unchanged.
+
+**The payment's time.** The payer's agent tells the receiver the date, the time when visible, the
+amount and the UTR.
+
+* `PAYMENT_CLAIM.paidAt` (optional): the clock printed on the UPI receipt as `HH:MM` on 24 hours. The
+  UPI reader's new `clock` gives it ("2:05 PM" → `14:05`; an hour 1–12 without AM/PM is ambiguous →
+  `null`). It is sent only when visible; an old claim without it stays valid.
+* The JCB owner or supplier sees "… का भुगतान 23 अक्टूबर 2026 को 14:05 बजे किया, UTR …"; the payer's
+  receipt is "₹35,000, 23 अक्टूबर 2026, 14:05 बजे, UTR …". Without a time the phrase is left out, never
+  shown as "—".
+* Ask-anything: `payments` rows carry `paid_at` when present, and `order_detail`'s
+  `payment_reported` includes it; the time is an allowed figure for the answer check.

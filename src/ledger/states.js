@@ -23,7 +23,7 @@ export function emptyView() {
 
 /**
  * Applies one event to the view. Returns null when the event does not fit (the caller refuses it).
- * Local events (EVIDENCE, NOTE) and RECEIPT/REFUSE never change the state.
+ * Local events (EVIDENCE, NOTE), RECEIPT/REFUSE and SITE_RECEIPT never change the state.
  * @param {OrderView} v
  * @param {StepEvent} e
  * @returns {OrderView|null}
@@ -74,6 +74,9 @@ export function step(v, e) {
     case 'SETTLED':
       if (v.state !== 'payment_claimed' || b.bill !== v.currentBill || b.payment !== v.payment) return null;
       return { ...v, state: 'settled' };
+    case 'SITE_RECEIPT':
+      // The site's signed copy follows a delivery and never changes the state.
+      return v.kind === 'material' && !['none', 'requested', 'offered', 'declined', 'booked'].includes(v.state) ? v : null;
     case 'RECEIPT':
     case 'REFUSE':
     case 'NOTE':

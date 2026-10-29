@@ -41,14 +41,14 @@ import { t } from '../i18n/index.js';
 /** @typedef {{challanNo: string | null, items: {name: string, qtyHundredths: number | null, raw: string}[], clear: boolean}} SiteReading */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) => Promise<
  *   {ok: true, kind: 'challan', challanNo: string | null, date: string | null,
- *     items: {name: string, qtyHundredths: number | null, unit: string | null, raw: string}[], clear: boolean} |
+ *     items: {name: string, qtyHundredths: number | null, unit: string | null, raw: string}[], clear: boolean, signed?: boolean | null} |
  *   {ok: true, kind: 'not_challan'} | {ok: false, transient: boolean, reason: string}>} ChallanReader */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) => Promise<
  *   {ok: true, kind: 'hour_meter', raw: string, valueTenths: number | null, clear: boolean} | {ok: true, kind: 'not_meter'} |
  *   {ok: false, transient: boolean, reason: string}>} MeterReader */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) => Promise<
  *   {ok: true, kind: 'upi_payment', amountPaise: number | null, date: string | null, utr: string | null,
- *     status: 'success' | 'pending' | 'failed' | null, clear: boolean} | {ok: true, kind: 'not_upi'} |
+ *     clock?: string | null, status: 'success' | 'pending' | 'failed' | null, clear: boolean} | {ok: true, kind: 'not_upi'} |
  *   {ok: false, transient: boolean, reason: string}>} UpiReader */
 
 const PENDING_MS = 30 * 60 * 1000;
@@ -86,6 +86,8 @@ const norm = (text) => text.trim().toLowerCase().replace(/[।.!]+$/u, '').repla
 export function createConversation(o) {
   /** @type {Map<string, Pending>} */
   const pending = new Map();
+  /** The receiver's mark on a site challan photo, by its sha256 (see rememberSigned). @type {Map<string, boolean | null>} */
+  const signedOf = new Map();
   /** @param {Person} p */
   const keyOf = (p) => `${p.agent}|${p.line}|${p.phone}`;
 
@@ -441,6 +443,7 @@ export function createConversation(o) {
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
     if (read.kind === 'not_challan') return o.reply(person, 'challan.not_challan');
     const challanNo = typeof read.challanNo === 'string' && read.challanNo.trim() ? read.challanNo.trim().slice(0, 40) : null;
+    rememberSigned(sha256, read.signed);
     /** @type {SiteReading} */
     const reading = { challanNo, items: read.items, clear: read.clear };
     if (open.length > 1) {
@@ -448,6 +451,19 @@ export function createConversation(o) {
       return askOrder(person, open.map((r) => r.orderId));
     }
     return siteCountFromRead(person, open[0].orderId, sha256, reading);
+  }
+
+  /**
+   * Whether the reader saw the receiver's mark on a site challan photo, by the photo's fingerprint, so
+   * every later step for that photo (which order, typed figures) carries it. A reader that does not
+   * report it leaves nothing. Bounded: oldest go first.
+   * @param {string} sha256 @param {unknown} signed
+   */
+  function rememberSigned(sha256, signed) {
+    signedOf.delete(sha256);
+    if (signed === undefined) return;
+    signedOf.set(sha256, typeof signed === 'boolean' ? signed : null);
+    while (signedOf.size > 200) signedOf.delete(/** @type {string} */ (signedOf.keys().next().value));
   }
 
   /**
@@ -490,7 +506,7 @@ export function createConversation(o) {
       return o.reply(person, 'site.challan_ask_person', { ref: refOf(c.orderId), raw: '—', names: namesOf(c.orderId) });
     }
     /** @type {Record<string, any>} */
-    const args = { orderId: c.orderId, qtysHundredths: qtys, challan: { sha256: c.sha256, number: c.challanNo } };
+    const args = { orderId: c.orderId, qtysHundredths: qtys, challan: { sha256: c.sha256, number: c.challanNo, ...(signedOf.has(c.sha256) ? { signed: signedOf.get(c.sha256) } : {}) } };
     if (fromRead) args.sameAsChallan = true;
     return propose(person, 'confirm_count', args);
   }
@@ -516,7 +532,10 @@ export function createConversation(o) {
         amount: rupees(read.amountPaise), utr: read.utr, day: dayName(day), status: t(`payment.status.${read.status ?? 'unknown'}`),
       });
     }
+    /** @type {Record<string, any>} */
     const args = { orderId: picked.orderId, amountPaise: read.amountPaise, utr: read.utr, paidOn: day, screenshotSha256: createHash('sha256').update(image.bytes).digest('hex') };
+    // The receipt's clock (HH:MM) goes with the claim only when it was printed and read.
+    if (typeof read.clock === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(read.clock)) args.paidAt = read.clock;
     const bill = o.ledger.view(picked.orderId).currentBill;
     const total = bill ? o.ledger.eventOfMessage(bill)?.body.body.totalPaise : undefined;
     // A different amount is not refused (part payments happen); the contractor sees both figures first.

@@ -121,6 +121,21 @@ function parseTime(date, clock, timezone) {
   return validUpiTime(value) ? value : null;
 }
 
+/** The payment's clock as printed, as HH:MM on 24 hours: "14:05", "2:05 PM" -> "14:05". Seconds are
+ * dropped. A 1-12 hour without AM/PM is ambiguous and gives null, as does anything else.
+ * @param {unknown} raw @returns {string|null} */
+export function parseUpiClock(raw) {
+  if (typeof raw !== 'string') return null;
+  const match = /^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?(?:\s*(AM|PM|am|pm))?$/.exec(raw.trim());
+  if (!match) return null;
+  let hour = Number(match[1]);
+  if (match[3]) {
+    if (hour < 1 || hour > 12) return null;
+    hour = hour % 12 + (match[3].toUpperCase() === 'PM' ? 12 : 0);
+  } else if (hour > 23 || (hour >= 1 && hour <= 12)) return null;
+  return `${String(hour).padStart(2, '0')}:${match[2]}`;
+}
+
 /** @param {string} raw @returns {'success'|'pending'|'failed'|null} */
 function parseStatus(raw) {
   const value = raw.toLowerCase().trim().replace(/[.!।]$/, '');
@@ -133,7 +148,7 @@ function parseStatus(raw) {
 /** @param {string} value */
 function plainText(value) { return value.length > 0 && value === value.trim() && !/[\p{Cc}\p{Cf}*?…]/u.test(value) && !value.includes('...'); }
 
-/** @typedef {{ok:true,kind:'upi_payment',amountPaise:number|null,date:string|null,time:string|null,utr:string|null,
+/** @typedef {{ok:true,kind:'upi_payment',amountPaise:number|null,date:string|null,time:string|null,clock:string|null,utr:string|null,
  * status:'success'|'pending'|'failed'|null,payeeName:string|null,payeeVpa:string|null,payerName:string|null,clear:boolean,model:string,latencyMs:number}
  * | {ok:true,kind:'not_upi',model:string,latencyMs:number}
  * | {ok:false,transient:boolean,reason:string}} UpiReading */
@@ -157,6 +172,8 @@ export async function readUpi(image) {
   const amountPaise = raw.amount !== null && raw.currency !== null && /^(?:₹|INR|Rs\.?)$/i.test(raw.currency) ? parseUpiAmount(raw.amount) : null;
   const date = raw.date !== null ? parseUpiDate(raw.date) : null;
   const time = parseTime(date, raw.time, raw.timezone);
+  // The clock alone, as printed (no timezone needed): what a person reads on the receipt.
+  const clock = date !== null && raw.time !== null ? parseUpiClock(raw.time) : null;
   // Apps print the label with a trailing colon ("UTR: 1234…"); the colon is punctuation, not part of the label.
   const utrLabel = raw.utrLabel?.replace(/\s*:$/, '') ?? null;
   const utr = raw.utr !== null && utrLabel !== null
@@ -171,8 +188,8 @@ export async function readUpi(image) {
     || (raw.utr !== null && utr === null)
     || (raw.payeeVpa !== null && payeeVpa === null)) clear = false;
   // An ambiguous transaction cannot safely contribute any field to a payment claim.
-  if (!v.singleTransaction) return { ok: true, kind: 'upi_payment', amountPaise: null, date: null, time: null,
+  if (!v.singleTransaction) return { ok: true, kind: 'upi_payment', amountPaise: null, date: null, time: null, clock: null,
     utr: null, status: null, payeeName: null, payeeVpa: null, payerName: null, clear: false, ...meta };
-  return { ok: true, kind: 'upi_payment', amountPaise, date, time, utr, status,
+  return { ok: true, kind: 'upi_payment', amountPaise, date, time, clock, utr, status,
     payeeName: raw.payeeName, payeeVpa, payerName: raw.payerName, clear, ...meta };
 }

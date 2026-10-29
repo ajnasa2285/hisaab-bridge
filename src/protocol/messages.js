@@ -11,7 +11,7 @@ const DAY_MS = 24 * 3600 * 1000;
 
 export const TYPES = /** @type {const} */ ([
   'BOOKING_REQUEST', 'BOOKING_REPLY', 'DELIVERY', 'BILL', 'RECEIPT', 'ACCEPT',
-  'DISPUTE', 'CORRECTION', 'PAYMENT_CLAIM', 'SETTLED', 'REFUSE',
+  'DISPUTE', 'CORRECTION', 'PAYMENT_CLAIM', 'SETTLED', 'REFUSE', 'SITE_RECEIPT',
 ]);
 /** @typedef {typeof TYPES[number]} MessageType */
 
@@ -106,9 +106,15 @@ const BODY_OK = {
     && ['hoursTenths', 'qtyHundredths', 'totalPaise'].some((k) => nat(b.theirFigure[k])),
   CORRECTION: (b) => billBody(b) && isUuid(b.replaces),
   PAYMENT_CLAIM: (b) => isUuid(b.bill) && pos(b.amountPaise) && text(b.utr) && isDay(b.paidOn)
+    && (b.paidAt === undefined || b.paidAt === null || (typeof b.paidAt === 'string' && TIME_RE.test(b.paidAt)))
     && b.screenshot && typeof b.screenshot.sha256 === 'string' && SHA256_RE.test(b.screenshot.sha256),
   SETTLED: (b) => isUuid(b.bill) && isUuid(b.payment) && pos(b.amountPaise),
   REFUSE: (b) => isUuid(b.refers_to) && REFUSAL_CODES.includes(b.code),
+  // The site's signed copy of the challan, told back to the supplier: what the site wrote it received.
+  SITE_RECEIPT: (b) => isUuid(b.delivery) && b.challan && typeof b.challan === 'object'
+    && typeof b.challan.sha256 === 'string' && SHA256_RE.test(b.challan.sha256)
+    && (b.challan.number === null || (text(b.challan.number) && b.challan.number.length <= 40))
+    && items(b.items) && (b.signed === true || b.signed === false || b.signed === null),
 };
 
 /**

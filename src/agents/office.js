@@ -10,6 +10,7 @@ import { runTool, ok, no, ofType, posInt, nonNegInt } from './common.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
 import { day as dayName, qty, rupees, tenths } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
+import { itemsText, signedWord, siteReceipt } from './material.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('./common.js').Tool} Tool */
@@ -292,10 +293,17 @@ export function createOffice(o) {
     else if (Array.isArray(yes?.rates)) rate = yes.rates.filter((/** @type {any} */ r) => posInt(r?.ratePaise)).map((/** @type {any} */ r) => t('account.material', { name: r.name, qty: rupees(r.ratePaise) })).join(', ') || '—';
     const bill = view.currentBill ? ledger.eventOfMessage(view.currentBill)?.body.body.totalPaise : undefined;
     const paid = view.payment ? ledger.eventOfMessage(view.payment)?.body.body.amountPaise : undefined;
-    return ok('office.status', {
+    const params = {
       ref, what: whatOf(orderId, order.kind), site: order.site, day: typeof req?.day === 'string' ? dayName(req.day) : '—',
       state: view.state === 'none' ? '—' : t(`state.${view.state}`), rate, bill: posInt(bill) ? rupees(bill) : '—',
       paid: posInt(paid) ? rupees(paid) : '—', awaited: awaited(view.state),
+    };
+    // The supplier also sees what the site wrote on its signed copy of the challan, when it came.
+    const receipt = o.kind === 'supplier' && order.kind === 'material' ? siteReceipt(events) : null;
+    if (receipt === null) return ok('office.status', params);
+    return ok('office.status_with_receipt', {
+      ...params,
+      receipt: t('office.site_receipt', { challanNo: receipt.number ?? '—', count: itemsText(receipt.items), signed: t(`office.signed_${signedWord(receipt.signed)}`) }),
     });
   }
 

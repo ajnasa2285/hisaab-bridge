@@ -40,7 +40,7 @@ export async function setup(o = {}) {
   };
   const supCore = {
     self: { id: 'agent:supplier-1', privateKey: sk.privateKey },
-    peers: new Map([['agent:contractor-1', { id: 'agent:contractor-1', publicKey: pub(ck.publicKey), mayReceiveFrom: new Set(toSeller) }]]),
+    peers: new Map([['agent:contractor-1', { id: 'agent:contractor-1', publicKey: pub(ck.publicKey), mayReceiveFrom: new Set([...toSeller, /** @type {MessageType} */ ('SITE_RECEIPT')]) }]]),
     ledger: openLedger(':memory:'),
     now,
   };

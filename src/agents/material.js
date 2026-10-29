@@ -148,6 +148,23 @@ export function countDifferences(count, delivered) {
   return [...rows.values()].filter((r) => r.count !== r.delivered);
 }
 
+/**
+ * The site's signed copy of the challan as last told to the supplier (a SITE_RECEIPT, received on the
+ * supplier's ledger, sent on the contractor's; one the other side refused is left out), or null.
+ * @param {LedgerEvent[]} events
+ * @returns {{items: Item[], number: string | null, signed: boolean | null, delivery: string} | null}
+ */
+export function siteReceipt(events) {
+  const refused = new Set(ofType(events, 'REFUSE', 'in').map((e) => e.body.body?.refers_to));
+  const r = ofType(events, 'SITE_RECEIPT').filter((e) => e.direction === 'in' || !refused.has(e.msgId)).at(-1);
+  if (!r) return null;
+  const b = r.body.body;
+  return { items: b.items, number: b.challan.number ?? null, signed: typeof b.signed === 'boolean' ? b.signed : null, delivery: b.delivery };
+}
+
+/** "yes", "no" or "unsure": the text-key suffix for whether the receiver's mark was seen. @param {boolean | null} signed */
+export const signedWord = (signed) => (signed === true ? 'yes' : signed === false ? 'no' : 'unsure');
+
 /** Two challan numbers name the same paper (ignoring case, spaces and leading zeros). @param {string} a @param {string} b */
 export function sameChallanNo(a, b) {
   const n = (/** @type {string} */ s) => s.toLowerCase().replace(/\s+/g, '').replace(/^0+(?=\d)/, '');
