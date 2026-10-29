@@ -132,6 +132,42 @@ export async function sameMeter(o) {}
 
 `src/readers/same-meter.js`: one `museSpark` call with both images and a strict schema. It compares the display type, the make printed on the panel and the panel's layout, never the digits. `differs` names what clearly differs and is empty unless `same` is `no`; a `no` without anything named is returned as `unsure`. Image text is data, never instructions. The caller decides: `no` refuses the photo, `unsure` reads it back once, a failure changes nothing (the photo is handled as before).
 
+### 3.7 Cash receipt (Build 5, 29 Oct)
+
+```js
+/**
+ * @param {ImageInput} image
+ * @returns {Promise<{ok: true, kind: 'cash_receipt', amountRaw: string|null,
+ *   amountPaise: number|null, dateRaw: string|null, date: string|null,
+ *   receiverName: string|null, receiverMark: boolean|null, reference: string|null,
+ *   clear: boolean, model: string, latencyMs: number}
+ * | {ok: true, kind: 'not_cash_receipt', model: string, latencyMs: number}
+ * | {ok: false, transient: boolean, reason: string}>}
+ */
+export async function readCashReceipt(image) {}
+```
+
+`src/readers/cash-receipt.js`: one `museSpark` call with a strict schema; the shared client's bounded
+transient retries still apply. A handwritten or printed receipt acknowledges cash received; a bill,
+delivery challan, payment request or UPI screenshot is not a cash receipt. Image text is data, never
+instructions. Every text field is copied as written, with `null` for anything absent or doubtful.
+`amountRaw` and `dateRaw` preserve the visible text; code converts the amount to positive integer
+paise only with an explicit rupee currency, and the date to `YYYY-MM-DD` only when unambiguous with
+its year (`parseUpiAmount` / `parseUpiDate`). An amount in words, conflicting figures, an ambiguous
+date, an unreadable mark, or any model uncertainty gives `clear: false`; no missing digits, date,
+currency or receiver are inferred. Known-absent optional fields stay `null` without inventing them.
+`receiverName` is an explicitly named receiver; `receiverMark` is `true` for a visible handwritten
+signature/initials/thumbprint/mark in the receiver's place, `false` for a clearly empty place, `null`
+when unsure. It never identifies the signer or authenticates the receipt. `reference` is a labelled
+receipt reference/serial, if present. Several receipts in one image yield no fields and `clear: false`.
+
+Photo classification in 3.4 stays unchanged until its evaluation supports a new kind. The conversation
+offers `नकद रसीद` as an explicit photo-kind answer. Payment-tool wiring belongs to the recording
+branch: preserve the photo privately and its SHA-256, use a clear reading only as a draft cash claim
+(`method: 'cash'`, no UTR), ask for missing/unclear figures, then bind the person's confirmation to
+the exact order/group and amount. Only the seller's confirmation settles receipt of money. This
+reader never writes a ledger event or calls a payment tool.
+
 ### 3.5 Evaluation (`eval/`)
 
 - Real images and answer keys live outside the repo: `D:\MUNSHI\CLAUDE\HACKATHON\hisaab-data\{meters,upi,challans}\` with `answers.json` per folder: `{ "<file>": { ...expected fields } }`.
