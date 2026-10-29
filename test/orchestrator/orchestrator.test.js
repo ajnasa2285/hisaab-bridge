@@ -62,6 +62,8 @@ test('the model sees only the steps the role allows, and code converts its copy 
   const offered = f.seen[0].tools.map((/** @type {any} */ t) => t.function.name).sort();
   assert.deepEqual(offered, ['confirm_count', 'help', 'request_jcb', 'request_material']);
   assert.ok(f.seen[0].system.includes('Today (India) is 2026-10-29'));
+  // Picking a step runs at low reasoning effort: half the wait, same answers (29 Oct measurement).
+  assert.equal(f.seen[0].reasoningEffort, 'low');
 });
 
 test('a step the role may not take is refused even if the model names it', async () => {
