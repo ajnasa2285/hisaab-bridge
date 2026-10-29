@@ -17,7 +17,7 @@ const contractor = { ...person('contractor', 'agent:contractor-1'), phone: '9190
 const supervisor = { ...person('supervisor', 'agent:contractor-1'), phone: '919000000034' };
 const CEMENT = { name: 'सीमेंट', qtyHundredths: 5000, unit: 'बोरी' };
 const SAND = { name: 'रेत', qtyHundredths: 200, unit: 'ट्रॉली' };
-const settle = () => new Promise((r) => setImmediate(r));
+const settle = async () => { for (let i = 0; i < 20; i += 1) await new Promise((r) => setImmediate(r)); };
 
 test('short yes and no: typed or spoken, punctuation stripped; anything with digits or other content is neither', () => {
   for (const s of ['हाँ', 'हां जी', 'जी हाँ', 'हाँ जी।', 'हां भेज दो', 'haan ji', 'ok bhej do', 'ठीक है भेजो', 'Ok.', 'हाँ, भेज दो।', 'जी', 'हाँ?', 'हाँ आ गया']) {
