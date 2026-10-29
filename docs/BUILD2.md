@@ -468,3 +468,36 @@ between, per order, live.
   messages to the same people.
 * `GET /agents/<name>/trace?since=<iso>&order=<ref>`: the export's token rule. The judge page shows
   the timeline under each ledger column and polls every 3 s when "live" is on (`web/README.md`).
+
+## Payments on every screen (Build 5, 29 Oct 2026)
+
+`paymentSummary` and `allocate` in `src/ledger/payments.js` remain the shared arithmetic,
+with unchanged signatures. Ask-anything, explanation facts, status, waiting lists and the judge
+page read the contract's part/cash/advance/clubbed events through this summary. Refused outgoing
+messages stay visible in history but do not count. Waiting or denied money never reduces due;
+an advance counts when a bill arrives, and a correction changes the bill without changing payments.
+
+Ask-anything exposes each payment's method, advance/bill purpose, group refs and total, status,
+and every order's billed/confirmed/waiting/due/credit figures. Payment-day filters include cash,
+status and named refs; a group counts once. Code still checks every answer number. Explanation
+facts include the same payment figures; the existing conservative payment-word guard remains,
+so prohibited prose falls back to code's plain figures.
+
+Status and ordinary pending lines show balances; the seller's pending list and `waiting(role)`
+rebuild one item per unanswered claim/group, including advances before a bill. Missed-window
+replay matches either group member and sends it once. The recording branch should use
+`payview.waiting` (from `paymentWaiting`) or extend `missedWaiting` with its new notice keys;
+legacy `jcb/supplier.payment_claimed(_at)` keys already work.
+
+Each judge ledger column shows payment rows, balances and links across a group. After ledger
+append, trace audit checks show balance, complete group shares adding to their total, allocation
+agreement, and whether a UTR appeared in another claim/group of this counterparty. These checks
+observe records; the recording branch retains all acceptance and settlement decisions. The sample
+contains invented cash advances, partial payments, a clubbed UPI payment, denial and credit.
+
+CONTRACTS 3.7 adds `readCashReceipt`. The evaluated photo-kind reader is unchanged. When a
+contractor's photo is unsure or `other`, an explicit `नकद पर्ची` option reads it once and shows a
+read-only preview. The recording branch must bind the receipt to its exact order/group and cash
+claim with human confirmation; this branch creates no cash payment from a photo. Missing fields
+are omitted; uncertain readings stay uncertain. See `docs/payments-view-report.md` for live checks,
+focused tests and integration details. Full tests/typecheck remain the lead's AWS step.

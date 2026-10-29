@@ -1,6 +1,6 @@
 # Text keys used by the agents
 
-Claude adds a key here when code starts using it; Fable writes the Hindi in `src/i18n/hi.js`. Parameters arrive already formatted by `src/i18n/format.js` (`₹7,320`, `6.1`, `50`); missing values arrive as `—`. `ref` is the order's short reference on that agent's side (`J-1` JCB, `P-1` material; `src/ledger/refs.js`).
+Claude adds a key here when code starts using it; Fable writes the Hindi in `src/i18n/hi.js`. Parameters arrive already formatted by `src/i18n/format.js` (`₹7,320`, `6.1`, `50`); new views omit absent fields or explicitly say they are not recorded, never use `—` as an absent value. `ref` is the order's short reference on that agent's side (`J-1` JCB, `P-1` material; `src/ledger/refs.js`).
 
 ## Common (both agents)
 
@@ -120,7 +120,7 @@ Supplier side (`supplier`):
 | `supplier.site_receipt_number_unknown` | ref, count, challanNo, challan, siteNo, signed | one of the two numbers was not read, so the number could not be matched |
 | `supplier.site_receipt_other_delivery` | ref, siteNo, count, challanNo, challan, signed | the receipt names a delivery that is not our DELIVERY of this order |
 | `supplier.site_receipt_signed_yes` / `_no` / `_unsure` | — | the receiver's mark: seen / not seen / unclear |
-| `office.status_with_receipt` | ref, what, site, day, state, rate, bill, paid, receipt, awaited | `status <ref>` on the supplier's agent once the site's signed copy came (`office.status` plus one line) |
+| `office.status_with_receipt` | ref, what, site, day, state, rate, payments, receipt, awaited | `status <ref>` on the supplier's agent once the site's signed copy came (`office.status` plus one line) |
 | `office.site_receipt` | challanNo, count, signed | that line (`signed`: `office.signed_yes` / `_no` / `_unsure`) |
 | `payment.at_time` | time | "14:05 बजे": the receipt's clock inside a payment line |
 | `jcb.payment_claimed_at` / `supplier.payment_claimed_at` | ref, site, amount, day, time, utr | as `*.payment_claimed`, when the claim carries `paidAt` (else the old key) |
@@ -179,9 +179,9 @@ Commands are parsed by code before the model (`src/agents/office.js`, `parseComm
 | `office.own_entry` | — | nobody decides on their own entry |
 | `office.no_such_ref` | ref | no order or held step with this reference |
 | `office.reason_needed` | ref | "no" without a reason |
-| `office.status` | ref, what, site, day, state, rate, bill, paid, awaited | `status <ref>` for an order (`what`: `office.what_jcb` hours / `office.what_material` items / `kind.jcb`; `state`: `state.*`; `awaited`: `office.await.buyer.*` on the contractor's agent, `office.await.seller.*` on the others) |
+| `office.status` | ref, what, site, day, state, rate, payments, awaited | `status <ref>` for an order; day/rate fragments are omitted when absent; payments includes the summary balance and waiting claims |
 | `office.status_held` | ref, step, estimate, decision | `status <ref>` for a held step (`office.held_waiting`, `office.held_ok` by, `office.held_no` by, reason) |
-| `office.pending` | lines | `pending`: `office.pending_held` (ref, step, by) and `office.pending_order` (ref, what, site, awaited) lines; `office.pending_none` when empty |
+| `office.pending` | lines | `pending`: held steps, `office.pending_order` (ref, what, site, awaited, balance), and seller claims grouped once; `office.pending_none` when empty |
 | `office.stock` | lines | `stock [item]` on the contractor's agent: `office.stock_site` (site), `office.stock_line` (name, qty), `office.stock_line_differs` (name, qty, challan); `office.stock_none` when empty |
 | `office.stock_not_here` | — | `stock` on another agent |
 | `help.contractor`, `help.supervisor`, `help.jcb_owner`, `help.supplier` | — | each now ends with the commands that role can use |
@@ -250,6 +250,27 @@ and recorded time in IST, not an inferred photo capture time. No bytes are inclu
 | `photo.sent_by_meter` / `_upi` / `_challan` | kinds | a kind this person may not send here: who sends it, and what they can send; nothing recorded |
 | `photo.kind.meter` / `.upi` / `.challan` | — | the names used in `kinds` |
 
+## Cash receipt preview (Astra drafted, Fable to polish)
+
+The photo-kind model keeps its evaluated classes. For a contractor allowed to claim payments,
+an unsure classification or a clear `other` asks once with the additional answer `नकद पर्ची`.
+The selected receipt is read once and shown as a read-only preview: no claim, stored photo or
+confirmation step is created. The recording branch must bind it to the exact order/group and
+person's payment confirmation before keeping the photo or creating a cash claim.
+
+| Key | Params | When |
+|---|---|---|
+| `photo.kind.cash_receipt` | | explicit cash photo option |
+| `photo.sent_by_cash_receipt` | kinds | another role selects the cash option |
+| `cash_receipt.preview` / `.preview_unclear` | figures | clear / uncertain reading; says no payment was recorded |
+| `cash_receipt.not_receipt` / `.unavailable` | | another document / reader error; nothing recorded |
+| `cash_receipt.fig.amount_raw` / `.date_raw` | raw | exact visible text, only when present |
+| `cash_receipt.fig.amount` | amount | code-parsed rupee amount, only when known |
+| `cash_receipt.fig.date` | day | code-parsed receipt date, only when known |
+| `cash_receipt.fig.receiver` | name | explicitly named receiver, only when legible |
+| `cash_receipt.fig.reference` | number | printed reference/serial, only when present |
+| `cash_receipt.mark.visible` / `.absent` / `.unclear` | | receiver's mark as read; no identity or authenticity claim |
+
 ## Ask anything (docs/BUILD2.md section 8; Claude drafted, Fable to polish)
 
 | Key | Params | When |
@@ -267,14 +288,32 @@ and recorded time in IST, not an inferred photo capture time. No bytes are inclu
 | `records.fig.jcb` | asked, billed, open | JCB hours asked, billed, billed and not settled |
 | `records.fig.money` | billed, accepted, claimed, settled, open | money of a totals group |
 | `records.fig.order` | ref, what, site, day, state, bill | one order in a list |
-| `records.fig.detail` | ref, what, site, day, state, bill, paid | one order by its reference |
+| `records.fig.detail` | ref, what, site, day, state | one order by its reference; its balance and payment rows follow |
 | `records.fig.stock` | site, item, qty, challan | one stock line |
-| `records.fig.payment` | ref, to, site, amount, day, confirmed | one reported payment |
-| `records.fig.payments_total` | count, total, confirmed | the payments' totals |
+| `records.fig.payment` | ref, to, site, amount, details | one order's payment share: method, advance/bill, status, known date/time and clubbed references |
+| `records.fig.payments_total` | count, total, confirmed, waiting, denied | payment totals; a clubbed group counts once and shares sum once |
 | `records.fig.none` | — | a lookup found nothing |
 
 `help.contractor`, `help.supervisor`, `help.jcb_owner` and `help.supplier` gained one question
 example each; `test/orchestrator/intake.test.js` checks they reach the ask route.
+
+### Payment lookups and explanations (Astra drafted, Fable to polish)
+
+| Key | Params | When |
+|---|---|---|
+| `records.not_recorded` | none | an unavailable non-payment figure; no placeholder dash |
+| `records.method.upi` / `.cash` | none | payment method |
+| `records.advance` / `records.against_bill` | none | an advance or payment against a bill |
+| `records.payment.waiting` / `.confirmed` / `.denied` | none | seller confirmation state, from `paymentSummary` |
+| `records.fig.payment_group` | refs, total | clubbed references and the original whole payment |
+| `records.fig.balance` | ref, billed, confirmed, waiting, due, credit | an order with a bill; waiting never reduces due |
+| `records.fig.balance_unbilled` | ref, confirmed, waiting, credit | no bill yet; due is absent |
+| `records.fig.payment_balance` | confirmed, waiting, denied, due, credit | independent sums across the selected orders, without netting credit against another order |
+| `explain.figures.payment` | amount, details | attributed payment facts, including denial or a confirmed excess, before the balance line |
+
+The explanation prompt receives these figures; its existing wording guard remains in force, so
+payment prose it forbids falls back to the complete code-written figures. Ask-anything treats the
+idiom "एक साथ" as "together"; standalone spelled-out figures remain rejected.
 
 ## Fewer steps (docs/BUILD2.md "Fewer steps"; Claude drafted, Fable to polish)
 
@@ -312,6 +351,17 @@ A value that was not given is left out of the sentence, never shown as "—": co
 | `office.status_held` / `_estimate` | ref, step, [estimate], decision | `status <ref>` for a held step |
 | `reply.which_order` | refs, ref | an exact reply fits several open orders: write the reference in front |
 
+## Payment trace checks (Astra drafted, Fable to polish)
+
+| Key | Params | When |
+|---|---|---|
+| `trace.payment.balance` | none | code's current billed, confirmed, waiting, due and credit figures after a ledger event |
+| `trace.payment.shares` | none | a complete clubbed group's shares add to its total; records allocation agreement too |
+| `trace.payment.utr` | none | UTR checked against earlier claims of this counterparty, allowing shares of the same group |
+
+The judge page's bilingual payment panel labels are in `web/texts.js`; omitted payment dates,
+times, UTRs and screenshots add no placeholder. Group references link to each order's panel.
+
 ## GST on material (docs/BUILD2.md, 30 Oct; drafted, Fable to polish)
 
 | Key | Params | When |
@@ -344,3 +394,21 @@ A value that was not given is left out of the sentence, never shown as "—": co
 | `evidence.declined_sent` | ref, who | to the owner: not sent, the other side is told |
 | `evidence.nothing_open` | ref | the owner said yes/no but nothing is waiting |
 | `evidence.not_kept_own` | ref | the owner said yes but the photo is no longer kept; the other side gets `not_kept` |
+
+## Payments on every screen: status and waiting (Astra drafted, Fable to polish)
+
+| Key | Params | When |
+|---|---|---|
+| `payview.balance` | billed, confirmed, waiting, due, credit | per-order balance from paymentSummary |
+| `payview.balance_before_bill` | confirmed, waiting | advance before any bill; no invented due |
+| `payview.method.cash` / `.upi`, `payview.advance` | none | method and advance labels |
+| `payview.utr` | utr | only when a UPI claim has a UTR |
+| `payview.group` | refs, total | other refs sharing the same payment |
+| `payview.group_total` | total | group total once in the seller's waiting line |
+| `payview.share` | ref, amount | a waiting order share in that group |
+| `payview.waiting_share` | amount, details, group | status shows each waiting claim; group fragment may be empty |
+| `payview.waiting` | refs, details, group, amount, shares | one seller waiting item per claim/group; amount is only still-waiting shares; ref metadata identifies the first member |
+| `office.rate` | rate | optional rate line inside status |
+| `office.state_unknown`, `office.step_unknown` | none | an unavailable state/step description |
+| `office.site_receipt_no_number` | count, signed | signed-copy text when no serial was read |
+| `state.part_paid`, `office.await.buyer.part_paid`, `office.await.seller.part_paid` | none | partially confirmed payment, without chasing |
