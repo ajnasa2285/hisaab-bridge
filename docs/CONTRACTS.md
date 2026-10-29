@@ -256,6 +256,19 @@ this counterparty is never accepted silently: both are shown and the payer is as
 Seller: हाँ/नहीं to each claim; `P-2 ₹10,000 नकद मिले` records cash he received. Every message shows
 the balance. No reminders, no "please pay", no due dates.
 
+**Clarifications found while building (30 Oct, `claude/payments`).** (1) A `group` has 2–20 distinct
+orders, the share is at most `totalPaise`, and the envelope's `order_id` must be one of `orders`
+(`BAD_BODY` otherwise). (2) Between the last confirmation and the seller's `SETTLED`, an accepted order
+whose confirmed money covers the bill is `part_paid` (the table above left it open; the seller's agent
+sends `SETTLED` in the same step). (3) The split of a clubbed payment uses what is *owed*: `due` minus
+claims still waiting (`owedPaise` in `src/agents/pay.js`); with plain `due`, a claim waiting on P-1
+would be paid again by the clubbed payment. (4) `PAYMENT_ACK` and `PAYMENT_RECEIVED` fit wherever a
+claim does (from `booked` on), so an advance can be confirmed before any bill. (5) The old `SETTLED`
+form still needs the latest claim (as before); its claim counts as confirmed. (6) The view also keeps
+`paid: {msg_id: {amountPaise, status}}`, which an ACK's amount and the new `SETTLED`'s `payments` must
+match exactly. (7) `PAYMENT_RECEIVED` has no `utr`; a UPI payment the seller records himself is
+`method: 'upi'` without one.
+
 ## 5. Ledger and order states (`src/ledger/`)
 
 One SQLite file per agent. Tables are append-only (triggers refuse UPDATE/DELETE on history):

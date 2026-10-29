@@ -211,3 +211,19 @@ test('a supervisor\'s message that is not an exact reply goes to the model as be
     await s.close();
   }
 });
+
+test('payments in words: references, one amount, cash / UPI / advance / received; anything else is not one', async () => {
+  const { moneyWords, saysCash } = await import('../../src/agents/replies.js');
+  const m = (/** @type {string} */ s) => moneyWords(s);
+  assert.deepEqual(m('P-2 ₹10,000 नकद दिए'), { refs: ['P-2'], amountPaise: 1000000, cash: true, upi: false, advance: false, got: false });
+  assert.deepEqual(m('P-3 अग्रिम ₹5,000'), { refs: ['P-3'], amountPaise: 500000, cash: false, upi: false, advance: true, got: false });
+  assert.deepEqual(m('P-1 P-2 ₹39,650')?.refs, ['P-1', 'P-2']);
+  assert.equal(m('P-1 और P-2 एक साथ 1,00,000 नकद')?.amountPaise, 10000000, 'Indian digit groups');
+  assert.equal(m('P-2 ₹10,000 नकद मिले')?.got, true);
+  assert.equal(m('P-2 10000/- upi')?.upi, true);
+  for (const not of ['हाँ 380', 'नहीं 45 बोरी कम आई', 'P-1 ₹500 ₹600 नकद', 'P-1 नकद', 'P-1 ₹500 नकद upi', 'सीमेंट 50 बोरी कल']) assert.equal(m(not), null, not);
+  assert.equal(saysCash('नकद'), true);
+  assert.equal(saysCash('नकद दिए'), true);
+  assert.equal(saysCash('हाँ'), false);
+  assert.equal(saysCash('नकद 500'), false);
+});

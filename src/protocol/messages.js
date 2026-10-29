@@ -13,6 +13,7 @@ const DAY_MS = 24 * 3600 * 1000;
 export const TYPES = /** @type {const} */ ([
   'BOOKING_REQUEST', 'BOOKING_REPLY', 'DELIVERY', 'BILL', 'RECEIPT', 'ACCEPT',
   'DISPUTE', 'CORRECTION', 'PAYMENT_CLAIM', 'SETTLED', 'REFUSE', 'SITE_RECEIPT', 'EVIDENCE_REQUEST', 'EVIDENCE',
+  'PAYMENT_ACK', 'PAYMENT_RECEIVED',
 ]);
 /** @typedef {typeof TYPES[number]} MessageType */
 
@@ -90,6 +91,15 @@ const evidence = (e) => e && typeof e === 'object' && typeof e.sha256 === 'strin
 const siteCount = (c) => c && typeof c === 'object' && isUuid(c.record) && typeof c.sha256 === 'string' && SHA256_RE.test(c.sha256)
   && isIso(c.at) && (c.number === undefined || c.number === null || text(c.number))
   && Array.isArray(c.items) && c.items.length <= 20 && c.items.every((/** @type {any} */ i) => i && text(i.name) && text(i.unit) && nat(i.qtyHundredths));
+/** @param {any} s */
+const shot = (s) => !!s && typeof s === 'object' && typeof s.sha256 === 'string' && SHA256_RE.test(s.sha256);
+/**
+ * One payment for several orders: the group's id, total and orders (allocation order); this share is
+ * part of the total. @param {any} g @param {unknown} share
+ */
+const paymentGroup = (g, share) => !!g && typeof g === 'object' && only(g, ['id', 'totalPaise', 'orders']) && isUuid(g.id)
+  && pos(g.totalPaise) && pos(share) && /** @type {number} */ (share) <= g.totalPaise
+  && Array.isArray(g.orders) && g.orders.length >= 2 && g.orders.length <= 20 && g.orders.every(isUuid) && new Set(g.orders).size === g.orders.length;
 /** @param {any} b @param {string[]} keys */
 const only = (b, keys) => Object.keys(b).every((k) => keys.includes(k));
 /** @param {any} l */
@@ -125,10 +135,24 @@ const BODY_OK = {
     && ['hoursTenths', 'qtyHundredths', 'totalPaise'].some((k) => nat(b.theirFigure[k]))
     && (b.siteCount === undefined || siteCount(b.siteCount)),
   CORRECTION: (b) => billBody(b) && isUuid(b.replaces),
-  PAYMENT_CLAIM: (b) => isUuid(b.bill) && pos(b.amountPaise) && text(b.utr) && isDay(b.paidOn)
+  // Payments (CONTRACTS 4.1): `bill` null is an advance; UPI carries its UTR and screenshot, cash neither
+  // (a photo of a cash receipt optional); a share of a clubbed payment carries its group.
+  PAYMENT_CLAIM: (b) => (b.bill === null || isUuid(b.bill)) && pos(b.amountPaise) && isDay(b.paidOn)
     && (b.paidAt === undefined || b.paidAt === null || (typeof b.paidAt === 'string' && TIME_RE.test(b.paidAt)))
-    && b.screenshot && typeof b.screenshot.sha256 === 'string' && SHA256_RE.test(b.screenshot.sha256),
-  SETTLED: (b) => isUuid(b.bill) && isUuid(b.payment) && pos(b.amountPaise),
+    && (b.method === undefined || b.method === 'upi' || b.method === 'cash')
+    && (b.method === 'cash'
+      ? b.utr === undefined && (b.screenshot === undefined || shot(b.screenshot))
+      : text(b.utr) && shot(b.screenshot))
+    && (b.group === undefined || paymentGroup(b.group, b.amountPaise)),
+  PAYMENT_ACK: (b) => only(b, ['payment', 'received', 'amountPaise']) && isUuid(b.payment) && typeof b.received === 'boolean' && pos(b.amountPaise),
+  PAYMENT_RECEIVED: (b) => only(b, ['method', 'amountPaise', 'receivedOn', 'bill', 'note', 'group'])
+    && (b.method === 'cash' || b.method === 'upi') && pos(b.amountPaise) && isDay(b.receivedOn)
+    && (b.bill === null || isUuid(b.bill)) && optText(b.note) && (b.group === undefined || paymentGroup(b.group, b.amountPaise)),
+  // The old form names the one claim it settles; the new form lists every confirmed payment counted.
+  SETTLED: (b) => isUuid(b.bill) && pos(b.amountPaise) && (b.payments === undefined
+    ? isUuid(b.payment)
+    : b.payment === undefined && Array.isArray(b.payments) && b.payments.length > 0 && b.payments.length <= 200
+      && b.payments.every(isUuid) && new Set(b.payments).size === b.payments.length),
   REFUSE: (b) => isUuid(b.refers_to) && REFUSAL_CODES.includes(b.code),
   // The site's signed copy of the challan, told back to the supplier: what the site wrote it received.
   SITE_RECEIPT: (b) => isUuid(b.delivery) && b.challan && typeof b.challan === 'object'
@@ -168,6 +192,7 @@ export function buildMessage(o) {
   if (!AGENT_ID_RE.test(o.from) || !AGENT_ID_RE.test(o.to)) throw new TypeError('buildMessage: bad agent id');
   if (!isUuid(o.orderId)) throw new TypeError('buildMessage: bad order id');
   if (!bodyIsValid(o.type, o.body)) throw new TypeError(`buildMessage: bad ${o.type} body`);
+  if (o.body.group !== undefined && !o.body.group.orders.includes(o.orderId)) throw new TypeError(`buildMessage: ${o.type} share outside its group`);
   const rev = o.rev ?? 1;
   if (!pos(rev)) throw new TypeError('buildMessage: bad rev');
   const unsigned = {
@@ -216,6 +241,8 @@ export function checkIncoming(raw, ctx) {
   if ((m.type === 'EVIDENCE_REQUEST' || m.type === 'EVIDENCE')
     && !only(m, ['v', 'msg_id', 'type', 'from', 'to', 'order_id', 'rev', 'created_at', 'expires_at', 'body', 'sig'])) return refuse('BAD_BODY');
   if (m.type === 'EVIDENCE_REQUEST' && m.body.order !== m.order_id) return refuse('BAD_BODY');
+  // A share of a clubbed payment belongs to one of the group's orders.
+  if (m.body.group !== undefined && !m.body.group.orders.includes(m.order_id)) return refuse('BAD_BODY');
   if (m.type === 'EVIDENCE' && !verifyMessage(evidenceMetadata(m), peer.publicKey)) return refuse('BAD_SIGNATURE');
   return { ok: true, message: /** @type {Message} */ (m) };
 }

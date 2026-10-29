@@ -50,12 +50,12 @@ test('paidAt shown: the owner and the payer see the time; ask-anything payments 
   const j = await acceptedJob();
   try {
     const r = await runTool(j.s.site.tools, contractor, { tool: 'claim_payment', args: { orderId: j.orderId, amountPaise: 732000, utr: '412300000002', paidOn: '2026-10-23', paidAt: '14:05', screenshotSha256: SHA_C } });
-    assert.equal(r.key, 'site.payment_claimed');
-    assert.equal(t(r.key, r.params), 'J-1: भुगतान की जानकारी JCB मालिक को भेजी: ₹7,320, 23 अक्टूबर 2026, 14:05 बजे, UTR 412300000002। उनकी पुष्टि आते ही बताया जाएगा।');
+    // Since 30 Oct (CONTRACTS 4.1) every receipt carries the balance.
+    assert.equal(r.key, 'pay.site.claimed');
+    assert.equal(t(r.key, r.params), 'J-1: JCB मालिक को भुगतान बताया: ₹7,320, 23 अक्टूबर 2026, 14:05 बजे, UTR 412300000002। बाक़ी ₹7,320; इसमें ₹7,320 पुष्टि के इंतज़ार में।');
     await j.settle();
-    const told = j.said.find(([w, k]) => w === 'jcb:jcb_owner' && k.startsWith('jcb.payment_claimed'));
-    assert.equal(told?.[1], 'jcb.payment_claimed_at');
-    assert.ok(told?.[2].includes('23 अक्टूबर 2026 को 14:05 बजे') && told?.[2].includes('UTR 412300000002'), told?.[2]);
+    const told = j.said.find(([w, k]) => w === 'jcb:jcb_owner' && k === 'pay.seller.claimed');
+    assert.ok(told?.[2].includes('23 अक्टूबर 2026, 14:05 बजे') && told?.[2].includes('UTR 412300000002'), told?.[2]);
     assert.equal(j.s.jcbCore.ledger.events(j.orderId).find((e) => e.type === 'PAYMENT_CLAIM')?.body.body.paidAt, '14:05');
 
     for (const [ledger, side] of /** @type {const} */ ([[j.s.siteCore.ledger, 'buyer'], [j.s.jcbCore.ledger, 'seller']])) {
@@ -80,8 +80,8 @@ test('paidAt absent: the old text for the owner, no time phrase and no "—" any
     const text = t(r.key, r.params);
     assert.ok(text.includes('₹7,320, 23 अक्टूबर 2026, UTR 412300000003') && !text.includes('बजे') && !text.includes('—'), text);
     await j.settle();
-    const told = j.said.find(([w, k]) => w === 'jcb:jcb_owner' && k.startsWith('jcb.payment_claimed'));
-    assert.equal(told?.[1], 'jcb.payment_claimed');
+    const told = j.said.find(([w, k]) => w === 'jcb:jcb_owner' && k === 'pay.seller.claimed');
+    assert.ok(told && !told[2].includes('बजे') && !told[2].includes('—'), told?.[2]);
     assert.equal(j.s.jcbCore.ledger.events(j.orderId).find((e) => e.type === 'PAYMENT_CLAIM')?.body.body.paidAt, undefined);
     const facts = orderFacts(j.s.siteCore.ledger);
     const p = runLookup('payments', { site: null, kind: null, period: 'all', from: null, to: null }, { ledger: j.s.siteCore.ledger, side: 'buyer', nowMs: Date.parse('2026-10-29T06:00:00Z'), facts });
@@ -113,11 +113,11 @@ test('the UPI screenshot\'s clock goes with the claim; a screenshot without one 
     // A clear screenshot for the bill's amount is claimed at once (fewer steps), the clock with it.
     const claims = () => j.s.siteCore.ledger.events(j.orderId).filter((e) => e.type === 'PAYMENT_CLAIM' && e.direction === 'out');
     await talk.onImage(contractor, { mime: 'image/jpeg', bytes: new Uint8Array([7, 3, 7]) });
-    assert.equal(replies.at(-1)?.[0], 'site.payment_claimed');
+    assert.equal(replies.at(-1)?.[0], 'pay.site.claimed');
     assert.equal(claims().at(-1)?.body.body.paidAt, '14:05');
     nextRead = { ...nextRead, clock: null, utr: '412300000005' };
     await talk.onImage(contractor, { mime: 'image/jpeg', bytes: new Uint8Array([7, 3, 8]) });
-    assert.equal(replies.at(-1)?.[0], 'site.payment_claimed');
+    assert.equal(replies.at(-1)?.[0], 'pay.site.claimed');
     assert.equal('paidAt' in (claims().at(-1)?.body.body ?? {}), false);
   } finally {
     await j.s.close();

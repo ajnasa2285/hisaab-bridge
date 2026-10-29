@@ -6,13 +6,14 @@
 
 import { randomUUID } from 'node:crypto';
 import { tenths as hours, rupees, day as dayName, qty } from '../i18n/format.js';
-import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, paymentText, posInt } from './common.js';
+import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
 import { agreedRates, billFollows, countDifferences, delivery, invoiceCheck, itemsText, itemsTotalPaise, lineAmountPaise, linesText, materialBillBody, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, validItems } from './material.js';
 import { openRefs } from '../ledger/refs.js';
 import { t, variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
 import { differenceFacts } from './explain-facts.js';
 import { traceCheck } from '../trace/trace.js';
+import { PAYABLE, balanceText, newGroupId, paymentLine, shares, summaryOf, utrUses } from './pay.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -165,6 +166,44 @@ export function createContractorAgent(o) {
   });
   /** @param {{key: string, params: Record<string, string>}} w */
   const said = (w) => t(w.key, w.params);
+
+  /** Who is told of a payment on this order: the JCB owner or the supplier. @param {string} orderId */
+  const toWhom = (orderId) => t(isMaterial(orderId) ? 'pay.to.supplier' : 'pay.to.jcb');
+  /** Several orders, all known, all with the same seller, none twice. @param {unknown} ids @returns {ids is string[]} */
+  const groupOk = (ids) => Array.isArray(ids) && ids.length >= 2 && ids.length <= 20 && new Set(ids).size === ids.length
+    && ids.every((id) => known(id)) && new Set(ids.map((id) => counterparty(id))).size === 1;
+  /**
+   * The parts of a claim's body that do not depend on the order: method, amount, day and, for UPI,
+   * the UTR and screenshot (cash: no UTR; a receipt photo optional). Null when anything is wrong.
+   * @param {Record<string, any>} a @returns {Record<string, any> | null}
+   */
+  const paymentBody = (a) => {
+    const method = a.method ?? 'upi';
+    if (!posInt(a.amountPaise) || !isDay(a.paidOn) || (method !== 'upi' && method !== 'cash')) return null;
+    // `paidAt`: the clock printed on the receipt (HH:MM), sent only when it was visible.
+    if (a.paidAt !== undefined && a.paidAt !== null && !isTime(a.paidAt)) return null;
+    /** @type {Record<string, any>} */
+    const body = { amountPaise: a.amountPaise, paidOn: a.paidOn };
+    if (method === 'cash') {
+      if (a.utr !== undefined || (a.screenshotSha256 !== undefined && !isSha256(a.screenshotSha256))) return null;
+      body.method = 'cash';
+      if (a.screenshotSha256 !== undefined) body.screenshot = { sha256: a.screenshotSha256 };
+    } else {
+      if (typeof a.utr !== 'string' || !UTR_RE.test(a.utr) || !isSha256(a.screenshotSha256)) return null;
+      Object.assign(body, { utr: a.utr, screenshot: { sha256: a.screenshotSha256 } });
+    }
+    if (typeof a.paidAt === 'string') body.paidAt = a.paidAt;
+    return body;
+  };
+  /**
+   * One line per share: "P-1: ₹20,650" (before sending; "अग्रिम" for an order without a bill), or with
+   * the balance now (after). @param {{orderId: string, amountPaise: number}[]} split @param {boolean} [after]
+   */
+  const shareLines = (split, after = false) => split.map((x) => t(after ? 'pay.line' : variant('pay.share', { advance: ledger.view(x.orderId).currentBill === null }), {
+    ref: refOf(x.orderId), amount: rupees(x.amountPaise), ...(after ? { balance: balanceText(summaryOf(ledger, x.orderId)) } : {}),
+  })).join('\n');
+  /** The earlier use of a UTR next to this one. @param {{orderId: string, body: Record<string, any>}[]} used @param {string} now */
+  const utrParams = (used, now) => ({ utr: used[0].body.utr, before: used.map((u) => `${refOf(u.orderId)}: ${paymentLine(u.body)}`).join('; '), now });
 
   /** @type {Record<string, Tool>} */
   const tools = {
@@ -347,24 +386,65 @@ export function createContractorAgent(o) {
       },
     },
 
-    // After paying, the contractor tells the seller (UTR and screenshot fingerprint).
+    // After paying, the contractor tells the seller: any amount (part, full or more), by UPI (UTR and
+    // screenshot fingerprint) or cash (a receipt photo optional), against the bill in force or, before
+    // any bill, as an advance. A UTR already told to this seller is shown and asked, never sent silently.
     claim_payment: {
       roles: ['contractor'],
       commits: true,
       hold: { limit: 'payment', estimatePaise: (a) => (posInt(a.amountPaise) ? a.amountPaise : null) },
-      describe: (a) => ({ key: 'step.claim_payment', params: { site: siteOf(a.orderId), amount: posInt(a.amountPaise) ? rupees(a.amountPaise) : '—', utr: typeof a.utr === 'string' ? a.utr : '—' } }),
+      describe: (a) => ({
+        key: a.method === 'cash' ? 'step.claim_payment_cash' : 'step.claim_payment',
+        params: { site: siteOf(a.orderId), amount: posInt(a.amountPaise) ? rupees(a.amountPaise) : '—', utr: typeof a.utr === 'string' ? a.utr : '—' },
+      }),
       async run(_p, a) {
         if (!known(a.orderId)) return no('common.no_such_order');
-        if (!posInt(a.amountPaise) || typeof a.utr !== 'string' || !UTR_RE.test(a.utr) || !isDay(a.paidOn) || !isSha256(a.screenshotSha256)) return no('common.bad_args');
-        // `paidAt`: the clock printed on the receipt (HH:MM), sent only when it was visible.
-        if (a.paidAt !== undefined && a.paidAt !== null && !isTime(a.paidAt)) return no('common.bad_args');
+        const body = paymentBody(a);
+        if (body === null) return no('common.bad_args');
         const view = ledger.view(a.orderId);
-        if (view.currentBill === null) return no('common.wrong_state');
-        /** @type {Record<string, any>} */
-        const body = { bill: view.currentBill, amountPaise: a.amountPaise, utr: a.utr, paidOn: a.paidOn, screenshot: { sha256: a.screenshotSha256 } };
-        if (typeof a.paidAt === 'string') body.paidAt = a.paidAt;
+        if (!PAYABLE.includes(view.state)) return no('common.wrong_state');
+        body.bill = view.currentBill;
+        const used = typeof body.utr === 'string' && a.sameUtrOk !== true ? utrUses(ledger, counterparty(a.orderId), body.utr) : [];
+        if (used.length) return no('pay.utr_used', utrParams(used, paymentLine(body)));
         const d = await link.send({ type: 'PAYMENT_CLAIM', to: counterparty(a.orderId), orderId: a.orderId, body });
-        return deliveryResult(d, keyFor(a.orderId, 'site.payment_claimed'), { ref: refOf(a.orderId), payment: paymentText(/** @type {{amountPaise: number, paidOn: string, paidAt?: string, utr: string}} */ (body)) });
+        return deliveryResult(d, variant('pay.site.claimed', { advance: body.bill === null }), {
+          ref: refOf(a.orderId), to: toWhom(a.orderId), payment: paymentLine(body), balance: balanceText(summaryOf(ledger, a.orderId)),
+        });
+      },
+    },
+
+    // One payment for several orders with the same seller (CONTRACTS 4.1): code splits it, oldest
+    // named first (src/agents/pay.js shares), and sends one claim per order with the group; the payer
+    // saw the split read back once.
+    claim_group: {
+      roles: ['contractor'],
+      commits: true,
+      hold: { limit: 'payment', estimatePaise: (a) => (posInt(a.totalPaise) ? a.totalPaise : null) },
+      describe: (a) => {
+        const split = groupOk(a.orderIds) && posInt(a.totalPaise) ? shares(ledger, a.orderIds, a.totalPaise) : null;
+        return {
+          key: a.method === 'cash' ? 'step.claim_group_cash' : 'step.claim_group',
+          params: { amount: posInt(a.totalPaise) ? rupees(a.totalPaise) : '—', to: groupOk(a.orderIds) ? toWhom(a.orderIds[0]) : '—', lines: split ? shareLines(split) : '—' },
+        };
+      },
+      async run(_p, a) {
+        if (!groupOk(a.orderIds)) return no('pay.one_seller');
+        const base = paymentBody({ ...a, amountPaise: a.totalPaise });
+        if (base === null) return no('common.bad_args');
+        if (!a.orderIds.every((/** @type {string} */ id) => PAYABLE.includes(ledger.view(id).state))) return no('common.wrong_state');
+        const split = shares(ledger, a.orderIds, a.totalPaise);
+        if (split === null) return no('common.bad_args');
+        const seller = counterparty(a.orderIds[0]);
+        const used = typeof base.utr === 'string' && a.sameUtrOk !== true ? utrUses(ledger, seller, base.utr) : [];
+        if (used.length) return no('pay.utr_used', utrParams(used, paymentLine(base)));
+        // Only one order takes anything: a plain payment for it.
+        const group = split.length > 1 ? { id: newGroupId(), totalPaise: a.totalPaise, orders: split.map((x) => x.orderId) } : undefined;
+        for (const share of split) {
+          const body = { ...base, amountPaise: share.amountPaise, bill: ledger.view(share.orderId).currentBill, ...(group ? { group } : {}) };
+          const d = await link.send({ type: 'PAYMENT_CLAIM', to: seller, orderId: share.orderId, body });
+          if (!d.ok) return deliveryResult(d, 'pay.site.group_claimed');
+        }
+        return ok('pay.site.group_claimed', { to: toWhom(a.orderIds[0]), payment: paymentLine(base), lines: shareLines(split, true) });
       },
     },
   };
@@ -473,6 +553,30 @@ export function createContractorAgent(o) {
   }
 
   /**
+   * The seller's answer to a reported payment, with the balance. A clubbed payment is told once,
+   * when the answers for all its shares are in.
+   * @param {Message} m
+   */
+  async function onPaymentAck(m) {
+    const b = m.body;
+    const claim = ledger.eventOfMessage(b.payment)?.body.body;
+    const word = b.received ? 'acked' : 'denied';
+    if (!claim?.group) {
+      await tell('contractor', `pay.site.${word}`, { ref: refOf(m.order_id), from: toWhom(m.order_id), payment: claim ? paymentLine(claim) : rupees(b.amountPaise), balance: balanceText(summaryOf(ledger, m.order_id)) });
+      return;
+    }
+    /** @type {{orderId: string, amountPaise: number}[]} */
+    const parts = [];
+    for (const id of /** @type {string[]} */ (claim.group.orders)) {
+      const events = known(id) ? ledger.events(id) : [];
+      const share = ofType(events, 'PAYMENT_CLAIM', 'out').find((e) => e.body.body.group?.id === claim.group.id);
+      if (!share || !ofType(events, 'PAYMENT_ACK', 'in').some((e) => e.body.body.payment === share.msgId)) return;
+      parts.push({ orderId: id, amountPaise: share.body.body.amountPaise });
+    }
+    await tell('contractor', `pay.site.group_${word}`, { from: toWhom(m.order_id), payment: paymentLine({ ...claim, amountPaise: claim.group.totalPaise }), lines: shareLines(parts, true) });
+  }
+
+  /**
    * Called once when the JCB agent's or the supplier agent's message has been written to our ledger.
    * @param {Message} m
    */
@@ -539,8 +643,17 @@ export function createContractorAgent(o) {
         await tell('supervisor', key, params);
         break;
       }
-      case 'SETTLED':
-        await tell('contractor', keyFor(m.order_id, 'site.settled'), { ref, site, amount: rupees(b.amountPaise) });
+      case 'SETTLED': {
+        // With the credit, shown only, when more came than the bill (never refunded or carried by code).
+        const credit = summaryOf(ledger, m.order_id).creditPaise;
+        await tell('contractor', variant(keyFor(m.order_id, 'site.settled'), { credit: credit > 0 }), { ref, site, amount: rupees(b.amountPaise), ...(credit > 0 ? { credit: rupees(credit) } : {}) });
+        break;
+      }
+      case 'PAYMENT_ACK':
+        await onPaymentAck(m);
+        break;
+      case 'PAYMENT_RECEIVED':
+        await tell('contractor', 'pay.site.received', { ref, from: toWhom(m.order_id), payment: paymentLine(b), balance: balanceText(summaryOf(ledger, m.order_id)) });
         break;
       default:
         break;

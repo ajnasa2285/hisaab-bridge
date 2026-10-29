@@ -11,6 +11,7 @@ import { variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
 import { differenceFacts } from './explain-facts.js';
 import { traceCheck } from '../trace/trace.js';
+import { createSellerPayments } from './pay.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -71,6 +72,9 @@ export function createJcbAgent(o) {
   const refs = openRefs(ledger);
   /** The order's short reference for the texts. @param {string} orderId */
   const refOf = (orderId) => refs.refOf(orderId) ?? '—';
+  // Only this seller can say the money has arrived; a screenshot or a claim is not money (CONTRACTS 4.1).
+  const seller = createSellerPayments({ ledger, link, tell, role: 'jcb_owner', settledKey: 'jcb.settled_sent',
+    refOf: (id) => refOf(id), siteOf: (id) => siteOf(id), now: () => agent.now() });
 
   /** @param {string} orderId */
   const counterparty = (orderId) => /** @type {{counterparty: string} | null} */ (ledger.order(orderId))?.counterparty ?? null;
@@ -213,27 +217,8 @@ export function createJcbAgent(o) {
         return deliveryResult(d, 'jcb.correction_sent', { hours: hours(a.hoursTenths), total: rupees(body.totalPaise) });
       },
     },
-
-    // Only the owner can say the money has arrived; a screenshot from the contractor is a claim.
-    confirm_payment: {
-      roles: ['jcb_owner'],
-      commits: true,
-      describe: (a) => {
-        const view = isUuid(a.orderId) && ledger.order(a.orderId) ? ledger.view(a.orderId) : null;
-        const amount = view?.payment ? ledger.eventOfMessage(view.payment)?.body.body.amountPaise : undefined;
-        return { key: 'step.confirm_payment', params: { site: siteOf(a.orderId), amount: posInt(amount) ? rupees(amount) : '—' } };
-      },
-      async run(_p, a) {
-        if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
-        const view = ledger.view(a.orderId);
-        if (view.state !== 'payment_claimed' || view.payment === null || view.currentBill === null) return no('common.wrong_state');
-        const claim = ledger.eventOfMessage(view.payment);
-        const amountPaise = claim?.body.body.amountPaise;
-        if (!posInt(amountPaise)) return no('common.wrong_state');
-        const d = await link.send({ type: 'SETTLED', to: /** @type {string} */ (counterparty(a.orderId)), orderId: a.orderId, body: { bill: view.currentBill, payment: view.payment, amountPaise } });
-        return deliveryResult(d, 'jcb.settled_sent', { amount: rupees(amountPaise) });
-      },
-    },
+    // Payments: confirm_payment and record_received (src/agents/pay.js, the same for both sellers).
+    ...seller.tools,
   };
 
   /** @typedef {{key: string, params: Record<string, string | number>}} Notice */
@@ -270,8 +255,8 @@ export function createJcbAgent(o) {
         } };
       }
       case 'PAYMENT_CLAIM':
-        // With the receipt's clock when it was visible; an old claim without `paidAt` reads as before.
-        return { key: typeof b.paidAt === 'string' ? 'jcb.payment_claimed_at' : 'jcb.payment_claimed', params: { ref: refOf(m.order_id), site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn), ...(typeof b.paidAt === 'string' ? { time: b.paidAt } : {}) } };
+        // Part, cash, advance or a share of a clubbed payment, with the balance (src/agents/pay.js).
+        return seller.claimNotice(m);
       default:
         return null;
     }
@@ -289,6 +274,8 @@ export function createJcbAgent(o) {
         break;
       case 'ACCEPT':
         await tell('jcb_owner', 'jcb.bill_accepted', { ref: refOf(m.order_id), site: siteOf(m.order_id) });
+        // Advances already covering the bill settle it now.
+        await seller.onApplied(m);
         break;
       case 'DISPUTE': {
         if (n) await tell('jcb_owner', n.key, n.params);
@@ -297,7 +284,7 @@ export function createJcbAgent(o) {
         break;
       }
       case 'PAYMENT_CLAIM':
-        if (n) await tell('jcb_owner', n.key, n.params, { tool: 'confirm_payment', args: { orderId: m.order_id } });
+        await seller.onApplied(m);
         break;
       default:
         break;

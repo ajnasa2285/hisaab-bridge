@@ -24,7 +24,8 @@ import { parseHundredthsList } from '../orchestrator/units.js';
 import { impossible, meterReadings, MAX_JOB_TENTHS } from './jcb.js';
 import { displayDateWrong, jobDay } from './meter-guard.js';
 import { challanQuantities, countDifferences, delivery, invoiceFromReading, requestedItems, sameChallanNo, siteCount } from './material.js';
-import { exactReply, yesNo } from './replies.js';
+import { exactReply, saysCash, yesNo } from './replies.js';
+import { balanceText, owedPaise, payableOrders, paymentLine, shares, summaryOf, todayIst, utrUses } from './pay.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
 import { runTool } from './common.js';
 import { parseCommand } from './office.js';
@@ -43,7 +44,13 @@ import { t } from '../i18n/index.js';
  *   {kind: 'site_challan_order', orderIds: string[], sha256: string, reading: SiteReading, at: number} |
  *   {kind: 'site_challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number} |
  *   {kind: 'fill', tool: string, raw: Record<string, any>, args: Record<string, any>, missing: string[], said: string, at: number} |
- *   {kind: 'photo_kind', image: Photo, at: number}} Pending
+ *   {kind: 'photo_kind', image: Photo, at: number} |
+ *   {kind: 'pay_choice', orderIds: string[], group: boolean, amountPaise: number, base: Record<string, any>, at: number}} Pending
+ */
+/**
+ * A payment typed without its proof yet ("P-3 अग्रिम ₹5,000"): the UPI screenshot that follows, or
+ * "नकद", completes it. Kept apart from the open question, so the photo flow does not end it.
+ * @typedef {{orderIds: string[] | null, amountPaise: number, at: number}} PayWait
  */
 /** `forwarded`: WhatsApp marked the message as forwarded (src/wa/webhook.js).
  * @typedef {{mime: string, bytes: Uint8Array, takenAt?: string | null, forwarded?: boolean}} Photo */
@@ -113,6 +120,15 @@ export function createConversation(o) {
   const photos = new Map();
   /** @param {Person} p */
   const keyOf = (p) => `${p.agent}|${p.line}|${p.phone}`;
+  /** @type {Map<string, PayWait>} */
+  const payWaits = new Map();
+  /** @param {Person} person @returns {PayWait | null} */
+  const payWait = (person) => {
+    const w = payWaits.get(keyOf(person));
+    if (w && o.now() - w.at <= PENDING_MS) return w;
+    payWaits.delete(keyOf(person));
+    return null;
+  };
 
   /** @param {Person} person @param {Photo} image */
   function rememberPhoto(person, image) {
@@ -213,6 +229,21 @@ export function createConversation(o) {
       if (kind) return routePhoto(person, p.image, kind);
       // Not an answer: the question lapses, the photo with it, and the message is read as a new one.
     }
+    const waitingPay = payWait(person);
+    if (waitingPay) {
+      payWaits.delete(keyOf(person));
+      if (saysCash(text)) return payTyped(person, { orderIds: waitingPay.orderIds, amountPaise: waitingPay.amountPaise, method: 'cash', advance: false });
+      if (NO.has(said)) return o.reply(person, 'step.cancelled');
+      // Anything else: the wait lapses and the message is read as a new one.
+    }
+    if (p && p.kind === 'pay_choice') {
+      pending.delete(keyOf(person));
+      if (YES.has(said) && p.group) return payGroup(person, p.orderIds, p.amountPaise, p.base, true);
+      const want = parseRef(text);
+      const r = want === null ? undefined : orderRefs(o.ledger).find((x) => x.ref === want && p.orderIds.includes(x.orderId));
+      if (r) return paySingle(person, r.orderId, p.amountPaise, p.base);
+      if (NO.has(said)) return o.reply(person, 'step.cancelled');
+    }
     if (p && p.kind === 'confirm') {
       if (YES.has(said)) {
         pending.delete(keyOf(person));
@@ -311,6 +342,7 @@ export function createConversation(o) {
     // or a bill that differs from the tax invoice, is read back once first).
     const exact = exactReply({ ledger: o.ledger, person, text, nowMs: o.now() });
     if (exact && exact.kind === 'ask') return o.reply(person, exact.key, exact.params);
+    if (exact && exact.kind === 'pay') return payTyped(person, exact);
     if (exact) return exact.confirm ? propose(person, exact.tool, exact.args) : commitNow(person, exact.tool, exact.args);
 
     const proposal = await proposeStep({ spark: o.spark, person, text, orders: orderRefs(o.ledger), nowMs: o.now(), ask: true });
@@ -660,17 +692,19 @@ export function createConversation(o) {
   }
 
   /**
-   * A UPI screenshot from the contractor is a payment claim for the accepted bill. The model reads
-   * it; a clear reading of a successful payment for the bill's amount is sent at once (the seller
-   * confirms the money arrived); a different amount is read back first with both figures.
+   * A UPI screenshot from the contractor is a payment claim (CONTRACTS 4.1): any amount, part or
+   * more. The model reads it; code decides the order: the one typed just before ("P-3 अग्रिम ₹5,000"),
+   * else the one order with something owed (or, with nothing billed, the one order booked). A clear
+   * successful payment for one order is sent at once with the balance (the seller's हाँ is the check);
+   * several orders owed are asked: which one, or the split of one payment among them.
    * @param {Person} person
    * @param {{mime: string, bytes: Uint8Array}} image
    */
   async function onPaymentImage(person, image) {
     if (!o.readUpi) return o.reply(person, 'orchestrator.try_again');
     if (image.mime !== 'image/jpeg' && image.mime !== 'image/png' && image.mime !== 'image/webp') return o.reply(person, 'payment.not_upi');
-    const picked = pickOrder(orderRefs(o.ledger), null, ['accepted', 'payment_claimed']);
-    if (typeof picked === 'string') return o.reply(person, picked);
+    const typed = payWait(person);
+    if (!typed && payableOrders(o.ledger).length === 0) return o.reply(person, 'common.wrong_state');
     const read = await o.readUpi({ mime: image.mime, bytes: image.bytes });
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
     if (read.kind === 'not_upi') return o.reply(person, 'payment.not_upi');
@@ -681,20 +715,131 @@ export function createConversation(o) {
         amount: rupees(read.amountPaise), utr: read.utr, day: dayName(day), status: t(`payment.status.${read.status ?? 'unknown'}`),
       });
     }
+    payWaits.delete(keyOf(person));
     /** @type {Record<string, any>} */
-    const args = { orderId: picked.orderId, amountPaise: read.amountPaise, utr: read.utr, paidOn: day, screenshotSha256: createHash('sha256').update(image.bytes).digest('hex') };
+    const base = { method: 'upi', utr: read.utr, paidOn: day, screenshotSha256: createHash('sha256').update(image.bytes).digest('hex') };
     // The receipt's clock (HH:MM) goes with the claim only when it was printed and read.
-    if (typeof read.clock === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(read.clock)) args.paidAt = read.clock;
+    if (typeof read.clock === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(read.clock)) base.paidAt = read.clock;
     rememberPhoto(person, image);
-    const bill = o.ledger.view(picked.orderId).currentBill;
-    const total = bill ? o.ledger.eventOfMessage(bill)?.body.body.totalPaise : undefined;
-    // A different amount is not refused (part payments happen); the contractor sees both figures first.
-    traceCheck(Number.isSafeInteger(total) ? `UPI amount ${total === read.amountPaise ? '✓ =' : '✗ ≠'} bill: ${rupees(read.amountPaise)} / ${rupees(/** @type {number} */ (total))}` : 'UPI amount: no bill total to compare',
-      total === read.amountPaise, { name: 'upi_amount', paidPaise: read.amountPaise, billPaise: total ?? null, utr: read.utr }, picked.orderId);
-    if (Number.isSafeInteger(total) && total !== read.amountPaise) {
-      return propose(person, 'claim_payment', args, { key: 'payment.amount_differs', params: { seen: rupees(read.amountPaise), total: rupees(/** @type {number} */ (total)) } });
+    if (typed && typed.amountPaise !== read.amountPaise) {
+      traceCheck(`UPI amount ✗ ≠ typed: ${rupees(read.amountPaise)} / ${rupees(typed.amountPaise)}`, false, { name: 'upi_amount_typed', paidPaise: read.amountPaise, typedPaise: typed.amountPaise, utr: read.utr });
+      // The screenshot's amount is the one that goes; the payer sees both first.
+      if (typed.orderIds && typed.orderIds.length === 1) {
+        return propose(person, 'claim_payment', { ...base, orderId: typed.orderIds[0], amountPaise: read.amountPaise }, { key: 'pay.shot_differs', params: { seen: rupees(read.amountPaise), typed: rupees(typed.amountPaise) } });
+      }
     }
+    return payTo(person, typed?.orderIds ?? null, read.amountPaise, base);
+  }
+
+  /**
+   * A payment typed as words (src/agents/replies.js): cash goes now (to the order named, or decided
+   * as for a screenshot); without "नकद" the UPI screenshot is asked for, or "नकद".
+   * @param {Person} person @param {{orderIds: string[] | null, amountPaise: number, method: 'cash' | null, advance: boolean}} w
+   */
+  async function payTyped(person, w) {
+    let orderIds = w.orderIds;
+    // "अग्रिम ₹5,000" without a reference: the one order booked and not billed yet.
+    if (orderIds === null && w.advance) {
+      const open = payableOrders(o.ledger).filter((x) => x.owedPaise === null);
+      if (open.length === 0) return o.reply(person, 'common.wrong_state');
+      if (open.length > 1) return askWhich(person, open.map((x) => x.orderId), w.amountPaise, null);
+      orderIds = [open[0].orderId];
+    }
+    if (w.method === 'cash') return payTo(person, orderIds, w.amountPaise, { method: 'cash', paidOn: todayIst(o.now()) });
+    payWaits.set(keyOf(person), { orderIds, amountPaise: w.amountPaise, at: o.now() });
+    const refs = (orderIds ?? []).map((id) => refOfId(id)).join(', ');
+    return o.reply(person, 'pay.await_shot', { what: refs ? `${refs} ${rupees(w.amountPaise)}` : rupees(w.amountPaise) });
+  }
+
+  /** @param {string} orderId */
+  const refOfId = (orderId) => openRefs(o.ledger).refOf(orderId) ?? orderId.slice(0, 8);
+
+  /**
+   * Where one payment goes: the orders named, else the one order owed something, else the one with
+   * exactly this amount owed; several orders owed by one seller → the split read back (or one named);
+   * several sellers → which order.
+   * @param {Person} person @param {string[] | null} orderIds @param {number} amountPaise @param {Record<string, any>} base
+   */
+  function payTo(person, orderIds, amountPaise, base) {
+    if (orderIds && orderIds.length === 1) return paySingle(person, orderIds[0], amountPaise, base);
+    if (orderIds && orderIds.length > 1) return payGroup(person, orderIds, amountPaise, base, false);
+    const payable = payableOrders(o.ledger);
+    const owed = payable.filter((x) => x.owedPaise !== null && x.owedPaise > 0);
+    if (owed.length === 0) {
+      // Nothing billed and owed: an advance for the one order booked, else which.
+      if (payable.length === 1) return paySingle(person, payable[0].orderId, amountPaise, base);
+      if (payable.length === 0) return o.reply(person, 'common.wrong_state');
+      return askWhich(person, payable.map((x) => x.orderId), amountPaise, base);
+    }
+    if (owed.length === 1) return paySingle(person, owed[0].orderId, amountPaise, base);
+    const exact = owed.filter((x) => x.owedPaise === amountPaise);
+    traceCheck(`payment ${rupees(amountPaise)}: ${owed.length} orders owed, ${exact.length} with exactly this amount`, exact.length === 1,
+      { name: 'payment_order', amountPaise, owed: owed.map((x) => ({ orderId: x.orderId, owedPaise: x.owedPaise })) });
+    if (exact.length === 1) return paySingle(person, exact[0].orderId, amountPaise, base);
+    if (new Set(owed.map((x) => x.counterparty)).size > 1) return askWhich(person, owed.map((x) => x.orderId), amountPaise, base);
+    // One seller: offer the split, oldest bill first; naming one order sends it all to that order.
+    const ids = owed.map((x) => x.orderId);
+    const split = shares(o.ledger, ids, amountPaise);
+    if (split === null) return askWhich(person, ids, amountPaise, base);
+    pending.set(keyOf(person), { kind: 'pay_choice', orderIds: ids, group: true, amountPaise, base, at: o.now() });
+    return o.reply(person, 'pay.split_choose', { amount: rupees(amountPaise), to: sellerWord(ids[0]), lines: shareText(split), ref: refOfId(ids[0]) });
+  }
+
+  /** @param {string} orderId */
+  const sellerWord = (orderId) => t(/** @type {{kind: string} | null} */ (o.ledger.order(orderId))?.kind === 'material' ? 'pay.to.supplier' : 'pay.to.jcb');
+  /** @param {{orderId: string, amountPaise: number}[]} split */
+  const shareText = (split) => split.map((x) => t(o.ledger.view(x.orderId).currentBill === null ? 'pay.share_advance' : 'pay.share', { ref: refOfId(x.orderId), amount: rupees(x.amountPaise) })).join('\n');
+
+  /**
+   * Which order is this payment for? The orders with their balance; the answer is a reference.
+   * Without the payment's proof yet (base null), the answer starts the wait for it.
+   * @param {Person} person @param {string[]} orderIds @param {number} amountPaise @param {Record<string, any> | null} base
+   */
+  function askWhich(person, orderIds, amountPaise, base) {
+    if (base) pending.set(keyOf(person), { kind: 'pay_choice', orderIds, group: false, amountPaise, base, at: o.now() });
+    const lines = orderIds.map((id) => `${refOfId(id)}: ${balanceText(summaryOf(o.ledger, id))}`).join('\n');
+    return o.reply(person, 'pay.which_order', { payment: base ? paymentLine({ ...base, amountPaise }) : rupees(amountPaise), lines });
+  }
+
+  /**
+   * A UTR already told to this seller is never sent silently: both are shown and asked.
+   * @param {string} seller @param {Record<string, any>} base @param {string} now @returns {{key: string, params: Record<string, string>} | null}
+   */
+  function utrQuestion(seller, base, now) {
+    if (typeof base.utr !== 'string') return null;
+    const used = utrUses(o.ledger, seller, base.utr);
+    traceCheck(`UTR ${base.utr} ${used.length ? '✗ used before' : '✓ not used before'}`, used.length === 0, { name: 'utr_unused', utr: base.utr, uses: used.length });
+    if (used.length === 0) return null;
+    return { key: 'pay.utr_used', params: { utr: base.utr, before: used.map((u) => `${refOfId(u.orderId)}: ${paymentLine(u.body)}`).join('; '), now } };
+  }
+
+  /** One order's payment: sent at once (its UTR asked first when already used). @param {Person} person @param {string} orderId @param {number} amountPaise @param {Record<string, any>} base */
+  function paySingle(person, orderId, amountPaise, base) {
+    const args = { ...base, orderId, amountPaise };
+    const seller = /** @type {{counterparty: string}} */ (o.ledger.order(orderId)).counterparty;
+    if (base.method === 'upi') {
+      // Shown, never refused: a part payment or more than owed is a payment too (CONTRACTS 4.1).
+      const owed = owedPaise(summaryOf(o.ledger, orderId));
+      traceCheck(owed === null ? `UPI amount ${rupees(amountPaise)}: no bill yet (advance)` : `UPI amount ${owed === amountPaise ? '✓ =' : '≠'} owed: ${rupees(amountPaise)} / ${rupees(owed)}`,
+        owed === amountPaise, { name: 'upi_amount', paidPaise: amountPaise, owedPaise: owed, utr: base.utr }, orderId);
+    }
+    const q = utrQuestion(seller, base, paymentLine(args));
+    if (q) return propose(person, 'claim_payment', { ...args, sameUtrOk: true }, q);
     return commitNow(person, 'claim_payment', args);
+  }
+
+  /**
+   * One payment for several orders: the split read back once (unless the payer already said yes
+   * to it), the UTR asked first when already used.
+   * @param {Person} person @param {string[]} orderIds @param {number} totalPaise @param {Record<string, any>} base @param {boolean} agreed
+   */
+  function payGroup(person, orderIds, totalPaise, base, agreed) {
+    const sellers = new Set(orderIds.map((id) => /** @type {{counterparty: string} | null} */ (o.ledger.order(id))?.counterparty));
+    if (sellers.size !== 1 || sellers.has(undefined)) return o.reply(person, 'pay.one_seller');
+    const args = { ...base, orderIds, totalPaise };
+    const q = utrQuestion(/** @type {string} */ ([...sellers][0]), base, paymentLine({ ...base, amountPaise: totalPaise }));
+    if (q) return propose(person, 'claim_group', { ...args, sameUtrOk: true }, q);
+    return agreed ? commitNow(person, 'claim_group', args) : propose(person, 'claim_group', args);
   }
 
   /**

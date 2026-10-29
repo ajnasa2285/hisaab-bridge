@@ -19,6 +19,12 @@ import { openRefs, parseRef } from '../ledger/refs.js';
  *   {kind: 'ask'} | {kind: 'none', key: string}} Proposal
  */
 
+// A payment fits an order from the booking on until it is settled (CONTRACTS 4.1).
+const PAYABLE = ['booked', 'working', 'delivered', 'billed', 'disputed', 'accepted', 'payment_claimed', 'part_paid'];
+const AMOUNT = { type: 'string', maxLength: 14, description: 'The amount in rupees exactly as written, digits only like "10000" or "10,000".' };
+/** Today's date in India. @param {number} nowMs */
+const todayIn = (nowMs) => new Date(nowMs + 330 * 60 * 1000).toISOString().slice(0, 10);
+
 const ORDER = { type: ['string', 'null'], maxLength: 8, description: 'The job reference like "J-1" or "P-2" from the list, or null if the person did not say which.' };
 const NULLABLE_TEXT = (/** @type {number} */ max, /** @type {string} */ description) => ({ type: ['string', 'null'], maxLength: max, description });
 const FIGURES = (/** @type {boolean} */ nullable, /** @type {string} */ description) => ({
@@ -142,10 +148,20 @@ export const SPECS = [
     },
   },
   {
-    name: 'confirm_payment', roles: ['jcb_owner', 'supplier'], states: ['payment_claimed'],
+    name: 'confirm_payment', roles: ['jcb_owner', 'supplier'], states: PAYABLE,
     description: 'The seller confirms the money the contractor reported has actually arrived in the account.',
     properties: { order: ORDER },
     toArgs: () => ({}),
+  },
+  {
+    // Money in hand: counts at once on both ledgers, read back first (free words).
+    name: 'record_received', roles: ['jcb_owner', 'supplier'], states: PAYABLE,
+    description: 'The seller records money received from the contractor for one job: cash in hand, or a UPI payment the contractor did not report.',
+    properties: { order: ORDER, amount_rupees: AMOUNT, method: { type: 'string', enum: ['cash', 'upi'] } },
+    toArgs: (a, ctx) => {
+      const p = parsePaise(a.amount_rupees);
+      return p === null || p === 0 || (a.method !== 'cash' && a.method !== 'upi') ? null : { amountPaise: p, method: a.method, receivedOn: todayIn(ctx.nowMs) };
+    },
   },
   {
     name: 'reply_order', roles: ['supplier'], states: ['requested'],
@@ -271,6 +287,16 @@ export const SPECS = [
     toArgs: (a) => {
       const q = figures(a.quantities, parseHundredths, true);
       return q === null ? null : { qtysHundredths: q };
+    },
+  },
+  {
+    // A UPI payment needs its screenshot (UTR), so only cash is taken from words; read back first.
+    name: 'claim_payment', roles: ['contractor'], states: PAYABLE,
+    description: 'The contractor says they paid the JCB owner or the supplier IN CASH for one job (a UPI payment is reported by sending its screenshot).',
+    properties: { order: ORDER, amount_rupees: AMOUNT },
+    toArgs: (a, ctx) => {
+      const p = parsePaise(a.amount_rupees);
+      return p === null || p === 0 ? null : { method: 'cash', amountPaise: p, paidOn: todayIn(ctx.nowMs) };
     },
   },
   {

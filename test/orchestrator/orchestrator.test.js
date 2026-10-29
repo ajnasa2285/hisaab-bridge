@@ -114,7 +114,7 @@ test('material steps: the model copies items and figures, code converts them', a
   f = fakeSpark([{ name: 'reply_order', args: { order: null, answer: 'yes', rates_rupees: ['350', '4,000'], day: null, time: null } }]);
   p = await proposeStep({ spark: f.spark, person: person('supplier'), text: 'haan 350 aur 4000', orders, nowMs: NOW });
   assert.deepEqual(p, { kind: 'step', tool: 'reply_order', args: { orderId: 'o1', answer: 'yes', ratesPaise: [35000, 400000] } });
-  assert.deepEqual(f.seen[0].tools.map((/** @type {any} */ t) => t.function.name).sort(), ['confirm_payment', 'help', 'reply_order', 'send_bill', 'send_correction']);
+  assert.deepEqual(f.seen[0].tools.map((/** @type {any} */ t) => t.function.name).sort(), ['confirm_payment', 'help', 'record_received', 'reply_order', 'send_bill', 'send_correction']);
   assert.ok(f.seen[0].system.includes('items: सीमेंट 50 बोरी, रेत 2.5 ट्रॉली'));
   f = fakeSpark([{ name: 'reply_order', args: { order: null, answer: 'yes', rates_rupees: ['350', 'saadhe chaar'], day: null, time: null } }]);
   assert.deepEqual(await proposeStep({ spark: f.spark, person: person('supplier'), text: 'x', orders, nowMs: NOW }), { kind: 'none', key: 'common.bad_args' });

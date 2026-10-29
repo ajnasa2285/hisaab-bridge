@@ -56,23 +56,16 @@ test('a UPI screenshot becomes a confirmed payment claim; the owner\'s one "ह�
     assert.ok(said.at(-1)?.[2].includes('अटका'));
     assert.equal(s.jcbCore.ledger.view(orderId).state, 'accepted');
 
-    // A different amount is shown against the bill before anything goes.
-    nextRead = { ok: true, kind: 'upi_payment', amountPaise: 700000, date: '2026-10-30', utr: '412345678901', status: 'success', clear: true };
-    await siteTalk.onImage(contractor, shot);
-    assert.equal(last(), 'payment.amount_differs');
-    assert.ok(said.at(-1)?.[2].includes('₹7,000') && said.at(-1)?.[2].includes('₹7,320'));
-    await siteTalk.onText(contractor, 'नहीं');
-    assert.equal(last(), 'step.cancelled');
-
     // The right screenshot, clear, the bill's amount: claimed at once (the owner's confirmation is the check),
-    // with a receipt of the figures.
+    // with a receipt of the figures and the balance. (A different amount is a part payment since 30 Oct:
+    // test/agents/payments-part.test.js.)
     nextRead = { ok: true, kind: 'upi_payment', amountPaise: 732000, date: '2026-10-30', utr: '412345678901', status: 'success', clear: true };
     await siteTalk.onImage(contractor, shot);
-    assert.equal(last(), 'site.payment_claimed');
+    assert.equal(last(), 'pay.site.claimed');
     assert.ok(said.at(-1)?.[2].includes('₹7,320') && said.at(-1)?.[2].includes('412345678901') && said.at(-1)?.[2].includes('J-1'), said.at(-1)?.[2]);
     await new Promise((r) => setImmediate(r));
     assert.equal(s.jcbCore.ledger.view(orderId).state, 'payment_claimed');
-    assert.ok(said.some(([w, k]) => w === 'jcb:jcb_owner' && k === 'jcb.payment_claimed'));
+    assert.ok(said.some(([w, k]) => w === 'jcb:jcb_owner' && k === 'pay.seller.claimed'));
 
     // The owner checks the account and says yes once.
     await jcbTalk.onText(owner, 'हाँ');

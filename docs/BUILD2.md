@@ -440,6 +440,48 @@ and a tax summary printed once with a round-off; code's total matched the grand 
   else the delivered quantities). Code reads "सुधार <figure(s)> [unit]" as `send_correction` and reads
   it back once.
 
+## Payments: part, cash, advance, clubbed (30 Oct 2026)
+
+The recording side of CONTRACTS 4.1 (branch `claude/payments`; the read side, ask-anything, status,
+judge page and the cash-receipt reader, is Astra's `astra/payments-view`). One UPI claim no longer
+settles a bill: an order has a list of payments and a balance worked out by code (`paymentSummary`).
+
+* **Messages and states.** `PAYMENT_CLAIM` takes `bill: null` (advance), `method: 'cash'` (no UTR, a
+  receipt photo optional) and `group` (one share of a clubbed payment); `PAYMENT_ACK` (the seller's
+  हाँ/नहीं to one claim), `PAYMENT_RECEIVED` (money the seller got himself, confirmed at once) and the new
+  `SETTLED {bill, amountPaise, payments}` (old forms stay valid; old ledgers replay). New state
+  `part_paid`. Payments fit from `booked` until `settled` and never move the state before `ACCEPT`.
+  The view carries `billTotalPaise`, `confirmedPaise`, `pending` (and `paid`, every payment's status).
+* **The seller's agent settles by itself** (`src/agents/pay.js`, the same for the JCB owner and the
+  supplier): after a हाँ, after money recorded, or at `ACCEPT` when advances already cover the bill —
+  bill accepted, nothing waiting, confirmed ≥ total. Nobody types "settled".
+* **Every receipt and notice shows the balance**: "बाक़ी ₹7,500", "बाक़ी ₹17,500; इसमें ₹10,000 पुष्टि के
+  इंतज़ार में", "पूरा मिला, ₹2,000 ज़्यादा", "अभी बिल नहीं बना; अग्रिम ₹5,000 पक्का". Status only: no
+  reminder, no "please pay", no due date.
+
+**Contractor, parsed by code first** (`src/agents/replies.js` `moneyWords`; exact single-order payments
+act at once):
+
+| Written | What happens |
+|---|---|
+| UPI screenshot alone | one order owed something (or, nothing billed, one order booked) → claimed at once, any amount; several owed by one seller and none owed exactly this amount → the split read back (`pay.split_choose`): "हाँ" sends it, a reference sends it all to that order; different sellers → which order |
+| `P-2 ₹10,000 नकद दिए` | cash claim on P-2, at once |
+| `P-3 अग्रिम ₹5,000` | "send the UPI screenshot or write नकद"; the screenshot (or "नकद") completes it; a screenshot of another amount is read back with both |
+| `P-3 अग्रिम ₹5,000 नकद` | cash advance (no bill yet → `bill: null`), at once |
+| `P-1 P-2 ₹39,650` + screenshot or `नकद` | clubbed: the split read back once, then one claim per order with the group |
+| a UTR already told to this seller | both payments shown, asked; nothing sent before "हाँ" |
+
+The split (`shares`, using `allocate`): the orders in the order named (none named: every order with
+something owed, oldest bill first) each take what is owed, up to what is left; the rest goes to the last
+order (an advance when it has no bill, else a credit, shown only). "Owed" counts claims still waiting,
+so the same money is never allocated twice.
+
+**Seller, parsed by code first**: a bare "हाँ"/"नहीं" answers the one reported payment waiting (a clubbed
+payment is one, answered whole; several → which); `P-2 ₹10,000 नकद मिले` (or `UPI`) records money
+received, at once. The seller's notice sets what his next हाँ/नहीं means. Free words go to the model
+route, read back once: contractor `claim_payment` (cash only; UPI needs its screenshot), seller
+`record_received` and `confirm_payment`.
+
 ## Inside the agent (29 Oct 2026)
 
 Judges see the WhatsApp chats and the signed ledgers; the trace shows what each agent did in

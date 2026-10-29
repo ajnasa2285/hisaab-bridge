@@ -122,8 +122,12 @@ test('settlement only for the payment in force on the bill in force', () => {
   L.append({ orderId, direction: 'local', type: 'EVIDENCE', msgId: null, body: {}, at: AT });
   const b = msg('BILL', bill);
   put(L, orderId, 'out', 'BILL', b);
-  assert.equal(put(L, orderId, 'in', 'PAYMENT_CLAIM', msg('PAYMENT_CLAIM', { bill: b.msgId })), null, 'not before acceptance');
+  // A part payment may come before acceptance (CONTRACTS 4.1); it never moves the state before ACCEPT.
+  const early = msg('PAYMENT_CLAIM', { bill: b.msgId, amountPaise: 100000 });
+  assert.ok(put(L, orderId, 'in', 'PAYMENT_CLAIM', early));
+  assert.equal(L.view(orderId).state, 'billed');
   put(L, orderId, 'in', 'ACCEPT', msg('ACCEPT', { bill: b.msgId }));
+  assert.equal(L.view(orderId).state, 'payment_claimed');
   const p1 = msg('PAYMENT_CLAIM', { bill: b.msgId });
   put(L, orderId, 'in', 'PAYMENT_CLAIM', p1);
   const p2 = msg('PAYMENT_CLAIM', { bill: b.msgId });

@@ -90,7 +90,7 @@ async function setup() {
   /** @type {MessageType[]} */
   const toSeller = ['BOOKING_REQUEST', 'ACCEPT', 'DISPUTE', 'PAYMENT_CLAIM', 'RECEIPT', 'REFUSE'];
   /** @type {MessageType[]} */
-  const toContractor = ['BOOKING_REPLY', 'BILL', 'CORRECTION', 'SETTLED', 'RECEIPT', 'REFUSE'];
+  const toContractor = ['BOOKING_REPLY', 'BILL', 'CORRECTION', 'SETTLED', 'PAYMENT_ACK', 'PAYMENT_RECEIVED', 'RECEIPT', 'REFUSE'];
   const pub = (/** @type {import('node:crypto').KeyObject} */ k) => publicKeyFromText(publicKeyText(k));
   const jcbCore = {
     self: { id: 'agent:jcb-1', privateKey: jk.privateKey },

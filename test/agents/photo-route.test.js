@@ -133,18 +133,20 @@ test('unsure kind: asked once with the role\'s reply forms; the answer routes th
     await c.talks.site.onImage(contractor, photo);
     assert.ok(c.last()?.[2].includes('"UPI" / "चालान"'), c.last()?.[2]);
     await c.talks.site.onText(contractor, 'UPI');
-    assert.equal(c.last()?.[1], 'common.wrong_state');
+    // A booked order may take an advance (CONTRACTS 4.1), so the screenshot is read (here: no UPI in it).
+    assert.equal(c.last()?.[1], 'payment.not_upi');
     await c.talks.site.onImage(contractor, photo);
     await c.talks.site.onText(contractor, 'चालान');
     assert.equal(c.last()?.[1], 'site.challan_no_order');
 
     // An answer naming a kind this person may not send: told who sends it, nothing read.
     c.sees('other', false);
+    const readBefore = c.calls.upi + c.calls.challan;
     await c.talks.site.onImage(supervisor, photo);
     assert.ok(c.last()?.[2].includes('"चालान"') && !c.last()?.[2].includes('UPI'), c.last()?.[2]);
     await c.talks.site.onText(supervisor, 'upi');
     assert.equal(c.last()?.[1], 'photo.sent_by_upi');
-    assert.equal(c.calls.upi + c.calls.challan, 0);
+    assert.equal(c.calls.upi + c.calls.challan, readBefore);
   } finally {
     await c.s.close();
   }

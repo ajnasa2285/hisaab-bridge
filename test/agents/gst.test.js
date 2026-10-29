@@ -197,15 +197,18 @@ test('after the bill: the UPI amount, ask-anything totals and explanation figure
     assert.equal(numbersSupported('बिल ₹19,000 और GST ₹5,320 मिलाकर ₹24,320 है।', ef.allowedNumbers), true);
     assert.equal(numbersSupported('बिल ₹19,000 पर 28% GST है।', ef.allowedNumbers), false);
 
-    // The UPI screenshot for the total with GST is claimed at once; the amount without GST is read back.
+    // A UPI screenshot of any amount is claimed at once (a part payment is no mismatch since 30 Oct); the
+    // balance it shows is worked out on the total with GST.
     await runTool(d.s.site.tools, contractor, { tool: 'accept_bill', args: { orderId: d.orderId } });
     await settle();
     d.upi({ ok: true, kind: 'upi_payment', amountPaise: 1900000, date: '2026-10-30', time: null, clock: null, utr: '412300000041', status: 'success', clear: true });
     await d.siteTalk.onImage(contractor, { mime: 'image/jpeg', bytes: new Uint8Array([9, 1]) });
-    assert.notEqual(d.last('contractor')[1], 'site.material_payment_claimed', 'the amount without GST does not match the bill');
-    d.upi({ ok: true, kind: 'upi_payment', amountPaise: 2432000, date: '2026-10-30', time: null, clock: null, utr: '412300000042', status: 'success', clear: true });
+    assert.equal(d.last('contractor')[1], 'pay.site.claimed');
+    assert.ok(d.last('contractor')[2].includes('बाक़ी ₹24,320; इसमें ₹19,000 पुष्टि के इंतज़ार में'), d.last('contractor')[2]);
+    d.upi({ ok: true, kind: 'upi_payment', amountPaise: 532000, date: '2026-10-30', time: null, clock: null, utr: '412300000042', status: 'success', clear: true });
     await d.siteTalk.onImage(contractor, { mime: 'image/jpeg', bytes: new Uint8Array([9, 2]) });
-    assert.equal(d.last('contractor')[1], 'site.material_payment_claimed');
+    assert.equal(d.last('contractor')[1], 'pay.site.claimed');
+    assert.ok(d.last('contractor')[2].includes('इसमें ₹24,320 पुष्टि के इंतज़ार में'), d.last('contractor')[2]);
   } finally {
     await d.s.close();
   }

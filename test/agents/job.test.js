@@ -112,7 +112,7 @@ test('steps that do not fit are refused before anything is signed', async () => 
     const orderId = /** @type {{order_id: string}} */ (s.siteCore.ledger.orders()[0]).order_id;
     const before = s.jcbCore.ledger.events(orderId).length;
     assert.equal((await runTool(s.jcb.tools, owner, { tool: 'send_bill', args: { orderId } })).key, 'jcb.readings_missing');
-    assert.equal((await runTool(s.jcb.tools, owner, { tool: 'confirm_payment', args: { orderId } })).key, 'common.wrong_state');
+    assert.equal((await runTool(s.jcb.tools, owner, { tool: 'confirm_payment', args: { orderId } })).key, 'pay.nothing_waiting');
     assert.equal((await runTool(s.jcb.tools, owner, { tool: 'reply_booking', args: { orderId: '00000000-0000-4000-8000-000000000000', answer: 'no' } })).key, 'common.no_such_order');
     assert.equal((await runTool(s.jcb.tools, owner, { tool: 'drop_tables', args: {} })).key, 'common.unknown_step');
     assert.equal((await runTool(s.site.tools, contractor, { tool: 'dispute_bill', args: { orderId, reason: 'x' } })).key, 'site.figure_needed');

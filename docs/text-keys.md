@@ -344,3 +344,41 @@ A value that was not given is left out of the sentence, never shown as "—": co
 | `evidence.declined_sent` | ref, who | to the owner: not sent, the other side is told |
 | `evidence.nothing_open` | ref | the owner said yes/no but nothing is waiting |
 | `evidence.not_kept_own` | ref | the owner said yes but the photo is no longer kept; the other side gets `not_kept` |
+
+## Payments: part, cash, advance, clubbed (CONTRACTS 4.1, docs/BUILD2.md, 30 Oct; Claude drafted, Fable to polish)
+
+`balance` is one line from `balanceText` (`src/agents/pay.js`, from `paymentSummary`): `pay.balance.due` / `_waiting`, `.credit` / `_waiting`, `.clear` / `_waiting`, `.no_bill` / `_confirmed` / `_waiting` / `_confirmed_waiting` (variant keys; nothing absent is shown as "—"). `payment` is one payment as `paymentLine` writes it: "₹10,000 नकद, 30 अक्टूबर 2026" or "₹10,000, 30 अक्टूबर 2026, 14:05 बजे, UTR …". `to` / `from` is `pay.to.jcb` or `pay.to.supplier`. `lines` are `pay.share` / `pay.share_advance` (before sending) or `pay.line` (with the balance), one per order.
+
+| Key | Params | When |
+|---|---|---|
+| `payment.cash` | — | "नकद" inside a payment line |
+| `pay.balance.*` | due, waiting, credit, confirmed | the balance line (see above) |
+| `pay.balance.settled` | — | an order's line once it is settled |
+| `pay.line` / `pay.share` / `pay.share_advance` | ref, amount, (balance) | one order's share of a payment |
+| `pay.site.claimed` / `_advance` | ref, to, payment, balance | contractor: a payment (or an advance, no bill yet) was told to the seller |
+| `pay.site.group_claimed` | to, payment, lines | contractor: one payment for several orders was told |
+| `pay.site.acked` / `pay.site.denied` | ref, from, payment, balance | contractor: the seller confirmed / said it did not arrive |
+| `pay.site.group_acked` / `pay.site.group_denied` | from, payment, lines | the same for a clubbed payment, once, when all its answers are in |
+| `pay.site.received` | ref, from, payment, balance | contractor: the seller recorded money he received himself |
+| `site.settled_credit` / `site.material_settled_credit` | ref, site, amount, credit | settled, with more paid than billed (shown only) |
+| `pay.await_shot` | what | contractor typed a payment without "नकद": send the UPI screenshot or write "नकद" |
+| `pay.shot_differs` | seen, typed | the screenshot's amount is not the typed one: send the screenshot's? |
+| `pay.split_choose` | amount, to, lines, ref | a screenshot alone with several orders owed by one seller: the split (oldest bill first), or name one order |
+| `pay.which_order` | payment, lines | several orders with different sellers (or no bill anywhere): which one? |
+| `pay.utr_used` | utr, before, now | this UTR was already told to this seller: both shown, asked |
+| `pay.one_seller` | — | a clubbed payment named orders of different sellers |
+| `step.claim_payment_cash` | site, amount | read-back of a cash payment from free words (model route) |
+| `step.claim_group` / `step.claim_group_cash` | amount, to, lines | read-back of the split of one payment among orders |
+| `pay.seller.claimed` / `_advance` | ref, site, payment, balance | to the seller: a reported payment; "हाँ" confirms, "नहीं" denies |
+| `pay.seller.group_claimed` | payment, lines | to the seller: a clubbed payment, once, when all shares are in; one हाँ/नहीं for all |
+| `pay.seller.confirmed` / `pay.seller.denied` | ref, amount, balance | seller's receipt of his answer |
+| `pay.seller.group_confirmed` / `pay.seller.group_denied` | amount, lines | the same for a group |
+| `pay.seller.received` | ref, payment, balance | seller recorded money he received ("P-2 ₹10,000 नकद मिले") |
+| `step.record_received` / `_upi` | ref, site, amount | read-back of the same from free words (model route) |
+| `pay.seller.settled_at_accept` / `_credit` | ref, site, amount, (credit) | the bill was accepted and advances already cover it: settled by the agent |
+| `jcb.settled_sent_credit` / `supplier.settled_sent_credit` | amount, credit | as `*.settled_sent`, with more received than billed |
+| `pay.nothing_waiting` | — | the seller said हाँ/नहीं but no payment of that order waits |
+| `pay.nothing` | — | "कुछ नहीं" where a read-back has no amount yet |
+| `state.part_paid`, `office.await.buyer.part_paid`, `office.await.seller.part_paid` | — | the new order state |
+
+No longer used by the agents (kept for the old texts): `site.payment_claimed`, `site.material_payment_claimed`, `jcb.payment_claimed(_at)`, `supplier.payment_claimed(_at)`, `payment.amount_differs` (a part payment is no mismatch).

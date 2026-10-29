@@ -122,9 +122,9 @@ test('a whole material order, from request to settled, leaves both ledgers in ag
 
     // The payment claim is a claim; only the supplier settles.
     r = await runTool(s.site.tools, contractor, { tool: 'claim_payment', args: { orderId, amountPaise: 2550000, utr: 'UTR123456789', paidOn: '2026-10-30', screenshotSha256: SHA_C } });
-    assert.deepEqual([r.ok, r.key], [true, 'site.material_payment_claimed']);
+    assert.deepEqual([r.ok, r.key], [true, 'pay.site.claimed']);
     await settle();
-    assert.ok(expects.some(([a, , key, e]) => a === 'supplier' && key === 'supplier.payment_claimed' && e.tool === 'confirm_payment'));
+    assert.ok(expects.some(([a, , key, e]) => a === 'supplier' && key === 'pay.seller.claimed' && e.tool === 'confirm_payment'));
     r = await runTool(s.sup.tools, supplier, { tool: 'confirm_payment', args: { orderId } });
     assert.deepEqual([r.ok, r.params?.amount], [true, '₹25,500']);
 

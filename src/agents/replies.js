@@ -8,13 +8,17 @@ import { orderRefs, pickOrder } from '../orchestrator/orchestrator.js';
 import { dayWord, parsePaise, parseTenths, parseHundredths, parseTime, resolveDay } from '../orchestrator/units.js';
 import { parseRef } from '../ledger/refs.js';
 import { agreedRates, delivery, invoiceCheck, isGstPercent, itemsText, materialBillBody, requestedItems } from './material.js';
+import { PAYABLE, todayIst } from './pay.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /**
  * `confirm` on a step: read it back once before it runs (a correction, or a bill that differs from
- * the tax invoice), instead of running at once.
+ * the tax invoice), instead of running at once. `pay` is a contractor's payment in words (CONTRACTS
+ * 4.1): the orders named (null: none named), the amount, cash or not said yet (a UPI screenshot is
+ * to follow), and whether it was called an advance; the conversation decides what it becomes.
  * @typedef {{kind: 'step', tool: string, args: Record<string, any>, confirm?: boolean} |
- *   {kind: 'ask', key: string, params?: Record<string, string | number>}} Exact
+ *   {kind: 'ask', key: string, params?: Record<string, string | number>} |
+ *   {kind: 'pay', orderIds: string[] | null, amountPaise: number, method: 'cash' | null, advance: boolean}} Exact
  */
 
 /** @param {string[]} w */
@@ -36,6 +40,53 @@ const CORRECTION_WORDS = words(['सुधार', 'sudhar', 'सुधारा
 const QTY_FILLER = words(['बोरी', 'bori', 'bag', 'bags']);
 const HOURS_UNIT = words(['घंटे', 'घंटा', 'ghante', 'ghanta', 'h', 'hr', 'hrs', 'hours']);
 const RUPEE_UNIT = words(['रुपये', 'रुपए', 'रु', 'rs', 'rupaye', 'rupees', '₹']);
+
+// Payments in words (CONTRACTS 4.1): "P-2 ₹10,000 नकद दिए", "P-3 अग्रिम ₹5,000", "P-1 P-2 ₹39,650";
+// the seller's "P-2 ₹10,000 नकद मिले".
+const CASH_WORDS = words(['नकद', 'नगद', 'नक़द', 'कैश', 'cash', 'nakad', 'naqad', 'nagad', 'naqd', 'nakd']);
+const UPI_WORDS = words(['upi', 'यूपीआई']);
+const ADVANCE_WORDS = words(['अग्रिम', 'एडवांस', 'पेशगी', 'advance', 'agrim', 'peshgi']);
+const GOT_WORDS = words(['मिले', 'मिला', 'मिली', 'मिल', 'गए', 'गया', 'आए', 'आया', 'प्राप्त', 'mile', 'mila', 'mili', 'aaye', 'aaya', 'aya', 'gaye']);
+const PAY_FILLER = words([
+  'दिए', 'दिया', 'दी', 'दिये', 'दे', 'दिए', 'किए', 'किया', 'भुगतान', 'पेमेंट', 'का', 'के', 'की', 'को', 'ने', 'और', 'एक', 'साथ', 'में', 'जमा',
+  'diye', 'diya', 'di', 'de', 'kiya', 'kiye', 'payment', 'ka', 'ke', 'ki', 'ko', 'aur', 'ek', 'sath', 'saath', 'me', 'mein', 'jama', '+', '&',
+  'रुपये', 'रुपए', 'रु', 'rs', 'rupaye', 'rupees', '₹', 'से', 'se',
+]);
+
+/**
+ * A payment written as words: order references, exactly one amount, and the words for cash, UPI,
+ * advance or "received"; anything else in the message and it is not one (the model reads it).
+ * "₹39,650" and "39650/-" are the same amount.
+ * @param {string} text
+ * @returns {{refs: string[], amountPaise: number, cash: boolean, upi: boolean, advance: boolean, got: boolean} | null}
+ */
+export function moneyWords(text) {
+  // "39,650" and "1,00,000": a comma between digits is a digit group, not a pause.
+  const w = tokens(text.replace(/(\d),(?=\d)/gu, '$1'));
+  /** @type {string[]} */ const refs = [];
+  /** @type {number[]} */ const amounts = [];
+  const seen = { cash: false, upi: false, advance: false, got: false };
+  for (const x of w) {
+    const ref = parseRef(x);
+    if (ref !== null) { if (!refs.includes(ref)) refs.push(ref); continue; }
+    if (CASH_WORDS.has(x)) { seen.cash = true; continue; }
+    if (UPI_WORDS.has(x)) { seen.upi = true; continue; }
+    if (ADVANCE_WORDS.has(x)) { seen.advance = true; continue; }
+    if (GOT_WORDS.has(x)) { seen.got = true; continue; }
+    if (PAY_FILLER.has(x)) continue;
+    const r = /\d/.test(x) ? rateOf(x) : null;
+    if (r === null) return null;
+    amounts.push(r);
+  }
+  if (amounts.length !== 1 || amounts[0] === 0 || (seen.cash && seen.upi)) return null;
+  return { refs, amountPaise: amounts[0], ...seen };
+}
+
+/** "नकद", "नकद दिए", "cash": cash and nothing else, as the answer to "UPI फ़ोटो या नकद?". @param {string} text */
+export function saysCash(text) {
+  const w = tokens(text);
+  return w.length > 0 && w.length <= 3 && w.some((x) => CASH_WORDS.has(x)) && w.every((x) => CASH_WORDS.has(x) || PAY_FILLER.has(x) || GOT_WORDS.has(x));
+}
 
 /**
  * The words of a message as typed or spoken: lower case, punctuation a voice transcript adds
@@ -124,8 +175,42 @@ function afterYes(w) {
 export function exactReply(o) {
   const role = o.person.role;
   if (role === 'jcb_owner' || role === 'supplier') return sellerReply(o);
-  if (role === 'contractor') return disputeReply(o);
+  if (role === 'contractor') return payReply(o) ?? disputeReply(o);
   return null;
+}
+
+/**
+ * The contractor's payment in words: an amount with an order reference, or with "नकद" / "अग्रिम".
+ * References must be open orders here; a reference not known is said so.
+ * @param {{ledger: any, text: string}} o @returns {Exact | null}
+ */
+function payReply(o) {
+  const m = moneyWords(o.text);
+  if (m === null || m.got || (m.refs.length === 0 && !m.cash && !m.advance)) return null;
+  const orders = orderRefs(o.ledger);
+  const named = m.refs.map((ref) => orders.find((r) => r.ref === ref));
+  if (named.some((r) => r === undefined)) return { kind: 'ask', key: 'common.no_such_order' };
+  return { kind: 'pay', orderIds: named.length ? named.map((r) => /** @type {{orderId: string}} */ (r).orderId) : null, amountPaise: m.amountPaise, method: m.cash ? 'cash' : null, advance: m.advance };
+}
+
+/**
+ * Reported payments waiting for this seller's हाँ/नहीं, one per claim or per clubbed group, oldest
+ * first; with a reference, only that order's.
+ * @param {any} ledger @param {string | null} ref
+ * @returns {{orderId: string, ref: string, payment: string}[]}
+ */
+function waitingPayments(ledger, ref) {
+  /** @type {Map<string, {orderId: string, ref: string, payment: string}>} */
+  const units = new Map();
+  for (const r of orderRefs(ledger)) {
+    if (ref !== null && r.ref !== ref) continue;
+    for (const payment of ledger.view(r.orderId).pending) {
+      const group = ledger.eventOfMessage(payment)?.body.body.group?.id;
+      const key = group ?? payment;
+      if (!units.has(key)) units.set(key, { orderId: r.orderId, ref: r.ref, payment });
+    }
+  }
+  return [...units.values()];
 }
 
 /** @param {{ledger: any, person: Person, text: string, nowMs: number}} o @returns {Exact | null} */
@@ -174,9 +259,24 @@ function sellerReply(o) {
     return { kind: 'step', tool: 'send_correction', args: { orderId: p.orderId, qtysHundredths: q }, confirm: true };
   }
 
+  // "P-2 ₹10,000 नकद मिले" / "₹5,000 UPI से मिले P-3": money the seller received himself, recorded at once.
+  const got = moneyWords(o.text);
+  if (got !== null && (got.cash || got.upi) && !got.advance && got.refs.length <= 1) {
+    const payable = orders.filter((r) => PAYABLE.includes(r.state) && (ref === null || r.ref === ref));
+    if (payable.length > 1) return whichOrder(payable.map((r) => r.ref));
+    if (payable.length === 0) return ref !== null && !orders.some((r) => r.ref === ref) ? { kind: 'ask', key: 'common.no_such_order' } : { kind: 'ask', key: 'common.wrong_state' };
+    return { kind: 'step', tool: 'record_received', args: { orderId: payable[0].orderId, amountPaise: got.amountPaise, method: got.cash ? 'cash' : 'upi', receivedOn: todayIst(o.nowMs) } };
+  }
+
   // A plain yes or no.
   const yn = yesNo(rest.join(' '));
+  // Reported payments waiting for this seller: a clubbed payment is one, answered whole.
+  const claimed = waitingPayments(o.ledger, ref);
+  const requested = orders.filter((r) => r.state === 'requested' && (ref === null || r.ref === ref));
   if (yn === 'no') {
+    // "नहीं" to a reported payment, when that is the only thing waiting for an answer.
+    if (requested.length === 0 && claimed.length === 1) return { kind: 'step', tool: 'confirm_payment', args: { orderId: claimed[0].orderId, payment: claimed[0].payment, received: false } };
+    if (requested.length === 0 && claimed.length > 1) return whichOrder(claimed.map((c) => c.ref));
     const p = pick(['requested']);
     if (p === 'orchestrator.which_job') return which(['requested']);
     if (p === null || typeof p === 'string') return null;
@@ -184,9 +284,8 @@ function sellerReply(o) {
   }
   if (yn === 'yes') {
     // A reported payment, when it is the only thing waiting for a yes; an order needs its rate first.
-    const claimed = orders.filter((r) => r.state === 'payment_claimed' && (ref === null || r.ref === ref));
-    const requested = orders.filter((r) => r.state === 'requested' && (ref === null || r.ref === ref));
-    if (claimed.length === 1 && requested.length === 0) return { kind: 'step', tool: 'confirm_payment', args: { orderId: claimed[0].orderId } };
+    if (claimed.length === 1 && requested.length === 0) return { kind: 'step', tool: 'confirm_payment', args: { orderId: claimed[0].orderId, payment: claimed[0].payment } };
+    if (claimed.length > 1 && requested.length === 0) return whichOrder(claimed.map((c) => c.ref));
     if (requested.length === 1 && claimed.length === 0) return ratesNeeded(o, requested[0].orderId, supplier);
     if (requested.length > 1 && claimed.length === 0) return which(['requested']);
     return null;

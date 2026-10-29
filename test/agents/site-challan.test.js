@@ -339,15 +339,15 @@ test('mixed, two bills to pay: a challan photo goes to the site challan flow; th
   }
 });
 
-test('mixed, two bills to pay: a UPI screenshot is asked which order, and neither reader is used yet', async () => {
+test('mixed, two bills to pay: a UPI screenshot offers the split or one order (CONTRACTS 4.1); the challan reader is not used', async () => {
   const c = await mixed(2);
   try {
     c.sees('upi');
     c.upi(UPI);
     await c.siteTalk.onImage(contractor, photo);
-    assert.equal(c.last()?.[1], 'orchestrator.which_job');
+    assert.equal(c.last()?.[1], 'pay.split_choose');
     assert.equal(c.reads(), 0);
-    assert.equal(c.upiReads(), 0);
+    assert.equal(c.upiReads(), 1);
   } finally {
     await c.s.close();
   }
@@ -367,7 +367,7 @@ test('mixed, one bill to pay: a challan photo is the site count; a clear UPI scr
     await c.siteTalk.onImage(contractor, photo);
     assert.equal(c.reads(), 1);
     assert.equal(c.upiReads(), 1);
-    assert.equal(c.last()?.[1], 'site.material_payment_claimed');
+    assert.equal(c.last()?.[1], 'pay.site.claimed');
   } finally {
     await c.s.close();
   }

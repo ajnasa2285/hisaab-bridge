@@ -34,6 +34,7 @@ const SAMPLE = {
   quantity: '50', unit: 'बोरी', number: '412', figure: '48 बोरी', before: '₹17,500', after: '₹16,800',
   answer: 'शिवपुरी पर सीमेंट 50 बोरी आया।', refs: 'P-1, P-2', orders: 2, asked: '50 बोरी', delivered: '50 बोरी',
   counted: '48 बोरी', open: '₹7,320', accepted: '₹7,320', claimed: '₹7,320', settled: '₹0', confirmed: 'अभी नहीं',
+  now: '₹10,000, 30 अक्टूबर 2026, UTR 412300000009', balance: 'बाक़ी ₹10,650', due: '₹10,650', waiting: '₹10,000', credit: '₹350', typed: '₹5,000',
 };
 
 test('every key has a non-empty Hindi text and fills with its parameters', () => {
@@ -115,6 +116,26 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'office.site_receipt': ['challanNo', 'count', 'signed'], 'office.signed_yes': [], 'office.signed_no': [], 'office.signed_unsure': [],
     'payment.at_time': ['time'], 'jcb.payment_claimed_at': ['ref', 'site', 'amount', 'day', 'time', 'utr'],
     'supplier.payment_claimed_at': ['ref', 'site', 'amount', 'day', 'time', 'utr'],
+    // Payments: part, cash, advance, clubbed (claude/payments, CONTRACTS 4.1).
+    'payment.cash': [], 'pay.to.jcb': [], 'pay.to.supplier': [], 'pay.nothing': [], 'pay.nothing_waiting': [], 'pay.one_seller': [],
+    'pay.balance.due': ['due'], 'pay.balance.due_waiting': ['due', 'waiting'], 'pay.balance.credit': ['credit'], 'pay.balance.credit_waiting': ['credit', 'waiting'],
+    'pay.balance.clear': [], 'pay.balance.clear_waiting': ['waiting'], 'pay.balance.settled': [], 'pay.balance.no_bill': [],
+    'pay.balance.no_bill_confirmed': ['confirmed'], 'pay.balance.no_bill_waiting': ['waiting'], 'pay.balance.no_bill_confirmed_waiting': ['confirmed', 'waiting'],
+    'pay.line': ['ref', 'amount', 'balance'], 'pay.share': ['ref', 'amount'], 'pay.share_advance': ['ref', 'amount'],
+    'pay.utr_used': ['utr', 'before', 'now'], 'pay.await_shot': ['what'], 'pay.shot_differs': ['seen', 'typed'], 'pay.which_order': ['payment', 'lines'],
+    'pay.split_choose': ['amount', 'to', 'lines', 'ref'], 'step.claim_payment_cash': ['site', 'amount'],
+    'step.claim_group': ['amount', 'to', 'lines'], 'step.claim_group_cash': ['amount', 'to', 'lines'],
+    'step.record_received': ['ref', 'site', 'amount'], 'step.record_received_upi': ['ref', 'site', 'amount'],
+    'pay.site.claimed': ['ref', 'to', 'payment', 'balance'], 'pay.site.claimed_advance': ['ref', 'to', 'payment', 'balance'],
+    'pay.site.group_claimed': ['to', 'payment', 'lines'], 'pay.site.acked': ['ref', 'from', 'payment', 'balance'], 'pay.site.denied': ['ref', 'from', 'payment', 'balance'],
+    'pay.site.group_acked': ['from', 'payment', 'lines'], 'pay.site.group_denied': ['from', 'payment', 'lines'], 'pay.site.received': ['ref', 'from', 'payment', 'balance'],
+    'site.settled_credit': ['ref', 'amount', 'site', 'credit'], 'site.material_settled_credit': ['ref', 'amount', 'site', 'credit'],
+    'pay.seller.claimed': ['ref', 'site', 'payment', 'balance'], 'pay.seller.claimed_advance': ['ref', 'site', 'payment', 'balance'],
+    'pay.seller.group_claimed': ['payment', 'lines'], 'pay.seller.confirmed': ['ref', 'amount', 'balance'], 'pay.seller.denied': ['ref', 'amount', 'balance'],
+    'pay.seller.group_confirmed': ['amount', 'lines'], 'pay.seller.group_denied': ['amount', 'lines'], 'pay.seller.received': ['ref', 'payment', 'balance'],
+    'pay.seller.settled_at_accept': ['ref', 'site', 'amount'], 'pay.seller.settled_at_accept_credit': ['ref', 'site', 'amount', 'credit'],
+    'jcb.settled_sent_credit': ['amount', 'credit'], 'supplier.settled_sent_credit': ['amount', 'credit'],
+    'state.part_paid': [], 'office.await.buyer.part_paid': [], 'office.await.seller.part_paid': [],
     
     'ask.missing': ['questions'], 'ask.site': [], 'ask.day': [], 'ask.qty': ['name', 'unit'], 'ask.qty_unit': ['name'], 'ask.unit': ['name', 'qty'],
     'jcb.booking_request': ['ref', 'site', 'day', 'time', 'hours'], 'jcb.rate_needed': [], 'jcb.day_needed': [],
