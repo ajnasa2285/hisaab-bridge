@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseHundredths, parseHundredthsList, parsePaise, parseTenths, parseTime, resolveDay } from '../../src/orchestrator/units.js';
+import { parseAmountPaise, parseHundredths, parseHundredthsList, parsePaise, parseTenths, parseTime, resolveDay } from '../../src/orchestrator/units.js';
 import { orderRefs, pickOrder, proposeStep } from '../../src/orchestrator/orchestrator.js';
 
 const NOW = Date.parse('2026-10-28T20:00:00Z'); // 29 Oct 01:30 IST
@@ -15,13 +15,16 @@ test('figures as written become integers in code', () => {
   assert.equal(parsePaise('7,32,000'), 73200000);
   assert.equal(parsePaise('0'), null);
   assert.equal(parsePaise('12.345'), null);
-  // Spoken amounts (a voice note, live 30 Oct): words, digits with a word, a trailing "रुपये".
-  assert.equal(parsePaise('पंद्रह हजार'), 1500000);
-  assert.equal(parsePaise('15 हज़ार'), 1500000);
-  assert.equal(parsePaise('do hazar paanch sau rupaye'), 250000);
-  assert.equal(parsePaise('डेढ़ हज़ार'), 150000);
-  assert.equal(parsePaise('15000 hazaar'), null);
-  assert.equal(parsePaise('kuch paise'), null);
+  // Spoken payment amounts (a voice note, live 30 Oct): words, digits with a word, a trailing "रुपये";
+  // a rate stays digits only.
+  assert.equal(parsePaise('पंद्रह हजार'), null);
+  assert.equal(parseAmountPaise('₹7,320'), 732000);
+  assert.equal(parseAmountPaise('पंद्रह हजार'), 1500000);
+  assert.equal(parseAmountPaise('15 हज़ार'), 1500000);
+  assert.equal(parseAmountPaise('do hazar paanch sau rupaye'), 250000);
+  assert.equal(parseAmountPaise('डेढ़ हज़ार'), 150000);
+  assert.equal(parseAmountPaise('15000 hazaar'), null);
+  assert.equal(parseAmountPaise('kuch paise'), null);
   assert.equal(parseTime('8'), '08:00');
   assert.equal(parseTime('8:30'), '08:30');
   assert.equal(parseTime('25'), null);

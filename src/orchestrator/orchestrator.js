@@ -4,7 +4,7 @@
 // job and checks everything again; the model never decides who may do what, never computes, never
 // sends.
 
-import { blank, dayWord, parseHundredths, parsePaise, parseQuantity, parseTenths, parseTime, resolveDay } from './units.js';
+import { blank, dayWord, parseAmountPaise, parseHundredths, parsePaise, parseQuantity, parseTenths, parseTime, resolveDay } from './units.js';
 import { isGstPercent, itemsText } from '../agents/material.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
 
@@ -159,7 +159,7 @@ export const SPECS = [
     description: 'The seller records money received from the contractor for one job: cash in hand, or a UPI payment the contractor did not report.',
     properties: { order: ORDER, amount_rupees: AMOUNT, method: { type: 'string', enum: ['cash', 'upi'] } },
     toArgs: (a, ctx) => {
-      const p = parsePaise(a.amount_rupees);
+      const p = parseAmountPaise(a.amount_rupees);
       return p === null || p === 0 || (a.method !== 'cash' && a.method !== 'upi') ? null : { amountPaise: p, method: a.method, receivedOn: todayIn(ctx.nowMs) };
     },
   },
@@ -295,7 +295,7 @@ export const SPECS = [
     description: 'The contractor says they paid the JCB owner or the supplier IN CASH for one job (a UPI payment is reported by sending its screenshot).',
     properties: { order: ORDER, amount_rupees: AMOUNT },
     toArgs: (a, ctx) => {
-      const p = parsePaise(a.amount_rupees);
+      const p = parseAmountPaise(a.amount_rupees);
       return p === null || p === 0 ? null : { method: 'cash', amountPaise: p, paidOn: todayIn(ctx.nowMs) };
     },
   },

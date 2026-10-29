@@ -46,16 +46,25 @@ export function parseHundredthsList(s) {
 export function parsePaise(s) {
   if (typeof s !== 'string') return null;
   const t = s.trim().replace(/^₹\s*/, '');
-  if (!/^\d{1,3}(,\d{2,3})*(\.\d{1,2})?$|^\d{1,9}(\.\d{1,2})?$/.test(t)) {
-    // Said in words, as a voice note gives it (live, 30 Oct: "पंद्रह हजार"): read like a quantity, in
-    // rupees; hundredths of a rupee are paise. Anything that is not exactly a number stays null.
-    const said = t.replace(/\s*(?:रुपये|रुपए|रुपया|rupaye|rupaiye|rupees|rupay|rs\.?)$/iu, '');
-    const h = said ? parseQuantity(said) : null;
-    return h !== null && h > 0 && Number.isSafeInteger(h) ? h : null;
-  }
+  if (!/^\d{1,3}(,\d{2,3})*(\.\d{1,2})?$|^\d{1,9}(\.\d{1,2})?$/.test(t)) return null;
   const [w, f = ''] = t.replace(/,/g, '').split('.');
   const paise = Number(w) * 100 + Number(f.padEnd(2, '0'));
   return Number.isSafeInteger(paise) && paise > 0 ? paise : null;
+}
+
+/**
+ * A payment amount: digits as parsePaise, or said in words as a voice note gives it (live, 30 Oct:
+ * "पंद्रह हजार", "15 हज़ार", "do hazar paanch sau rupaye"), read like a quantity in rupees, so
+ * hundredths of a rupee are paise. Only for amounts paid, which are read back before they are sent;
+ * rates stay digits only ("साढ़े चार" could be ₹4.50 or ₹4,500). Not exactly a number: null.
+ * @param {unknown} s
+ */
+export function parseAmountPaise(s) {
+  const digits = parsePaise(s);
+  if (digits !== null || typeof s !== 'string') return digits;
+  const said = s.trim().replace(/^₹\s*/, '').replace(/\s*(?:रुपये|रुपए|रुपया|rupaye|rupaiye|rupees|rupay|rs\.?)$/iu, '');
+  const h = said ? parseQuantity(said) : null;
+  return h !== null && h > 0 && Number.isSafeInteger(h) ? h : null;
 }
 
 /**
