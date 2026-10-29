@@ -30,6 +30,20 @@ Each builder adds a dated entry (IST) at the end of every work session: **done, 
 
 ## Astra
 
+- 2026-10-29 14:45 IST — Done: `astra/evidence` in own `hb-astra-evidence` worktree from `claude/wa`.
+  Private per-agent photo stores, signed request/evidence with prior-ledger hash checks and signed
+  hash-only metadata, automatic count/dispute requests (one per record), exact `सबूत` command with
+  role check, WhatsApp image + text fallback, matching reader and both-sided checked explanations.
+  Targeted evidence checks: **43 tests pass**, including Meta-only and real A2A/app HTTP tests.
+  Live Muse Spark 1.3: **3/3 invented disputes**, **6/6 correct clear challan readings**, **3/3
+  explanations accepted with number checks**, all evidence hashes/chains verified; no private data.
+  Full file/test/live report: `docs/evidence-report.md`. No laptop full suite/typecheck.
+  Next: Claude review, full suite/typecheck on AWS, merge/deploy; Fable polish new keys.
+  Question for lead (outside brief paths, AGENTS rule 10): `web/judge.js` `stateOf` needs neutral
+  replay cases for EVIDENCE_REQUEST and remote EVIDENCE. Signatures/chains already verify, but
+  current UI replay marks these histories as not fitting. Historical photos return `not_kept`.
+  No server/settings touched; only this branch is to be pushed.
+
 - 2026-10-28 18:00 IST — Done (Claude session finishing `astra/explain`; merged `origin/main` first, keeping both sides in BUILD2/STATUS/text-keys and the i18n test samples): explanations now get through. **Final live check 8/8 accepted, p50 3.75 s / p95 5.6 s** ([report](explanation-live-check.md)).
   - Fast: the model gets a few Hindi lines for this one difference (`brief()` in `explain.js`) instead of the whole order as JSON, a short system prompt, a 350-character schema, no images, and `reasoning_effort: "minimal"` (documented at dev.meta.ai/docs/reasoning). Time was almost all reasoning tokens: the default level gave 12–37 s, "minimal" gives 3–6 s. Timeouts set from that: 15 s attempt, 35 s total (one retry fits). The notice is never blocked: `app.js` runs `onApplied` without awaiting it.
   - Guard: the word blocklist is replaced by one check per promise (`guardViolation` returns the rule): numbers exist in the facts; no verdict; no payment/dues/dates/reminders; no directive; no invented cause. A quote is allowed only if it is word for word a reason recorded on the bill in force; it is then set aside as their words, and "कारण" is accepted beside it. Only the objection to the bill in force goes to the model.

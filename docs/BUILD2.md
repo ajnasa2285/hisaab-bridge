@@ -143,6 +143,28 @@ bill/count or bill/rate mismatch notice. There is no JCB buyer count-mismatch ho
 `src/meta/client.js`. Explanations carry no confirmation expectation, tool, ledger entry or state
 change. Full tests and typecheck remain the lead's AWS checks, per the explanation brief.
 
+## Evidence on request (Build 4)
+
+The agents retain confirmed photo bytes in separate private stores under `HB_DATA_DIR`, outside
+the repository (5 MiB per image, SHA-256 filename plus MIME). They exchange a signed
+`EVIDENCE_REQUEST` and a signed `EVIDENCE` response for one record at a time. The receiver checks
+the request, order, parties and its previously recorded hash before storing, showing or reading a
+photo. Ledger events retain signed hashes and metadata only. Missing historical bytes return
+`not_kept`; they cannot be recovered from a fingerprint.
+
+A site-count difference asks for the supplier's challan; a bill dispute asks for the bill's
+challan or meter photos. When that dispute cites the site's photo count, its signed body commits
+the count's record ID and hash, letting the seller ask for that site's copy. Each automatic
+request occurs once per record, including after restart. `सबूत P-1` or `saboot J-1` asks for the
+other party's latest known photo records of that order; the operator cannot use this command.
+
+Verified photos are forwarded within the person's WhatsApp 24-hour window with a code-generated
+caption naming the record owner and recorded time: “फ़ोटो वही है जो दर्ज हुई थी”. Upload or image
+send failure falls back to the same caption as text. The matching Muse Spark reader then reads
+the received photo; a local reading note supplies both sides' attributed figures to
+`explainDifference`. Its existing number and wording checks still apply. A new reading never
+changes the recorded quantities, a bill, or a person's decision. No reminders or verdicts.
+
 ## 6. Intake: ask only for what is missing (28 Oct 2026)
 
 A real test showed a supervisor's plain request ("कल साइट पर सीमेंट 50 बोरी चाहिए", a voice note with
@@ -189,7 +211,7 @@ role. Every agent gets `classifyPhoto` (CONTRACTS 3.4); `onImage` in `src/agents
   (`photo.sent_by_*`), with what they can send; `other` (or a file that is not an image): what they can
   send (`photo.other`). Nothing is read or recorded in these cases.
 * **Unsure → ask once.** `photo.ask_kind` with the exact forms for this person's kinds ("मीटर",
-  "UPI", "चालान"). The photo is kept in memory (bytes, never stored) as a pending question with the
+  "UPI", "चालान"). The photo is kept in memory until record confirmation as a pending question with the
   usual 30-minute expiry. The answer routes it as if Muse Spark had said that kind (still checked
   against the role); a cancel word cancels; any other text lapses the question, photo too, and is read
   as a new message.

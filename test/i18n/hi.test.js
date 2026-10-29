@@ -15,6 +15,7 @@ const CHASING = ['जल्दी', 'तुरंत', 'याद दिला',
 
 /** A sample value for every parameter, so every key can be filled. @type {Record<string, string|number>} */
 const SAMPLE = {
+  who: 'सप्लायर', recordKind: 'चालान',
   site: 'शिवपुरी', day: '29 अक्टूबर 2026', hours: '6.1 घंटे', time: '9', items: 'सीमेंट 50 बोरी', what: 'JCB, 6 घंटे',
   to: 'राम JCB', from: 'राम JCB', rate: '₹1,200', otherDay: '30 अक्टूबर 2026', reading: '3677.7', when: '17:05',
   raw: '36?7.7', qty: '6.1 घंटे', amount: '₹7,320', start: '3671.6', end: '3677.7', no: '412', sha: 'ab12…ef90',

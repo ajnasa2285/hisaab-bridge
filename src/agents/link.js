@@ -8,14 +8,14 @@ import { sendToAgent } from '../transport/a2a.js';
 /** @typedef {import('../protocol/messages.js').Message} Message */
 /** @typedef {Parameters<typeof recordAnswer>[0]} Agent */
 /**
- * @typedef {{ok: true, message: Message} | {ok: false, reason: 'wrong_state' | 'busy'} |
+ * @typedef {{ok: true, message: Message, evidence?: Message} | {ok: false, reason: 'wrong_state' | 'busy'} |
  *   {ok: false, reason: 'unreachable' | 'bad_answer' | 'no_address', message: Message} |
  *   {ok: false, reason: 'refused', code: string, message: Message}} Delivery
  */
 
 /**
  * @param {Agent} agent
- * @param {{peerUrls: Map<string, string>, transport?: (baseUrl: string, m: Message) => Promise<unknown>}} o
+ * @param {{peerUrls: Map<string, string>, transport?: (baseUrl: string, m: Message) => Promise<unknown>, onEvidence?: (m: Message) => Promise<void>}} o
  */
 export function createLink(agent, o) {
   const transport = o.transport ?? sendToAgent;
@@ -30,8 +30,18 @@ export function createLink(agent, o) {
     } catch {
       return { ok: false, reason: 'unreachable', message: m };
     }
+    const reply = /** @type {any} */ (answer);
+    const answers = reply?.type === 'RECEIPT' ? reply?.body?.receipt_for : reply?.body?.refers_to;
+    if (answers !== m.msg_id) return { ok: false, reason: 'bad_answer', message: m };
     const r = recordAnswer(agent, answer);
-    if (!r.ok) return { ok: false, reason: 'bad_answer', message: m };
+    if (!r.ok) {
+      if (r.answer) { try { await transport(url, r.answer); } catch { /* Refusal is already signed; never display the rejected image. */ } }
+      return { ok: false, reason: 'bad_answer', message: m };
+    }
+    if (r.kind === 'evidence' && r.message) {
+      if (r.applied && o.onEvidence) { try { await o.onEvidence(r.message); } catch { /* Notice failure does not undo verified evidence. */ } }
+      return { ok: true, message: m, evidence: r.message };
+    }
     return r.kind === 'receipt' ? { ok: true, message: m } : { ok: false, reason: 'refused', code: r.code ?? 'UNSUPPORTED', message: m };
   }
 
@@ -42,9 +52,9 @@ export function createLink(agent, o) {
     for (const order of /** @type {{order_id: string}[]} */ (agent.ledger.orders())) {
       const events = agent.ledger.events(order.order_id);
       const answered = new Set(events
-        .filter((e) => e.direction === 'in' && (e.type === 'RECEIPT' || e.type === 'REFUSE'))
+        .filter((e) => e.direction === 'in' && (e.type === 'RECEIPT' || e.type === 'REFUSE' || e.type === 'EVIDENCE'))
         .map((e) => (e.type === 'RECEIPT' ? e.body.body.receipt_for : e.body.body.refers_to)));
-      for (const e of events) if (e.direction === 'out' && !answered.has(e.msgId)) out.push(/** @type {Message} */ (e.body));
+      for (const e of events) if (e.direction === 'out' && e.type !== 'EVIDENCE' && !answered.has(e.msgId)) out.push(/** @type {Message} */ (e.body));
     }
     return out.sort((a, b) => a.created_at.localeCompare(b.created_at));
   }

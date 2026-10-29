@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../protocol/canonical.js';
 import { step, emptyView } from './states.js';
+import { evidenceMetadata } from '../protocol/evidence.js';
 
 const GENESIS = '0'.repeat(64);
 
@@ -160,6 +161,12 @@ export function openLedger(file) {
      * @returns {LedgerEvent|null}
      */
     append(e) {
+      // This separately signed projection is the only EVIDENCE representation in history.
+      // Projection also prevents arbitrary wire properties from retaining image payloads.
+      if (e.type === 'EVIDENCE' && e.direction !== 'local' && e.body.body?.items) {
+        e = { ...e, body: e.body.body.metadata_sig ? evidenceMetadata(e.body) : e.body };
+        if (e.body.body.items.some((/** @type {any} */ i) => i.bytes !== undefined)) throw new Error('ledger: evidence bytes are private media');
+      }
       db.exec('BEGIN IMMEDIATE');
       try {
         if (q.order.get(e.orderId) === undefined) throw new Error(`ledger: unknown order ${e.orderId}`);

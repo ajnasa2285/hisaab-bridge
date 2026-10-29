@@ -160,6 +160,26 @@ Signature: Ed25519 over the RFC 8785 canonical JSON of the message without `sig`
 | `SETTLED` | seller → buyer | `bill: msg_id`, `payment: msg_id`, `amountPaise` |
 | `REFUSE` | either | `refers_to: msg_id`, `code` |
 | `SITE_RECEIPT` | buyer → supplier | material only, after the DELIVERY: the site's signed copy of the challan. `delivery: msg_id` (the DELIVERY it answers; the order is the envelope's `order_id`), `challan: {sha256, number}` (the site's photo of its copy; number as read and confirmed, or `null`), `items` (what the site wrote it received, as counted; items at 0 left out), `signed: boolean|null` (the challan reader's receiver's mark). Never changes the state. Not `RECEIPT`: that name is the transport's signed acknowledgement of every message |
+| `EVIDENCE_REQUEST` | either party → the other party | `order: order_id`, `refers_to: msg_id` of one photo record, `reason: 'bill_disputed'|'count_differs'|'asked'` |
+| `EVIDENCE` | record owner → requesting party | `refers_to: request msg_id`, `items: [{record: msg_id, sha256, mime, bytes: base64}]`; one requested record per exchange; photo bytes at most 5 MiB |
+
+Evidence on request (Build 4; brief `ASTRA-3-evidence.md`): the order and both parties must match
+before any media is read. An unavailable record returns a signed `REFUSE` with `no_such_record`,
+`not_party`, or `not_kept`; invalid evidence returns a signed refusal and is never displayed.
+The requester must already have the expected hash in its own ledger. The received bytes must hash
+to exactly that value, and the item must name the requested record of that order and sender.
+
+The signed BILL/CORRECTION's meter evidence may include `record: msg_id` of the original local
+meter reading. A DISPUTE that cites a photo-based site count includes
+`siteCount: {record: msg_id, sha256, number: string|null, items, at}` copied from that local NOTE.
+That signed commitment is recorded before the seller requests the photo; a response can never
+introduce its own expected hash. Older records without a shared record reference remain unavailable.
+
+EVIDENCE is signed twice: the normal signature covers the full wire message including bytes;
+`body.metadata_sig` signs its exact hash-only projection. After wire validation the ledger retains
+that projection with the metadata signature, so ledger exports remain independently verifiable
+without storing or publishing image bytes. Evidence answers are returned directly to the request;
+duplicate requests rebuild the answer from private storage without reapplying history.
 
 Transport: the official A2A JavaScript SDK, `message/send` with the message above as a `data` part (`mediaType: application/json`); Agent Card at `/.well-known/agent-card.json` per agent. If the SDK proves unusable, plain JSON-RPC in the same shape; the README then says so and claims no A2A compatibility.
 
@@ -172,13 +192,21 @@ One SQLite file per agent. Tables are append-only (triggers refuse UPDATE/DELETE
 
 Order states (derived): `requested → booked | declined → working (jcb) | delivered (material) → billed → accepted | disputed → billed (rev n+1) → payment_claimed → settled`. A message that does not fit the current state is refused with `WRONG_STATE`. A `yes` on a material order must carry `rates`, and a `yes` on a JCB order must not. The site's own count of a delivery is a local `NOTE {kind: 'site_count', items, challan?: {sha256, number}}` on the buyer's ledger only (`challan` when the count came from a photo of the site's copy of the challan; it may be recorded before the DELIVERY; `challan.signed` is kept when the reader reported it); it never changes the state. When such a count with a challan photo exists together with the DELIVERY, the contractor's agent sends it to the supplier as a `SITE_RECEIPT` (at the count if the DELIVERY is there, else when it arrives); the supplier's ledger keeps it as a received message. `SITE_RECEIPT` fits a material order from `delivered` on and never changes the state.
 
+Evidence requests, signed evidence metadata and received-photo reader notes do not change order
+state. They are append-only. An automatic request is made at most once per record, checked against
+the request history across restarts; a person's `सबूत <ref>` / `saboot <ref>` may request it again.
+Photo bytes and MIME live only in that agent's private media directory under `HB_DATA_DIR`, outside
+the repository, addressed by SHA-256. Reads recheck the hash. Tests use temporary data directories.
+Confirmed photo steps persist bytes before sending the signed record; unconfirmed photos stay in
+the conversation's expiring memory. No image bytes enter order events or exports.
+
 ## 6. Orchestrator (`src/orchestrator/`)
 
 Muse Spark with tool calling turns a person's text (or transcript) into **one** proposed step: `{tool: string, args: object}`. Tools are plain functions in code; code validates every argument and the person's permission before anything happens, then reads the step back for confirmation when it commits anything. The model never chooses who may do what, never computes, never sends.
 
 ## 7. WhatsApp (`src/wa/`)
 
-Two test numbers. Inbound: verify the `X-Hub-Signature-256` with that number's app secret; route by the receiving `phone_number_id` and the sender's phone to `{agent, role}`; unknown sender → one polite reply, nothing stored. Roles: `jcb_owner`, `operator`, `contractor`, `supervisor`, `supplier`. Outbound: text only (plus reply buttons later if needed); outside the 24-hour window nothing is sent.
+Two test numbers. Inbound: verify the `X-Hub-Signature-256` with that number's app secret; route by the receiving `phone_number_id` and the sender's phone to `{agent, role}`; unknown sender → one polite reply, nothing stored. Roles: `jcb_owner`, `operator`, `contractor`, `supervisor`, `supplier`. Outbound: text and verified evidence photos (JPEG/PNG media upload followed by an image message with a code caption); outside the 24-hour window nothing is sent. The image send rechecks the window after uploading. Upload/send failure or unsupported WebP image transport falls back to the same caption through the window-checked text path.
 
 ## 8. Contractor features (`src/contractor/`)
 

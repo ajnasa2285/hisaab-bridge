@@ -32,9 +32,9 @@ import { classifyPhoto } from './readers/photo.js';
 /** @typedef {import('./protocol/messages.js').MessageType} MessageType */
 
 /** What a seller (the JCB agent or the supplier agent) accepts from the contractor's agent. @type {MessageType[]} */
-const TO_SELLER = ['BOOKING_REQUEST', 'ACCEPT', 'DISPUTE', 'PAYMENT_CLAIM', 'RECEIPT', 'REFUSE'];
+const TO_SELLER = ['BOOKING_REQUEST', 'ACCEPT', 'DISPUTE', 'PAYMENT_CLAIM', 'RECEIPT', 'REFUSE', 'EVIDENCE_REQUEST', 'EVIDENCE'];
 /** @type {MessageType[]} */
-const TO_CONTRACTOR = ['BOOKING_REPLY', 'BILL', 'CORRECTION', 'SETTLED', 'RECEIPT', 'REFUSE'];
+const TO_CONTRACTOR = ['BOOKING_REPLY', 'BILL', 'CORRECTION', 'SETTLED', 'RECEIPT', 'REFUSE', 'EVIDENCE_REQUEST', 'EVIDENCE'];
 /** Only the supplier delivers (material, with a challan). @type {MessageType[]} */
 const TO_CONTRACTOR_FROM_SUPPLIER = [...TO_CONTRACTOR, 'DELIVERY'];
 /** Only the supplier is told the site's signed copy of its challan. @type {MessageType[]} */
@@ -124,6 +124,7 @@ export function loadConfig(env) {
     // Only the reverse proxy on the same machine reaches the service unless told otherwise.
     host: env.HB_HOST || '127.0.0.1',
     baseUrl,
+    dataDir,
     exportToken: env.HB_EXPORT_TOKEN || undefined,
     waStoreFile: join(dataDir, 'wa.db'),
     lines,

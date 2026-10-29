@@ -88,6 +88,7 @@ const norm = (text) => text.trim().toLowerCase().replace(/[।.!?,]+$/u, '').rep
  *   reply: Reply,
  *   now: () => number,
  *   office?: ReturnType<typeof import('./office.js').createOffice>,
+ *   mediaStore?: ReturnType<typeof import('../media/store.js').openMediaStore>,
  * }} o
  */
 export function createConversation(o) {
@@ -95,8 +96,33 @@ export function createConversation(o) {
   const pending = new Map();
   /** The receiver's mark on a site challan photo, by its sha256 (see rememberSigned). @type {Map<string, boolean | null>} */
   const signedOf = new Map();
+  /** Bytes stay in memory until the person confirms the exact photo-based step. @type {Map<string, {image: Photo, sha256: string, at: number}>} */
+  const photos = new Map();
   /** @param {Person} p */
   const keyOf = (p) => `${p.agent}|${p.line}|${p.phone}`;
+
+  /** @param {Person} person @param {Photo} image */
+  function rememberPhoto(person, image) {
+    for (const [key, photo] of photos) if (o.now() - photo.at > PENDING_MS) photos.delete(key);
+    photos.set(keyOf(person), { image, sha256: createHash('sha256').update(image.bytes).digest('hex'), at: o.now() });
+  }
+
+  /** Persist before a signed record leaves, without putting any bytes in step arguments or ledgers.
+   * @param {Person} person @param {Record<string, any>} args */
+  function keepConfirmedPhoto(person, args) {
+    if (!o.mediaStore) return true;
+    const sha256 = args.sha256 ?? args.screenshotSha256 ?? args.challan?.sha256;
+    if (!sha256) return true;
+    const photo = photos.get(keyOf(person));
+    try {
+      if (photo && photo.sha256 === sha256 && o.now() - photo.at <= PENDING_MS) {
+        o.mediaStore.put({ bytes: photo.image.bytes, mime: photo.image.mime, sha256 });
+        photos.delete(keyOf(person));
+        return true;
+      }
+      return o.mediaStore.get(sha256) !== null;
+    } catch { return false; }
+  }
 
   /** @param {Person} person @returns {Pending | null} */
   function current(person) {
@@ -139,6 +165,8 @@ export function createConversation(o) {
     const t = Object.hasOwn(o.tools, tool) ? o.tools[tool] : undefined;
     if (!t) return o.reply(person, 'common.unknown_step');
     if (!t.roles.includes(person.role)) return o.reply(person, 'common.not_allowed');
+    // A photo-based record keeps its bytes privately before it leaves, so the other side can ask for them.
+    if (!keepConfirmedPhoto(person, args)) return o.reply(person, 'evidence.store_failed');
     const r = o.office ? await o.office.commit(person, tool, args) : await runTool(o.tools, person, { tool, args });
     // Once the site's count is recorded, nobody else's count question on that order stays open.
     if (r.ok && tool === 'confirm_count') {
@@ -339,9 +367,11 @@ export function createConversation(o) {
    */
   async function onImage(person, image) {
     pending.delete(keyOf(person));
+    photos.delete(keyOf(person));
     const kinds = photoKinds(person);
     if (kinds.length === 0) return o.reply(person, 'photo.none');
     if (!isImageMime(image.mime)) return o.reply(person, 'photo.other', { kinds: kindNames(kinds) });
+    if (image.bytes.byteLength > 5 * 1024 * 1024) return o.reply(person, 'evidence.too_large');
     if (!o.classifyPhoto) return o.reply(person, 'orchestrator.try_again');
     const c = await o.classifyPhoto({ mime: /** @type {'image/jpeg'} */ (image.mime), bytes: image.bytes });
     if (!c.ok) return o.reply(person, 'orchestrator.try_again');
@@ -382,6 +412,7 @@ export function createConversation(o) {
     const read = await o.readMeter({ mime: image.mime, bytes: image.bytes });
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
     if (read.kind === 'not_meter') return o.reply(person, 'meter.not_meter');
+    rememberPhoto(person, image);
     if (!read.clear || read.valueTenths === null) {
       pending.set(keyOf(person), { kind: 'meter_digits', orderId: picked.orderId, which, sha256, takenAt, at: o.now() });
       return o.reply(person, read.raw ? 'meter.ask_person' : 'meter.ask_person_blank', { raw: read.raw });
@@ -410,6 +441,7 @@ export function createConversation(o) {
     const read = await o.readChallan({ mime: image.mime, bytes: image.bytes });
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
     if (read.kind === 'not_challan') return o.reply(person, 'challan.not_challan');
+    rememberPhoto(person, image);
     const challanNo = typeof read.challanNo === 'string' && read.challanNo.trim() ? read.challanNo.trim().slice(0, 40) : null;
     const qtys = challanQuantities(items, read.items);
     if (!read.clear || qtys.some((q) => q === null)) {
@@ -475,6 +507,7 @@ export function createConversation(o) {
     const read = await o.readChallan({ mime: image.mime, bytes: image.bytes });
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
     if (read.kind === 'not_challan') return o.reply(person, 'challan.not_challan');
+    rememberPhoto(person, image);
     const challanNo = typeof read.challanNo === 'string' && read.challanNo.trim() ? read.challanNo.trim().slice(0, 40) : null;
     rememberSigned(sha256, read.signed);
     /** @type {SiteReading} */
@@ -578,6 +611,7 @@ export function createConversation(o) {
     const args = { orderId: picked.orderId, amountPaise: read.amountPaise, utr: read.utr, paidOn: day, screenshotSha256: createHash('sha256').update(image.bytes).digest('hex') };
     // The receipt's clock (HH:MM) goes with the claim only when it was printed and read.
     if (typeof read.clock === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(read.clock)) args.paidAt = read.clock;
+    rememberPhoto(person, image);
     const bill = o.ledger.view(picked.orderId).currentBill;
     const total = bill ? o.ledger.eventOfMessage(bill)?.body.body.totalPaise : undefined;
     // A different amount is not refused (part payments happen); the contractor sees both figures first.

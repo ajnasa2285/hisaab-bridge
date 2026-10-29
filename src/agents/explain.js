@@ -59,6 +59,15 @@ export function brief(c, audience) {
   if (c?.deliveryAtAgreedRates) out.push(`डिलीवरी तय दरों पर: कुल ${c.deliveryAtAgreedRates.total}`);
   const s = c?.localSiteCount;
   if (s) out.push(`साइट की अपनी गिनती (${s.fromSiteChallanPhoto ? `साइट के चालान${s.challanNumber ? ` ${s.challanNumber}` : ''} की फ़ोटो से` : 'लिखकर दी गई'}): ${itemsLine(s.items)}${s.totalAtAgreedRates ? `; तय दरों पर कुल ${s.totalAtAgreedRates}` : ''}`);
+  const peer = c?.peerSiteCount;
+  if (peer) out.push(`दूसरे पक्ष की हस्ताक्षरित आपत्ति में साइट की गिनती${peer.challanNumber ? `, चालान ${peer.challanNumber}` : ''}: ${itemsLine(peer.items)}`);
+  for (const observed of c?.receivedEvidence ?? []) {
+    const who = observed.source === 'supplier' ? 'सप्लायर' : observed.source === 'jcb' ? 'JCB मालिक' : 'साइट';
+    const value = observed.kind === 'meter' ? `${observed.reading} घंटे`
+      : observed.kind === 'upi' ? `राशि ${observed.amount}`
+        : `${observed.challanNumber ? `चालान ${observed.challanNumber}: ` : ''}${itemsLine(observed.items)}`;
+    out.push(`${who} की मिली फ़ोटो (दर्ज हैश से मिलान हुआ), नया पढ़ना: ${value}`);
+  }
   // Only the objection to the bill in force is this difference; earlier ones are history.
   for (const d of (c?.disputes ?? []).filter((/** @type {any} */ d) => d.concernsCurrentBill)) {
     const who = d.direction === 'in' ? 'दूसरे पक्ष की आपत्ति' : 'इस पक्ष की भेजी आपत्ति';

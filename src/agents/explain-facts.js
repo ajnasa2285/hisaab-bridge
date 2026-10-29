@@ -5,6 +5,7 @@ import { qty, rupees, tenths } from '../i18n/format.js';
 import { parseTenths } from '../orchestrator/units.js';
 import { ofType } from './common.js';
 import { agreedRates, billLines, delivery, lineAmountPaise, rateFor, requestedItems, siteChallan, siteCount } from './material.js';
+import { cleanEvidenceReading, hasReceivedEvidence } from './evidence-readings.js';
 
 /** @typedef {import('./explain.js').Facts} Facts */
 
@@ -121,8 +122,43 @@ export function differenceFacts(ledger, orderId, ref) {
       return money(sum);
     })(),
   } : null;
+  // The remote site's count is an attributed signed commitment in the current dispute. It is
+  // kept separate from this agent's own confirmed count and from the fresh reading of its photo.
+  const siteCommitment = ofType(events, 'DISPUTE', 'in').filter((e) => e.body.body.bill === current?.msgId)
+    .at(-1)?.body.body.siteCount;
+  const peerSiteCount = siteCommitment && Array.isArray(siteCommitment.items) ? {
+    items: items(siteCommitment.items), challanNumber: identifier(siteCommitment.number),
+    recordedAt: time(siteCommitment.at),
+  } : null;
+  // Only the photos behind the current difference belong in the short explanation. A previous
+  // meter pair or superseded site-count photo cannot silently contribute a new number.
+  const relevantRecords = new Set([
+    deliveryEvent?.msgId, siteCommitment?.record,
+    ...(current?.body.body.evidence ?? []).map((/** @type {any} */ e) => e.record),
+    ofType(events, 'PAYMENT_CLAIM').at(-1)?.msgId,
+  ].filter(Boolean));
+  const readNotes = ofType(events, 'NOTE', 'local').filter((e) => e.body.kind === 'evidence_reading'
+    && relevantRecords.has(e.body.record) && hasReceivedEvidence(events,
+      /** @type {{record:string,sha256:string,source:string}} */ (e.body), e.seq));
+  const latestReadings = [...new Map(readNotes.map((e) => [e.body.record, e])).values()];
+  /** @type {Record<string, any>[]} */
+  const receivedEvidence = latestReadings.flatMap((e) => {
+    const b = e.body;
+    const reading = cleanEvidenceReading(b.sourceKind, { ...b.reading, ok: true, clear: true,
+      kind: b.sourceKind === 'meter' ? 'hour_meter' : b.sourceKind === 'upi' ? 'upi_payment' : 'challan' });
+    if (!reading) return [];
+    const source = b.sourceKind === 'site_count' || b.sourceKind === 'upi' ? 'contractor'
+      : b.sourceKind === 'meter' ? 'jcb' : 'supplier';
+    const provenance = { source, kind: b.sourceKind, hashMatched: true, observedAt: time(e.at) };
+    /** @type {Record<string, any>} */
+    const observed = { ...provenance };
+    if (b.sourceKind === 'meter') observed.reading = hours(reading.valueTenths);
+    else if (b.sourceKind === 'upi') observed.amount = money(reading.amountPaise);
+    else { observed.challanNumber = identifier(reading.challanNo); observed.items = items(reading.items); }
+    return [observed];
+  });
   const context = { ref: identifier(ref), site: order.site, kind: order.kind, currentBill, meterEvidence,
-    signedDelivery, deliveryAtAgreedRates, localSiteCount, disputes, corrections,
+    signedDelivery, deliveryAtAgreedRates, localSiteCount, peerSiteCount, receivedEvidence, disputes, corrections,
     agreedRates: rates?.map((r) => ({ item: r.name, unit: r.unit, rate: money(r.ratePaise) })) ?? null };
 
   /** @param {{item:string,quantity:string,unit:string}[]} rows */
@@ -143,6 +179,17 @@ export function differenceFacts(ledger, orderId, ref) {
   if (localSiteCount) figures.push(t(localSiteCount.fromSiteChallanPhoto ? 'explain.figures.sitePhoto' : 'explain.figures.siteCount', {
     number: localSiteCount.challanNumber ?? '—', items: showItems(localSiteCount.items), total: localSiteCount.totalAtAgreedRates ?? '—',
   }));
+  if (peerSiteCount) figures.push(t('explain.figures.sitePhoto', {
+    number: peerSiteCount.challanNumber ?? '—', items: showItems(peerSiteCount.items), total: '—',
+  }));
+  for (const observed of receivedEvidence) {
+    const who = t(`records.who.${observed.source}`);
+    if ('reading' in observed) figures.push(t('evidence.figures.meter', { who, reading: observed.reading }));
+    else if ('amount' in observed) figures.push(t('evidence.figures.upi', { who, amount: observed.amount }));
+    else figures.push(t('evidence.figures.challan', {
+      who, number: observed.challanNumber ?? '—', items: showItems(observed.items),
+    }));
+  }
   for (const dispute of disputes) {
     if (dispute.figure) figures.push(t(dispute.concernsCurrentBill ? 'explain.figures.dispute' : 'explain.figures.previousDispute', {
       figure: `${dispute.figure.value} ${dispute.figure.unit}`.trim(),

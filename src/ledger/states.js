@@ -42,6 +42,8 @@ export function step(v, e) {
       if (b.answer === 'no') return { ...v, state: 'declined' };
       return { ...v, state: 'offered' };
     case 'EVIDENCE':
+      // Signed photo exchanges carry items; they are informational even after settlement.
+      if (Array.isArray(b.items)) return v.state === 'none' ? null : v;
       // The JCB side records meter photos locally; the first one means work has started.
       if (v.state === 'booked' && v.kind === 'jcb_hours') return { ...v, state: 'working' };
       return v.state === 'none' || v.state === 'declined' || v.state === 'settled' ? null : v;
@@ -77,6 +79,8 @@ export function step(v, e) {
     case 'SITE_RECEIPT':
       // The site's signed copy follows a delivery and never changes the state.
       return v.kind === 'material' && !['none', 'requested', 'offered', 'declined', 'booked'].includes(v.state) ? v : null;
+    case 'EVIDENCE_REQUEST':
+      return v.state === 'none' ? null : v;
     case 'RECEIPT':
     case 'REFUSE':
     case 'NOTE':

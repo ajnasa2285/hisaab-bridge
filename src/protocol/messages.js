@@ -5,18 +5,20 @@
 
 import { randomUUID } from 'node:crypto';
 import { signMessage, verifyMessage } from './keys.js';
+import { evidenceBytes, evidenceMetadata, EVIDENCE_MIMES } from './evidence.js';
 
 export const VERSION = 'hb/0.1';
 const DAY_MS = 24 * 3600 * 1000;
 
 export const TYPES = /** @type {const} */ ([
   'BOOKING_REQUEST', 'BOOKING_REPLY', 'DELIVERY', 'BILL', 'RECEIPT', 'ACCEPT',
-  'DISPUTE', 'CORRECTION', 'PAYMENT_CLAIM', 'SETTLED', 'REFUSE', 'SITE_RECEIPT',
+  'DISPUTE', 'CORRECTION', 'PAYMENT_CLAIM', 'SETTLED', 'REFUSE', 'SITE_RECEIPT', 'EVIDENCE_REQUEST', 'EVIDENCE',
 ]);
 /** @typedef {typeof TYPES[number]} MessageType */
 
 export const REFUSAL_CODES = /** @type {const} */ ([
   'UNSUPPORTED', 'NOT_CONNECTED', 'BAD_SIGNATURE', 'NOT_FOR_ME', 'EXPIRED', 'WRONG_STATE', 'BAD_BODY',
+  'no_such_record', 'not_party', 'not_kept',
 ]);
 /** @typedef {typeof REFUSAL_CODES[number]} RefusalCode */
 
@@ -76,7 +78,13 @@ const rates = (rates) => Array.isArray(rates) && rates.length > 0 && rates.lengt
 /** @param {any} e */
 const evidence = (e) => e && typeof e === 'object' && typeof e.sha256 === 'string' && SHA256_RE.test(e.sha256)
   && (e.kind === 'meter' || e.kind === 'challan') && (e.readValue === null || typeof e.readValue === 'string')
-  && (e.takenAt === null || isIso(e.takenAt)) && isIso(e.sentAt);
+  && (e.takenAt === null || isIso(e.takenAt)) && isIso(e.sentAt) && (e.record === undefined || isUuid(e.record));
+/** @param {any} c */
+const siteCount = (c) => c && typeof c === 'object' && isUuid(c.record) && typeof c.sha256 === 'string' && SHA256_RE.test(c.sha256)
+  && isIso(c.at) && (c.number === undefined || c.number === null || text(c.number))
+  && Array.isArray(c.items) && c.items.length <= 20 && c.items.every((/** @type {any} */ i) => i && text(i.name) && text(i.unit) && nat(i.qtyHundredths));
+/** @param {any} b @param {string[]} keys */
+const only = (b, keys) => Object.keys(b).every((k) => keys.includes(k));
 /** @param {any} l */
 const billLine = (l) => l && typeof l === 'object' && text(l.what) && nat(l.ratePaise) && nat(l.amountPaise)
   && (l.qtyHundredths === undefined || pos(l.qtyHundredths)) && (l.hoursTenths === undefined || nat(l.hoursTenths))
@@ -103,7 +111,8 @@ const BODY_OK = {
     && typeof b.chain_head === 'string' && SHA256_RE.test(b.chain_head),
   ACCEPT: (b) => isUuid(b.bill),
   DISPUTE: (b) => isUuid(b.bill) && text(b.reason) && b.theirFigure && typeof b.theirFigure === 'object'
-    && ['hoursTenths', 'qtyHundredths', 'totalPaise'].some((k) => nat(b.theirFigure[k])),
+    && ['hoursTenths', 'qtyHundredths', 'totalPaise'].some((k) => nat(b.theirFigure[k]))
+    && (b.siteCount === undefined || siteCount(b.siteCount)),
   CORRECTION: (b) => billBody(b) && isUuid(b.replaces),
   PAYMENT_CLAIM: (b) => isUuid(b.bill) && pos(b.amountPaise) && text(b.utr) && isDay(b.paidOn)
     && (b.paidAt === undefined || b.paidAt === null || (typeof b.paidAt === 'string' && TIME_RE.test(b.paidAt)))
@@ -115,6 +124,13 @@ const BODY_OK = {
     && typeof b.challan.sha256 === 'string' && SHA256_RE.test(b.challan.sha256)
     && (b.challan.number === null || (text(b.challan.number) && b.challan.number.length <= 40))
     && items(b.items) && (b.signed === true || b.signed === false || b.signed === null),
+  EVIDENCE_REQUEST: (b) => only(b, ['order', 'refers_to', 'reason']) && isUuid(b.order) && isUuid(b.refers_to)
+    && ['bill_disputed', 'count_differs', 'asked'].includes(b.reason),
+  EVIDENCE: (b) => only(b, ['refers_to', 'items', 'metadata_sig']) && isUuid(b.refers_to)
+    && (b.metadata_sig === undefined || /^ed25519:[A-Za-z0-9+/]{86}==$/.test(b.metadata_sig))
+    && Array.isArray(b.items) && b.items.length === 1 && b.items.every((/** @type {any} */ i) => i
+      && only(i, ['record', 'sha256', 'mime', 'bytes']) && isUuid(i.record) && typeof i.sha256 === 'string'
+      && SHA256_RE.test(i.sha256) && EVIDENCE_MIMES.includes(i.mime) && evidenceBytes(i.bytes) !== null),
 };
 
 /**
@@ -143,7 +159,7 @@ export function buildMessage(o) {
   if (!bodyIsValid(o.type, o.body)) throw new TypeError(`buildMessage: bad ${o.type} body`);
   const rev = o.rev ?? 1;
   if (!pos(rev)) throw new TypeError('buildMessage: bad rev');
-  return signMessage({
+  const unsigned = {
     v: VERSION,
     msg_id: randomUUID(),
     type: o.type,
@@ -154,7 +170,12 @@ export function buildMessage(o) {
     created_at: new Date(o.nowMs).toISOString(),
     expires_at: new Date(o.nowMs + (o.ttlMs ?? DAY_MS)).toISOString(),
     body: o.body,
-  }, o.privateKey);
+  };
+  if (o.type === 'EVIDENCE') {
+    const metadata = signMessage(evidenceMetadata(unsigned), o.privateKey);
+    unsigned.body = { ...o.body, metadata_sig: metadata.sig };
+  }
+  return signMessage(unsigned, o.privateKey);
 }
 
 /**
@@ -177,9 +198,13 @@ export function checkIncoming(raw, ctx) {
   if (m.to !== ctx.selfId) return refuse('NOT_FOR_ME');
   const expires = Date.parse(m.expires_at);
   if (!isIso(m.created_at) || Number.isNaN(expires) || expires <= ctx.nowMs) return refuse('EXPIRED');
-  // A repeat is not refused: the caller answers it with the receipt it gave the first time.
-  if (ctx.seen(msgId)) return { ok: true, message: /** @type {Message} */ (m) };
-  if (!peer.mayReceiveFrom.has(m.type)) return refuse('NOT_CONNECTED');
+  // Repeats still validate their shape: a reused id must not bypass the evidence guards.
+  // The caller also binds it to the exact stored inbound message before rebuilding an answer.
+  if (!ctx.seen(msgId) && !peer.mayReceiveFrom.has(m.type)) return refuse('NOT_CONNECTED');
   if (!isUuid(m.order_id) || !pos(m.rev) || !bodyIsValid(m.type, m.body)) return refuse('BAD_BODY');
+  if ((m.type === 'EVIDENCE_REQUEST' || m.type === 'EVIDENCE')
+    && !only(m, ['v', 'msg_id', 'type', 'from', 'to', 'order_id', 'rev', 'created_at', 'expires_at', 'body', 'sig'])) return refuse('BAD_BODY');
+  if (m.type === 'EVIDENCE_REQUEST' && m.body.order !== m.order_id) return refuse('BAD_BODY');
+  if (m.type === 'EVIDENCE' && !verifyMessage(evidenceMetadata(m), peer.publicKey)) return refuse('BAD_SIGNATURE');
   return { ok: true, message: /** @type {Message} */ (m) };
 }
