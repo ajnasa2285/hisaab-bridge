@@ -2,6 +2,9 @@
 // proposes and code checks), the answer a tool gives back as a text key, and reading an order's
 // history from the ledger.
 
+import { day as dayName, rupees } from '../i18n/format.js';
+import { t } from '../i18n/index.js';
+
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('../wa/directory.js').Role} Role */
 /** @typedef {{ok: boolean, key: string, params?: Record<string, string | number>}} Said */
@@ -68,6 +71,16 @@ export function deliveryResult(d, okKey, params) {
  */
 export function ofType(events, type, direction) {
   return events.filter((e) => e.type === type && (direction === undefined || e.direction === direction));
+}
+
+/**
+ * A payment as both sides see it: "₹35,000, 23 अक्टूबर 2026, 14:05 बजे, UTR …". The time is left out
+ * when the receipt did not show it (an old claim has none), never shown as "—".
+ * @param {{amountPaise: number, paidOn: string, paidAt?: string | null, utr: string}} b a PAYMENT_CLAIM body
+ */
+export function paymentText(b) {
+  const at = typeof b.paidAt === 'string' ? `, ${t('payment.at_time', { time: b.paidAt })}` : '';
+  return `${rupees(b.amountPaise)}, ${dayName(b.paidOn)}${at}, UTR ${b.utr}`;
 }
 
 /** @param {unknown} v */

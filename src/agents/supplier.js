@@ -6,7 +6,8 @@
 
 import { rupees, day as dayName, qty } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, ofType, posInt } from './common.js';
-import { agreedRates, delivery, itemsText, linesText, materialBillBody, rateFor, ratesText, requestedItems, validItems } from './material.js';
+import { agreedRates, countDifferences, delivery, itemsText, linesText, materialBillBody, rateFor, ratesText, requestedItems, sameChallanNo, signedWord, validItems } from './material.js';
+import { t } from '../i18n/index.js';
 import { openRefs } from '../ledger/refs.js';
 import { variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
@@ -204,6 +205,30 @@ export function createSupplierAgent(o) {
   };
 
   /**
+   * The site's signed copy of our challan (SITE_RECEIPT), already in our ledger: code checks it against
+   * our own signed DELIVERY (the challan number, ignoring case, spaces and leading zeros, and every item
+   * by name and unit) and tells the supplier both figures. A different number is shown, never accepted
+   * silently; nothing is decided and nobody is reminded.
+   * @param {Message} m
+   */
+  async function onSiteReceipt(m) {
+    const b = m.body;
+    const d = delivery(ledger.events(m.order_id));
+    const siteNo = typeof b.challan.number === 'string' ? b.challan.number : null;
+    const params = {
+      ref: refOf(m.order_id), site: siteOf(m.order_id), count: itemsText(b.items), siteNo: siteNo ?? '—',
+      challan: d ? itemsText(d.items) : '—', challanNo: d?.number ?? '—',
+      signed: t(`supplier.site_receipt_signed_${signedWord(typeof b.signed === 'boolean' ? b.signed : null)}`),
+    };
+    let key = 'supplier.site_receipt_matches';
+    if (!d || d.msgId !== b.delivery) key = 'supplier.site_receipt_other_delivery';
+    else if (siteNo !== null && d.number !== null && !sameChallanNo(siteNo, d.number)) key = 'supplier.site_receipt_number_differs';
+    else if (siteNo === null || d.number === null) key = 'supplier.site_receipt_number_unknown';
+    else if (countDifferences(b.items, d.items).length > 0) key = 'supplier.site_receipt_differs';
+    await tell('supplier', key, params);
+  }
+
+  /**
    * Called once when the contractor's agent's message has been written to our ledger.
    * @param {Message} m
    */
@@ -212,6 +237,9 @@ export function createSupplierAgent(o) {
     switch (m.type) {
       case 'BOOKING_REQUEST':
         await tell('supplier', variant('supplier.order_request', { time: b.time }), { ref: refOf(m.order_id), site: b.site, day: dayName(b.day), ...(b.time ? { time: b.time } : {}), items: itemsText(b.items ?? []) || '—' });
+        break;
+      case 'SITE_RECEIPT':
+        await onSiteReceipt(m);
         break;
       case 'ACCEPT':
         await tell('supplier', 'supplier.bill_accepted', { ref: refOf(m.order_id), site: siteOf(m.order_id) });
@@ -232,7 +260,8 @@ export function createSupplierAgent(o) {
         break;
       }
       case 'PAYMENT_CLAIM':
-        await tell('supplier', 'supplier.payment_claimed', { ref: refOf(m.order_id), site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn) }, { tool: 'confirm_payment', args: { orderId: m.order_id } });
+        // With the receipt's clock when it was visible; an old claim without `paidAt` reads as before.
+        await tell('supplier', typeof b.paidAt === 'string' ? 'supplier.payment_claimed_at' : 'supplier.payment_claimed', { ref: refOf(m.order_id), site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn), ...(typeof b.paidAt === 'string' ? { time: b.paidAt } : {}) }, { tool: 'confirm_payment', args: { orderId: m.order_id } });
         break;
       default:
         break;

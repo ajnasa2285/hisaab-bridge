@@ -50,7 +50,7 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `site.bill_disputed` | ref, site | your objection was sent |
 | `site.reason_needed` | — | an objection needs a reason |
 | `site.figure_needed` | — | an objection needs your figure (hours or amount) |
-| `site.payment_claimed` | amount | the payment details were sent to the JCB owner |
+| `site.payment_claimed` | ref, payment | the payment details (amount, day, time when visible, UTR) were sent to the JCB owner |
 | `site.settled` | ref, site, amount | the JCB owner confirmed the money arrived |
 
 ## Material (Build 2; Claude drafted the Hindi, Fable to polish)
@@ -86,7 +86,7 @@ Contractor side (contractor, supervisor):
 | `site.material_bill_accepted` / `site.material_bill_disputed` | ref, site | accepted / objection sent to the supplier |
 | `site.material_figure_needed` | — | an objection needs your figure (quantity or amount) |
 | `site.material_total_only` | — | a quantity objection on a bill with more than one line: only a total is accepted |
-| `site.material_payment_claimed` | amount | payment details sent to the supplier |
+| `site.material_payment_claimed` | ref, payment | payment details (amount, day, time when visible, UTR) sent to the supplier |
 | `site.material_settled` | ref, site, amount | the supplier confirmed the money arrived |
 
 Supplier side (`supplier`):
@@ -105,6 +105,23 @@ Supplier side (`supplier`):
 | `supplier.correction_sent` | lines, total | corrected bill sent |
 | `supplier.payment_claimed` | ref, site, amount, utr, day | the contractor says they paid; please check your account ("हाँ" = confirm_payment) |
 | `supplier.settled_sent` | amount | you confirmed receipt; settled |
+
+## Signed copy and payment time (docs/BUILD2.md section 9; Claude drafted, Fable to polish)
+
+`count` and `challan` are item lists (`सीमेंट 48 बोरी`); `challanNo` is the number on the supplier's own DELIVERY, `siteNo` the one on the site's copy; `signed` is one of the three `supplier.site_receipt_signed_*` sentences.
+
+| Key | Params | When |
+|---|---|---|
+| `supplier.site_receipt_matches` | ref, challanNo, count, signed | the site's signed copy agrees with our DELIVERY (number and every item) |
+| `supplier.site_receipt_differs` | ref, challanNo, count, challan, signed | same challan, the site wrote other quantities; both shown, no verdict |
+| `supplier.site_receipt_number_differs` | ref, siteNo, challanNo, count, challan, signed | the site's copy carries another challan number; both shown, never accepted silently |
+| `supplier.site_receipt_number_unknown` | ref, count, challanNo, challan, siteNo, signed | one of the two numbers was not read, so the number could not be matched |
+| `supplier.site_receipt_other_delivery` | ref, siteNo, count, challanNo, challan, signed | the receipt names a delivery that is not our DELIVERY of this order |
+| `supplier.site_receipt_signed_yes` / `_no` / `_unsure` | — | the receiver's mark: seen / not seen / unclear |
+| `office.status_with_receipt` | ref, what, site, day, state, rate, bill, paid, receipt, awaited | `status <ref>` on the supplier's agent once the site's signed copy came (`office.status` plus one line) |
+| `office.site_receipt` | challanNo, count, signed | that line (`signed`: `office.signed_yes` / `_no` / `_unsure`) |
+| `payment.at_time` | time | "14:05 बजे": the receipt's clock inside a payment line |
+| `jcb.payment_claimed_at` / `supplier.payment_claimed_at` | ref, site, amount, day, time, utr | as `*.payment_claimed`, when the claim carries `paidAt` (else the old key) |
 | `challan.not_challan` | — | the photo is not a challan |
 | `challan.ask_person` | raw, items | the challan was not read clearly: type the quantities in the order's order (`items` = `सीमेंट (बोरी), रेत (ट्रॉली)`) |
 | `challan.no_order_for_photo` | — | a challan photo came but no order is booked and waiting for delivery |

@@ -14,7 +14,7 @@ function item(name, qty, unit) {
 function inventedChallan() {
   return { kind: 'challan', clear: true, singleChallan: true, legible: true, moreLines: false,
     challanNo: field('KC-0042'), date: field('27/10/2026'), vehicle: field('XX 00 AB-0000'),
-    items: [item('Cement', '200', 'bags'), item('Sand', '12.25', 'cft')] };
+    items: [item('Cement', '200', 'bags'), item('Sand', '12.25', 'cft')], signature: 'visible' };
 }
 
 /** @param {import('node:test').TestContext} t @param {object} response @param {{status?: number}} [opts] */
@@ -57,7 +57,7 @@ test('a clear challan returns the contract fields, with code-made hundredths and
   assert.ok(result.ok && result.kind === 'challan');
   if (result.ok && result.kind === 'challan') {
     const { model: modelName, latencyMs, ...reading } = result;
-    assert.deepEqual(reading, { ok: true, kind: 'challan', challanNo: 'KC-0042', date: '2026-10-27', vehicle: 'XX00AB0000', clear: true,
+    assert.deepEqual(reading, { ok: true, kind: 'challan', challanNo: 'KC-0042', date: '2026-10-27', vehicle: 'XX00AB0000', clear: true, signed: true,
       items: [{ name: 'Cement', qtyHundredths: 20000, unit: 'bag', raw: 'Cement 200 bags' }, { name: 'Sand', qtyHundredths: 1225, unit: 'cft', raw: 'Sand 12.25 cft' }] });
     assert.equal(modelName, 'muse-spark-1.3'); assert.ok(Number.isInteger(latencyMs));
   }
@@ -184,4 +184,18 @@ test('a two-digit year printed on a challan is read as 20yy', async t => {
   model(t, { ...inventedChallan(), date: field('6/8/26') });
   const result = await readChallan(image);
   assert.ok(result.ok && result.kind === 'challan' && result.date === '2026-08-06' && result.clear === true);
+});
+
+for (const [state, signed] of /** @type {[string, boolean|null][]} */ ([['visible', true], ['absent', false], ['unclear', null]])) {
+  test(`a receiver's mark ${state} reads as signed ${signed}; it never changes clear`, async t => {
+    model(t, { ...inventedChallan(), signature: state });
+    const result = await readChallan(image);
+    assert.ok(result.ok && result.kind === 'challan');
+    if (result.ok && result.kind === 'challan') assert.deepEqual([result.signed, result.clear], [signed, true]);
+  });
+}
+
+test("the reader asks for the receiver's mark in its schema", () => {
+  assert.ok(CHALLAN_SCHEMA.required.includes('signature'));
+  assert.deepEqual(CHALLAN_SCHEMA.properties.signature.enum, ['visible', 'absent', 'unclear']);
 });

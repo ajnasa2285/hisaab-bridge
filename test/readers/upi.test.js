@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseUpiAmount, readUpi, validUpiDate, validUpiTime } from '../../src/readers/upi.js';
+import { parseUpiAmount, parseUpiClock, readUpi, validUpiDate, validUpiTime } from '../../src/readers/upi.js';
 
 const image = { mime: /** @type {const} */ ('image/png'), bytes: new Uint8Array([1, 2, 3]) };
 /** @param {string|null} raw @param {'visible'|'absent'|'unclear'} [state] */
@@ -53,7 +53,7 @@ test('UPI receipt returns the exact contract and code converts amount and explic
   if (result.ok && result.kind === 'upi_payment') {
     const { model: modelName, latencyMs, ...reading } = result;
     assert.deepEqual(reading, { ok: true, kind: 'upi_payment', amountPaise: 123450, date: '2026-10-27',
-      time: '2026-10-27T08:33:22.000Z', utr: '123456780099', status: 'success',
+      time: '2026-10-27T08:33:22.000Z', clock: '14:03', utr: '123456780099', status: 'success',
       payeeName: 'काल्पनिक दुकान', payeeVpa: 'invented.shop@fictional', payerName: 'काल्पनिक व्यक्ति', clear: true });
     assert.equal(modelName, 'muse-spark-1.3'); assert.ok(Number.isInteger(latencyMs));
   }
@@ -165,4 +165,18 @@ test('a UTR label printed with a colon is still the UTR label', async t => {
   model(t, { ...inventedReceipt(), utrLabel: field('Transaction ID:') });
   const generic = await readUpi(image);
   assert.ok(generic.ok && generic.kind === 'upi_payment' && generic.utr === null && generic.clear === false);
+});
+
+test('the printed clock becomes HH:MM on 24 hours; an ambiguous or odd clock gives null', () => {
+  for (const [raw, want] of /** @type {[string, string|null][]} */ ([
+    ['14:05', '14:05'], ['2:05 PM', '14:05'], ['02:05:09 pm', '14:05'], ['12:30 AM', '00:30'], ['12:30 PM', '12:30'],
+    ['00:15', '00:15'], ['9:05', null], ['13:05 PM', null], ['24:00', null], ['14.05', null], ['2 बजे', null],
+  ])) assert.equal(parseUpiClock(raw), want, raw);
+});
+
+test('a receipt without a printed timezone still gives the clock, not the instant', async t => {
+  model(t, { ...inventedReceipt(), time: field('2:05 PM'), timezone: field(null) });
+  const result = await readUpi(image);
+  assert.ok(result.ok && result.kind === 'upi_payment');
+  if (result.ok && result.kind === 'upi_payment') assert.deepEqual([result.time, result.clock], [null, '14:05']);
 });

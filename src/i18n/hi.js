@@ -68,7 +68,7 @@ export const hi = Object.freeze({
   'site.bill_disputed': '{ref}: {site} के बिल पर आपकी आपत्ति JCB मालिक को भेज दी।',
   'site.reason_needed': 'आपत्ति के साथ कारण भी लिखें।',
   'site.figure_needed': 'आपत्ति के साथ अपना आँकड़ा लिखें: घंटे या रक़म।',
-  'site.payment_claimed': '{ref}: {amount} के भुगतान की जानकारी (UTR {utr}) JCB मालिक को भेजी। उनकी पुष्टि आते ही बताया जाएगा।',
+  'site.payment_claimed': '{ref}: भुगतान की जानकारी JCB मालिक को भेजी: {payment}। उनकी पुष्टि आते ही बताया जाएगा।',
   'site.settled': '{ref}: JCB मालिक ने {amount} मिलना पक्का किया। {site} का यह हिसाब पूरा।',
 
   // --- Contractor side, material from the supplier (drafts by Claude; Fable to polish) -----------
@@ -109,7 +109,7 @@ export const hi = Object.freeze({
   'site.material_bill_disputed': '{ref}: {site} के बिल पर आपकी आपत्ति विक्रेता को भेज दी।',
   'site.material_figure_needed': 'आपत्ति के साथ अपना आँकड़ा लिखें: मात्रा या रक़म।',
   'site.material_total_only': 'इस बिल में एक से ज़्यादा चीज़ें हैं, इसलिए आपत्ति में अपनी कुल रक़म लिखें, मात्रा नहीं।',
-  'site.material_payment_claimed': '{ref}: {amount} के भुगतान की जानकारी (UTR {utr}) विक्रेता को भेजी। उनकी पुष्टि आते ही बताया जाएगा।',
+  'site.material_payment_claimed': '{ref}: भुगतान की जानकारी विक्रेता को भेजी: {payment}। उनकी पुष्टि आते ही बताया जाएगा।',
   'site.material_settled': '{ref}: विक्रेता ने {amount} मिलना पक्का किया। {site} का यह हिसाब पूरा।',
 
   // --- Supplier side (drafts by Claude; Fable to polish) -----------------------------------------
@@ -424,4 +424,22 @@ export const hi = Object.freeze({
   'state.accepted': 'मंज़ूर',
   'state.payment_claimed': 'भुगतान बताया',
   'state.settled': 'हिसाब पूरा',
+
+  // --- Signed copy of the challan and payment time (claude/challan-copy; drafted, Fable to polish) ---
+  'supplier.site_receipt_matches': '{ref}: साइट ने चालान {challanNo} पर {count} प्राप्त लिखी, मिलान ठीक। {signed}',
+  'supplier.site_receipt_differs': '{ref}: साइट ने चालान {challanNo} पर {count} प्राप्त लिखी (आपके चालान पर {challan})। {signed}',
+  'supplier.site_receipt_number_differs': '{ref}: साइट की प्रति पर चालान नंबर {siteNo} है, आपके चालान पर {challanNo}। साइट ने {count} प्राप्त लिखी (आपके चालान पर {challan})। {signed}',
+  'supplier.site_receipt_number_unknown': '{ref}: साइट ने {count} प्राप्त लिखी (आपके चालान {challanNo} पर {challan})। चालान नंबर मिलाया नहीं जा सका: साइट की प्रति पर {siteNo}। {signed}',
+  'supplier.site_receipt_other_delivery': '{ref}: साइट ने चालान {siteNo} पर {count} प्राप्त लिखी, पर यह आपकी दर्ज पहुँच से मेल नहीं खाती (आपके चालान {challanNo} पर {challan})। {signed}',
+  'supplier.site_receipt_signed_yes': 'साइट की प्रति पर दस्तख़त दिख रहे हैं।',
+  'supplier.site_receipt_signed_no': 'साइट की प्रति पर दस्तख़त नहीं दिखे।',
+  'supplier.site_receipt_signed_unsure': 'दस्तख़त साफ़ नहीं दिखे।',
+  'office.status_with_receipt': '{ref}: {what}, {site}, {day}\nहालत: {state}\nदर: {rate} · बिल: {bill} · भुगतान बताया: {paid}\n{receipt}\nअब: {awaited}',
+  'office.site_receipt': 'साइट की प्रति: चालान {challanNo} पर {count} प्राप्त लिखी, {signed}',
+  'office.signed_yes': 'दस्तख़त हैं',
+  'office.signed_no': 'दस्तख़त नहीं दिखे',
+  'office.signed_unsure': 'दस्तख़त साफ़ नहीं',
+  'payment.at_time': '{time} बजे',
+  'jcb.payment_claimed_at': '{ref}: ठेकेदार का कहना है कि {site} के लिए {amount} का भुगतान {day} को {time} बजे किया, UTR {utr}। कृपया अपना खाता देखें; आया हो तो "हाँ" लिखें, नहीं तो "नहीं"।',
+  'supplier.payment_claimed_at': '{ref}: ठेकेदार का कहना है कि {site} के लिए {amount} का भुगतान {day} को {time} बजे किया, UTR {utr}। कृपया अपना खाता देखें; आया हो तो "हाँ" लिखें, नहीं तो "नहीं"।',
 });

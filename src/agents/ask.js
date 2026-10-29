@@ -6,7 +6,7 @@
 // or reaches a tool that commits; there is no read-back and no "हाँ".
 
 import { ofType, nonNegInt, posInt } from './common.js';
-import { siteCount } from './material.js';
+import { signedWord, siteCount, siteReceipt } from './material.js';
 import { stockOf } from './office.js';
 import { numbersSupported, wordingViolation } from './explain.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
@@ -28,7 +28,8 @@ import { t } from '../i18n/index.js';
  *   requested: Item[], hoursTenths: number | null, ratePaise: number | null, rates: {name: string, unit: string, ratePaise: number}[],
  *   delivered: Item[] | null, counted: Item[] | null,
  *   bill: {totalPaise: number, hoursTenths: number | null, lines: {what: string, qtyHundredths: number | null, amountPaise: number}[]} | null,
- *   bills: number, claim: {amountPaise: number, paidOn: string} | null, settled: {amountPaise: number, day: string} | null}} OrderFacts
+ *   bills: number, claim: {amountPaise: number, paidOn: string, paidAt: string | null} | null, settled: {amountPaise: number, day: string} | null,
+ *   siteReceipt: {items: Item[], number: string | null, signed: boolean | null} | null}} OrderFacts
  */
 /** @typedef {{name: string, args: Record<string, any>, data: Record<string, any>, allowed: AllowedNumber[], lines: string[], refs: string[]}} Lookup */
 /** @typedef {{key: string, params?: Record<string, string | number>}} Said */
@@ -146,6 +147,7 @@ export function orderFacts(ledger) {
     const lines = Array.isArray(bill?.lines) ? bill.lines : [];
     const billHours = lines.filter((/** @type {any} */ l) => nonNegInt(l?.hoursTenths)).map((/** @type {any} */ l) => l.hoursTenths);
     const count = o.kind === 'material' ? siteCount(events) : null;
+    const receipt = o.kind === 'material' ? siteReceipt(events) : null;
     out.push({
       ref: refs.refOf(o.order_id) ?? '—', kind: o.kind, site: o.site,
       day: typeof req.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.day) ? req.day : istDay(Date.parse(o.created_at)),
@@ -162,8 +164,10 @@ export function orderFacts(ledger) {
           .map((/** @type {any} */ l) => ({ what: l.what, qtyHundredths: nonNegInt(l.qtyHundredths) ? l.qtyHundredths : null, amountPaise: l.amountPaise })),
       } : null,
       bills: ofType(events, 'BILL').length + ofType(events, 'CORRECTION').length,
-      claim: claim && nonNegInt(claim.amountPaise) && typeof claim.paidOn === 'string' ? { amountPaise: claim.amountPaise, paidOn: claim.paidOn } : null,
+      claim: claim && nonNegInt(claim.amountPaise) && typeof claim.paidOn === 'string'
+        ? { amountPaise: claim.amountPaise, paidOn: claim.paidOn, paidAt: typeof claim.paidAt === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(claim.paidAt) ? claim.paidAt : null } : null,
       settled: settled && nonNegInt(bodyOf(settled).amountPaise) ? { amountPaise: bodyOf(settled).amountPaise, day: istDay(Date.parse(settled.body.created_at ?? settled.at)) } : null,
+      siteReceipt: receipt && validItems(receipt.items) ? { items: validItems(receipt.items), number: receipt.number, signed: receipt.signed } : null,
     });
   }
   return out;
@@ -255,6 +259,10 @@ function collector() {
       allowed.push({ value: full, kind: 'date' }, { value: full.replace(/ \d{4}$/, ''), kind: 'date' }, { value: iso, kind: 'date' });
       return full;
     },
+    /** @param {string} hhmm a clock as printed on a receipt, "14:05" */
+    time: (hhmm) => { allowed.push({ value: hhmm, kind: 'time' }); return hhmm; },
+    /** @param {string} id a printed identifier such as a challan number */
+    id: (id) => { allowed.push({ value: id, kind: 'identifier' }); return id; },
     /** @param {string} ref */
     ref: (ref) => { allowed.push({ value: ref, kind: 'identifier' }); refs.add(ref); return ref; },
   };
@@ -401,7 +409,10 @@ export function runLookup(name, raw, ctx) {
       if (o.bill.hoursTenths !== null) data.bill_hours = c.hours(o.bill.hoursTenths);
       if (o.bills > 1) data.bills_and_corrections = c.count(o.bills);
     }
-    if (o.claim) data.payment_reported = `${c.money(o.claim.amountPaise)}, ${c.day(o.claim.paidOn)}`;
+    if (o.claim) data.payment_reported = `${c.money(o.claim.amountPaise)}, ${c.day(o.claim.paidOn)}${o.claim.paidAt ? `, ${t('payment.at_time', { time: c.time(o.claim.paidAt) })}` : ''}`;
+    if (o.siteReceipt) {
+      data.site_signed_copy = { received: itemsShown(c, o.siteReceipt.items), challan_no: o.siteReceipt.number ? c.id(o.siteReceipt.number) : '—', signed: t(`office.signed_${signedWord(o.siteReceipt.signed)}`) };
+    }
     if (o.settled) data.settled = `${c.money(o.settled.amountPaise)}, ${c.day(o.settled.day)}`;
     return done(data, [t('records.fig.detail', { ref: o.ref, what: data.what, site: o.site, day: data.day, state: data.state, bill: data.bill_in_force ?? '—', paid: o.claim ? c.money(o.claim.amountPaise) : '—' })]);
   }
@@ -422,11 +433,16 @@ export function runLookup(name, raw, ctx) {
       days: rangeShown(c, range), payments: c.count(rows.length),
       list: rows.slice(-MAX_ROWS).map((o) => {
         const claim = /** @type {NonNullable<OrderFacts['claim']>} */ (o.claim);
-        return { ref: c.ref(o.ref), to: whoOf(o, ctx.side), site: o.site, reported: c.money(claim.amountPaise), paid_on: c.day(claim.paidOn), confirmed_by_seller: o.settled ? c.money(o.settled.amountPaise) : t('records.not_yet') };
+        /** @type {Record<string, string>} */
+        const row = { ref: c.ref(o.ref), to: whoOf(o, ctx.side), site: o.site, reported: c.money(claim.amountPaise), paid_on: c.day(claim.paidOn) };
+        // The receipt's clock only when it was printed; never a "—" in its place.
+        if (claim.paidAt) row.paid_at = c.time(claim.paidAt);
+        row.confirmed_by_seller = o.settled ? c.money(o.settled.amountPaise) : t('records.not_yet');
+        return row;
       }),
       total_reported: c.money(total), total_confirmed: c.money(confirmed),
     };
-    const lines = data.list.map((p) => t('records.fig.payment', { ref: p.ref, to: p.to, site: p.site, amount: p.reported, day: p.paid_on, confirmed: p.confirmed_by_seller }));
+    const lines = data.list.map((p) => t('records.fig.payment', { ref: p.ref, to: p.to, site: p.site, amount: p.reported, day: p.paid_at ? `${p.paid_on}, ${t('payment.at_time', { time: p.paid_at })}` : p.paid_on, confirmed: p.confirmed_by_seller }));
     lines.push(t('records.fig.payments_total', { count: data.payments, total: data.total_reported, confirmed: data.total_confirmed }));
     return done(data, lines);
   }

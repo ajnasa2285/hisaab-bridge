@@ -37,6 +37,8 @@ const TO_SELLER = ['BOOKING_REQUEST', 'ACCEPT', 'DISPUTE', 'PAYMENT_CLAIM', 'REC
 const TO_CONTRACTOR = ['BOOKING_REPLY', 'BILL', 'CORRECTION', 'SETTLED', 'RECEIPT', 'REFUSE'];
 /** Only the supplier delivers (material, with a challan). @type {MessageType[]} */
 const TO_CONTRACTOR_FROM_SUPPLIER = [...TO_CONTRACTOR, 'DELIVERY'];
+/** Only the supplier is told the site's signed copy of its challan. @type {MessageType[]} */
+const TO_SUPPLIER = [...TO_SELLER, 'SITE_RECEIPT'];
 
 /** @param {Record<string, string | undefined>} env @param {string} name */
 function need(env, name) {
@@ -145,7 +147,7 @@ export function loadConfig(env) {
       },
       {
         name: 'supplier', kind: /** @type {const} */ ('supplier'), id: supId, title: 'Supplier Hisaab', privateKey: supKey, ledgerFile: join(dataDir, 'supplier.db'),
-        peers: [{ id: siteId, publicKey: createPublicKey(siteKey), mayReceiveFrom: new Set(TO_SELLER) }],
+        peers: [{ id: siteId, publicKey: createPublicKey(siteKey), mayReceiveFrom: new Set(TO_SUPPLIER) }],
         peerUrls: { [siteId]: `${baseUrl}/agents/site` },
       },
     ],

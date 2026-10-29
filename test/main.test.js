@@ -65,6 +65,8 @@ test('three agents: the contractor has two peers, each seller one; the supplier 
     assert.equal(publicKeyText(sup.peers[0].publicKey), publicKeyText(site.privateKey));
     assert.deepEqual([sitePeer('agent:supplier-1').mayReceiveFrom.has('DELIVERY'), sitePeer('agent:jcb-1').mayReceiveFrom.has('DELIVERY')], [true, false]);
     assert.equal(sup.peers[0].mayReceiveFrom.has('BOOKING_REQUEST'), true);
+    // Only the supplier is told the site's signed copy of its challan.
+    assert.deepEqual([sup.peers[0].mayReceiveFrom.has('SITE_RECEIPT'), jcb.peers[0].mayReceiveFrom.has('SITE_RECEIPT')], [true, false]);
     assert.equal(jcb.peers.length, 1);
     // The supplier's key is made once and kept.
     assert.equal(publicKeyText(loadConfig(env(dir)).agents[2].privateKey), publicKeyText(sup.privateKey));
