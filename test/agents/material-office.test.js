@@ -1,5 +1,6 @@
 // Material orders through the site office: a supervisor's order above the limit (or not estimable)
-// is held as P-n and runs on the contractor's "OK P-n" with that reference; exact commands answered
+// is held as P-n without a read-back (the contractor's OK is the check) and runs on the contractor's
+// "OK P-n" with that reference; exact commands answered
 // while a challan or count question is open leave the question open, and typed figures never
 // swallow a command.
 
@@ -65,14 +66,17 @@ test('a supervisor\'s material order is held as P-n; the contractor\'s "OK P-n" 
     const supOrders = () => /** @type {{order_id: string}[]} */ (d.s.supCore.ledger.orders());
 
     // No rate agreed with the supplier yet: cannot be estimated, so held as P-1. Nothing is signed.
+    // The contractor's OK is the check, so the supervisor gets no read-back: one message saying what went.
     await d.site(supervisor, 'parso Shivpuri cement 50 bori', materialCall('Shivpuri', [{ name: 'सीमेंट', quantity: '50', unit: 'बोरी' }]));
-    assert.equal(d.last('supervisor')[1], 'step.request_material');
-    await d.site(supervisor, 'हाँ');
-    assert.deepEqual(d.last('supervisor').slice(0, 2), ['supervisor', 'office.held']);
+    assert.deepEqual(d.last('supervisor').slice(0, 2), ['supervisor', 'office.held_step']);
     assert.equal(d.last('supervisor')[3].ref, 'P-1');
+    assert.ok(d.last('supervisor')[2].startsWith('P-1 ठेकेदार की मंज़ूरी के लिए भेजी: Shivpuri पर') && d.last('supervisor')[2].includes('सीमेंट 50 बोरी'), d.last('supervisor')[2]);
+    assert.equal(d.said.filter(([to]) => to === 'supervisor').length, 1, 'one message to the supervisor');
     assert.equal(d.s.siteCore.ledger.orders().length, 0);
     const asked = d.last('all:contractor');
-    assert.ok(asked[2].includes('"OK P-1"') && asked[2].includes('सीमेंट 50 बोरी') && asked[2].includes('अनुमान —'));
+    // No estimate: the "अनुमान" part is left out, never shown as "—".
+    assert.ok(asked[2].includes('"OK P-1"') && asked[2].includes('सीमेंट 50 बोरी') && !asked[2].includes('अनुमान'), asked[2]);
+    assert.doesNotMatch(asked[2], /—/);
 
     // The contractor approves: the stored step runs as the supervisor's, and the new order is P-1.
     await d.site(contractor, 'ok p-1');
@@ -91,12 +95,13 @@ test('a supervisor\'s material order is held as P-n; the contractor\'s "OK P-n" 
     await settle();
     // 10 bags = ₹3,500 > ₹1,000: held as P-2 with its estimate.
     await d.site(supervisor, 'Gwalior cement 10 bori', materialCall('Gwalior', [{ name: 'सीमेंट', quantity: '10', unit: 'बोरी' }]));
-    await d.site(supervisor, 'हाँ');
-    assert.equal(d.last('supervisor')[1], 'office.held');
+    assert.equal(d.last('supervisor')[1], 'office.held_step');
     assert.equal(d.last('supervisor')[3].ref, 'P-2');
     assert.ok(d.last('all:contractor')[2].includes('₹3,500'));
-    // 2 bags = ₹700: within the limit, sent at once; it takes the next number, P-3.
+    // 2 bags = ₹700: within the limit, so nobody else checks before it goes: read back once, then sent;
+    // it takes the next number, P-3.
     await d.site(supervisor, 'Datia cement 2 bori', materialCall('Datia', [{ name: 'सीमेंट', quantity: '2', unit: 'बोरी' }]));
+    assert.equal(d.last('supervisor')[1], 'step.request_material');
     await d.site(supervisor, 'हाँ');
     assert.deepEqual([d.last('supervisor')[1], d.last('supervisor')[3].ref], ['site.material_requested', 'P-3']);
     // P-2 approved later keeps P-2.
@@ -126,15 +131,14 @@ test('commands leave an open challan or count question open; the first count clo
     await d.sup('status P-1');
     assert.equal(d.last('supplier')[1], 'office.status');
     assert.ok(d.last('supplier')[2].includes('सीमेंट ₹350') && d.last('supplier')[2].includes('Shivpuri'));
+    // The supplier's own typed figures are recorded at once (the site's count checks them).
     await d.sup('50, 2');
-    assert.equal(d.last('supplier')[1], 'step.record_delivery');
-    assert.ok(d.last('supplier')[2].includes('सीमेंट 50 बोरी, रेत 2 ट्रॉली'));
-    await d.sup('हाँ');
     assert.equal(d.last('supplier')[1], 'supplier.delivery_sent');
+    assert.ok(d.last('supplier')[2].includes('सीमेंट 50 बोरी, रेत 2 ट्रॉली'));
     await settle();
 
     // Site: the count question is open for the supervisor and the contractor.
-    assert.equal(d.last('site:supervisor')[1], 'site.delivery_received');
+    assert.equal(d.last('site:supervisor')[1], 'site.delivery_received_challan');
     assert.equal(d.last('site:supervisor')[3].ref, 'P-1');
     // The contractor's "बाक़ी" shows the delivery waiting for the site's count.
     await d.site(contractor, 'बाक़ी');
@@ -143,11 +147,10 @@ test('commands leave an open challan or count question open; the first count clo
     // The supervisor checks status mid-question, then types the count: the question was still open.
     await d.site(supervisor, 'स्थिति P-1');
     assert.equal(d.last('supervisor')[1], 'office.status');
+    // Typed figures are the supervisor's own count: recorded at once, and the difference is told.
     await d.site(supervisor, '48 2');
-    assert.equal(d.last('supervisor')[1], 'step.confirm_count');
-    assert.ok(d.last('supervisor')[2].includes('सीमेंट 48 बोरी'));
-    await d.site(supervisor, 'हाँ');
     assert.equal(d.last('supervisor')[1], 'site.count_saved_differs');
+    assert.ok(d.last('supervisor')[2].includes('सीमेंट 48 बोरी'));
     assert.ok(d.said.some(([to, key, , p]) => to === 'site:contractor' && key === 'site.count_differs' && p.ref === 'P-1'));
 
     // The supervisor's count closed the contractor's count question: a bare "हाँ" changes nothing.
@@ -198,10 +201,9 @@ test('"ok <ref>" ends the decider\'s open yes/no question: a following "हा�
 
     // Meanwhile a supervisor's request is held as J-2; the contractor approves it by reference.
     await d.site(supervisor, 'x', { name: 'request_jcb', args: { site: 'Gwalior', day: '31-10', time: '8', hours: '4' } });
-    await d.site(supervisor, 'हाँ');
-    assert.deepEqual([d.last('supervisor')[1], d.last('supervisor')[3].ref], ['office.held', 'J-2']);
+    assert.deepEqual([d.last('supervisor')[1], d.last('supervisor')[3].ref], ['office.held_step', 'J-2']);
     await d.site(contractor, 'ok J-2');
-    assert.equal(d.last('contractor')[1], 'site.jcb_requested');
+    assert.equal(d.last('contractor')[1], 'site.jcb_requested_time');
 
     // The approval ended the open bill question: this "हाँ" accepts nothing.
     await d.site(contractor, 'हाँ');

@@ -20,9 +20,9 @@ All of these people already live on WhatsApp. None of them will install an app o
 
 ```
 Supervisor (WhatsApp)   "कल सुबह 8 बजे शिवपुरी साइट पर JCB चाहिए, 6 घंटे"   (text or voice note)
-Contractor agent        reads it back -> हाँ -> over the approval limit? held as J-1 for the contractor's "ok J-1"
-                        -> signed BOOKING_REQUEST over A2A
-JCB agent               asks the JCB owner: हाँ / नहीं / दूसरा समय -> signed BOOKING_REPLY with the rate
+Contractor agent        over the approval limit? held as J-1 for the contractor's "ok J-1" (no read-back: the OK is
+                        the check); within it, read back once -> हाँ -> signed BOOKING_REQUEST over A2A
+JCB agent               asks the JCB owner; their exact "हाँ 1200" / "नहीं" / "30-10" is the answer -> signed BOOKING_REPLY
 JCB operator            start and end hour-meter photos -> Muse Spark reads the digits -> code checks continuity -> hours
 JCB owner               "भेजो" -> signed BILL, the meter photos' fingerprints as evidence
 Contractor              sees the bill beside the supervisor's own count -> accept, or dispute with their figure
@@ -64,7 +64,7 @@ flowchart LR
 - **Ledgers** (`src/ledger/`): each agent has its own append-only SQLite ledger, hash-chained, so a forced edit is detected. Order states are enforced by code: no bill before work or delivery, settlement only for the payment in force on the bill in force, a correction names the bill it replaces.
 - **A2A** (`src/transport/a2a.js`): the official `@a2a-js/sdk`, A2A 1.0 JSON-RPC. Each agent publishes an Agent Card with its id and public key; our signed message travels as a `data` part and the signed receipt comes back the same way. A2A is the envelope only; whether a message is genuine is decided by the protocol layer, never by the transport.
 - **WhatsApp** (`src/wa/`): one webhook per line, `X-Hub-Signature-256` checked on the raw bytes before parsing, each message handled once, replies only inside the 24-hour window. A line is only transport: people are routed by `{line, phone}` to `{agent, role}`, so one phone can be a JCB owner on one number and a contractor on another.
-- **Conversation** (`src/agents/conversation.js`): Muse Spark turns a message into one proposed tool call; the agent reads it back in Hindi and acts only on the person's हाँ. Exact commands are parsed by code before any model: `status J-1`, `pending`, `stock`, `ok P-2`, `no P-2 <reason>`, `help` / `मदद`.
+- **Conversation** (`src/agents/conversation.js`): Muse Spark turns free words into one proposed tool call; the agent reads it back in Hindi and acts only on the person's हाँ. A person's own exact reply to a request open for them ("हाँ 380", "नहीं", "30-10", "बिल", typed figures) and a clear photo reading that code finds consistent act at once with one receipt, because each record already has a second person checking it downstream (`docs/BUILD2.md`, "Fewer steps"). Exact commands are parsed by code before any model: `status J-1`, `pending`, `stock`, `ok P-2`, `no P-2 <reason>`, `help` / `मदद`.
 - **Approvals** (`src/agents/office.js`): a supervisor's order or payment above the contractor's limit (or with no estimate) is held under its reference until the contractor replies `ok` or `no`. Nobody approves their own entry; a decision is made once.
 - **Readers** (`src/readers/`): Muse Spark with a strict JSON schema decides what a photo is (meter, UPI receipt, challan, other) and reads the hour meter, the UPI screenshot and the delivery challan, printed and handwritten. Amounts become integer paise, quantities integer hundredths. An unsure reading says so and the person is asked; a value is never guessed.
 - **Explanations** (`src/agents/explain.js`): when two sides' figures differ, each agent gives Muse Spark the facts from its own ledger and gets back a short, neutral Hindi explanation of where the figures differ and what each rests on. Code checks that every number in it exists in the ledger and that it takes no side, tells no one to pay and invents no reason; otherwise only the plain figures go out.

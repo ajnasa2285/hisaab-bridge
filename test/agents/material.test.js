@@ -68,7 +68,7 @@ test('a whole material order, from request to settled, leaves both ledgers in ag
     assert.deepEqual([order.kind, order.counterparty], ['material', 'agent:supplier-1']);
     assert.equal(s.supCore.ledger.view(orderId).state, 'requested');
     await settle();
-    assert.ok(s.told.some(([a, role, key, p]) => a === 'supplier' && role === 'supplier' && key === 'supplier.order_request' && p.items === 'सीमेंट 50 बोरी, रेत 2 ट्रॉली'));
+    assert.ok(s.told.some(([a, role, key, p]) => a === 'supplier' && role === 'supplier' && key === 'supplier.order_request_time' && p.items === 'सीमेंट 50 बोरी, रेत 2 ट्रॉली'));
 
     // "Yes" needs one rate per item; the rates are what the bill will use.
     r = await runTool(s.sup.tools, supplier, { tool: 'reply_order', args: { orderId, answer: 'yes' } });
@@ -81,7 +81,7 @@ test('a whole material order, from request to settled, leaves both ledgers in ag
     assert.deepEqual([r.ok, r.key], [true, 'supplier.reply_sent_yes']);
     assert.equal(s.siteCore.ledger.view(orderId).state, 'booked');
     await settle();
-    assert.ok(s.told.some(([a, role, key, p]) => a === 'site' && role === 'supervisor' && key === 'site.material_booking_yes' && p.rates === 'सीमेंट ₹350/बोरी, रेत ₹4,000/ट्रॉली'));
+    assert.ok(s.told.some(([a, role, key, p]) => a === 'site' && role === 'supervisor' && key === 'site.material_booking_yes_time' && p.rates === 'सीमेंट ₹350/बोरी, रेत ₹4,000/ट्रॉली'));
 
     // No bill before the delivery; only agreed items can be delivered.
     assert.equal((await runTool(s.sup.tools, supplier, { tool: 'send_bill', args: { orderId } })).key, 'supplier.delivery_missing');
@@ -92,8 +92,8 @@ test('a whole material order, from request to settled, leaves both ledgers in ag
     assert.equal(s.siteCore.ledger.view(orderId).state, 'delivered');
     await settle();
     // The site is asked for its own count; a plain "हाँ" means "the same as the challan".
-    assert.ok(s.told.some(([a, role, key, p]) => a === 'site' && role === 'supervisor' && key === 'site.delivery_received' && p.challan === '412'));
-    const ask = expects.find(([a, role, key]) => a === 'site' && role === 'supervisor' && key === 'site.delivery_received');
+    assert.ok(s.told.some(([a, role, key, p]) => a === 'site' && role === 'supervisor' && key === 'site.delivery_received_challan' && p.challan === '412'));
+    const ask = expects.find(([a, role, key]) => a === 'site' && role === 'supervisor' && key === 'site.delivery_received_challan');
     assert.deepEqual(ask?.[3], { tool: 'confirm_count', args: { orderId, qtysHundredths: [5000, 200], sameAsChallan: true } });
     r = await runTool(s.site.tools, supervisor, ask?.[3]);
     assert.deepEqual([r.ok, r.key], [true, 'site.count_matches']);

@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { tenths as hours, rupees, day as dayName } from '../i18n/format.js';
 import { deliveryResult, isIso, isSha256, isTime, isDay, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
 import { openRefs } from '../ledger/refs.js';
+import { variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
 import { differenceFacts } from './explain-facts.js';
 
@@ -72,16 +73,31 @@ export function createJcbAgent(o) {
     return yes && posInt(yes.body.body.ratePaise) ? yes.body.body.ratePaise : null;
   };
 
+  /**
+   * The day and time an answer is about: another day when offered, else the day (and on a yes the
+   * time) the request asked for. No time is no time, never "—".
+   * @param {Record<string, any>} a @returns {{day: string, time: string | null}}
+   */
+  const answered = (a) => {
+    const req = isUuid(a.orderId) ? ofType(ledger.events(a.orderId), 'BOOKING_REQUEST', 'in').at(-1)?.body.body : undefined;
+    const day = isDay(a.day) ? a.day : req?.day;
+    const time = isTime(a.time) ? a.time : a.answer === 'yes' && isTime(req?.time) ? req.time : null;
+    return { day: isDay(day) ? dayName(day) : '—', time };
+  };
+
   /** @type {Record<string, Tool>} */
   const tools = {
     // The owner answers a booking request: yes (with the hourly rate), no, or another day/time.
     reply_booking: {
       roles: ['jcb_owner'],
       commits: true,
-      describe: (a) => ({
-        key: `step.reply_booking_${a.answer}`,
-        params: { site: siteOf(a.orderId), day: isDay(a.day) ? dayName(a.day) : '—', time: a.time ?? '—', rate: posInt(a.ratePaise) ? rupees(a.ratePaise) : '—' },
-      }),
+      describe: (a) => {
+        const w = answered(a);
+        return {
+          key: variant(`step.reply_booking_${a.answer}`, { time: a.answer !== 'no' && w.time }),
+          params: { site: siteOf(a.orderId), day: w.day, ...(w.time ? { time: w.time } : {}), rate: posInt(a.ratePaise) ? rupees(a.ratePaise) : '—' },
+        };
+      },
       async run(_p, a) {
         if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
         if (!['yes', 'no', 'other_time'].includes(a.answer)) return no('common.bad_args');
@@ -94,12 +110,12 @@ export function createJcbAgent(o) {
         if (a.time !== undefined) body.time = a.time;
         if (a.answer === 'yes') body.ratePaise = a.ratePaise;
         const d = await link.send({ type: 'BOOKING_REPLY', to: /** @type {string} */ (counterparty(a.orderId)), orderId: a.orderId, body });
+        const w = answered(a);
         if (d.ok && a.answer === 'yes') {
-          const req = ofType(ledger.events(a.orderId), 'BOOKING_REQUEST', 'in').at(-1)?.body.body;
-          const bookedDay = a.day ?? req?.day;
-          await tell('operator', 'jcb.job_booked', { ref: refOf(a.orderId), site: req?.site ?? '—', day: isDay(bookedDay) ? dayName(bookedDay) : '—', time: a.time ?? req?.time ?? '—' });
+          await tell('operator', variant('jcb.job_booked', { time: w.time }), { ref: refOf(a.orderId), site: siteOf(a.orderId), day: w.day, ...(w.time ? { time: w.time } : {}) });
         }
-        return deliveryResult(d, `jcb.reply_sent_${a.answer}`);
+        // One receipt of what was sent, with the figures.
+        return deliveryResult(d, `jcb.reply_sent_${a.answer}`, { ref: refOf(a.orderId), site: siteOf(a.orderId), day: w.day, ...(posInt(a.ratePaise) ? { rate: rupees(a.ratePaise) } : {}) });
       },
     },
 
@@ -213,7 +229,9 @@ export function createJcbAgent(o) {
     const b = m.body;
     switch (m.type) {
       case 'BOOKING_REQUEST':
-        await tell('jcb_owner', 'jcb.booking_request', { ref: refOf(m.order_id), site: b.site, day: dayName(b.day), time: b.time ?? '—', hours: b.hoursTenths ? hours(b.hoursTenths) : '—' });
+        await tell('jcb_owner', variant('jcb.booking_request', { time: b.time, hours: b.hoursTenths }), {
+          ref: refOf(m.order_id), site: b.site, day: dayName(b.day), ...(b.time ? { time: b.time } : {}), ...(b.hoursTenths ? { hours: hours(b.hoursTenths) } : {}),
+        });
         break;
       case 'ACCEPT':
         await tell('jcb_owner', 'jcb.bill_accepted', { ref: refOf(m.order_id), site: siteOf(m.order_id) });

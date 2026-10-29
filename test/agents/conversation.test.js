@@ -1,4 +1,5 @@
-// The conversation over the real agents: text → proposed step → read-back → "हाँ" → signed message.
+// The conversation over the real agents: free text → proposed step → read-back → "हाँ" → signed
+// message; exact replies and clear photo readings act at once with a receipt.
 // Muse Spark and the meter reader are stand-ins that return fixed answers.
 
 import { test } from 'node:test';
@@ -12,10 +13,14 @@ const operator = { ...person('operator', 'agent:jcb-1'), phone: '919000000002' }
 const contractor = person('contractor', 'agent:contractor-1');
 const supervisor = { ...person('supervisor', 'agent:contractor-1'), phone: '919000000012' };
 
-test('a JCB job by conversation: every committing step is read back and runs only on "हाँ"', async () => {
+test('a JCB job by conversation: free words are read back; exact replies and clear photos act at once', async () => {
   /** @type {{name: string, args: any}[]} */
   let nextCalls = [];
-  const spark = async () => ({ ok: /** @type {const} */ (true), toolCalls: nextCalls });
+  let calls = 0;
+  const spark = async () => {
+    calls += 1;
+    return { ok: /** @type {const} */ (true), toolCalls: nextCalls };
+  };
   /** @type {any} */
   let nextRead = null;
   const readMeter = async () => nextRead;
@@ -40,62 +45,58 @@ test('a JCB job by conversation: every committing step is read back and runs onl
     const last = () => said.at(-1)?.[1];
     const settle = () => new Promise((r) => setImmediate(r));
 
-    // Supervisor asks for the JCB; read back; yes.
+    // Supervisor asks for the JCB in free words (no approval office here): read back; yes.
     nextCalls = [{ name: 'request_jcb', args: { site: 'Shivpuri', day: '29-10', time: '8', hours: '6' } }];
     await siteTalk.onText(supervisor, 'kal 8 baje Shivpuri JCB chahiye 6 ghante');
     assert.equal(last(), 'step.request_jcb');
+    assert.ok(said.at(-1)?.[2].includes('08:00 बजे से') && said.at(-1)?.[2].includes('6.0 घंटे'), said.at(-1)?.[2]);
     assert.equal(s.siteCore.ledger.orders().length, 0, 'nothing sent before yes');
     await siteTalk.onText(supervisor, 'हाँ');
-    assert.equal(last(), 'site.jcb_requested');
+    assert.equal(last(), 'site.jcb_requested_time');
     await settle();
-    assert.ok(said.some(([w, k, text]) => w === 'jcb:jcb_owner' && k === 'jcb.booking_request' && text.includes('29 अक्टूबर 2026')));
+    assert.ok(said.some(([w, k, text]) => w === 'jcb:jcb_owner' && k === 'jcb.booking_request_time_hours' && text.includes('29 अक्टूबर 2026')));
 
-    // Owner says yes at ₹1,200; read back; yes.
-    nextCalls = [{ name: 'reply_booking', args: { order: null, answer: 'yes', rate_rupees_per_hour: '1200', day: null, time: null } }];
+    // The owner's exact "हाँ 1200" is the decision: sent at once, one receipt, no model, no second "हाँ".
+    calls = 0;
     await jcbTalk.onText(owner, 'haan 1200 ghanta');
-    assert.equal(last(), 'step.reply_booking_yes');
-    await jcbTalk.onText(owner, 'ok');
+    assert.equal(calls, 0, 'an exact reply is read by code');
     assert.equal(last(), 'jcb.reply_sent_yes');
-    assert.ok(said.some(([w, k]) => w === 'jcb:operator' && k === 'jcb.job_booked'));
+    assert.ok(said.at(-1)?.[2].includes('₹1,200'), said.at(-1)?.[2]);
+    assert.ok(said.some(([w, k]) => w === 'jcb:operator' && k === 'jcb.job_booked_time'));
+    await settle();
+    assert.ok(said.some(([w, k, text]) => w === 'site:contractor' && k === 'site.booking_yes_time' && text.includes('29 अक्टूबर 2026') && !text.includes('—')));
 
-    // Start photo is clear: read back, yes. End photo is not clear: the operator types it.
+    // A clear start photo is recorded at once with its reading. An unclear end photo: the operator types it.
     nextRead = { ok: true, kind: 'hour_meter', raw: '1234.5', valueTenths: 12345, clear: true };
-    nextRead = { ok: true, kind: 'hour_meter', raw: '1284.5', valueTenths: 12845, clear: true };
     await jcbTalk.onImage(operator, { mime: 'image/jpeg', bytes: new Uint8Array([1, 2, 3]) });
-    assert.deepEqual(said.at(-1)?.slice(0, 2), ['operator', 'step.record_meter_start']);
-    // The model misread a digit; the operator types the right reading and is asked again.
-    await jcbTalk.onText(operator, '1234.5');
-    assert.equal(last(), 'step.record_meter_start');
+    assert.deepEqual(said.at(-1)?.slice(0, 2), ['operator', 'jcb.meter_start_saved']);
     assert.ok(said.at(-1)?.[2].includes('1234.5'));
-    await jcbTalk.onText(operator, 'हाँ');
-    assert.equal(last(), 'jcb.meter_start_saved');
     nextRead = { ok: true, kind: 'hour_meter', raw: '124?.6', valueTenths: null, clear: false };
     await jcbTalk.onImage(operator, { mime: 'image/jpeg', bytes: new Uint8Array([4, 5, 6]) });
     assert.equal(last(), 'meter.ask_person');
     await jcbTalk.onText(operator, '1240.6');
-    assert.equal(last(), 'step.record_meter_end');
-    await jcbTalk.onText(operator, 'haan');
     assert.equal(last(), 'jcb.meter_end_saved');
 
-    // Bill: the read-back already shows the figures from the ledger.
-    nextCalls = [{ name: 'send_bill', args: { order: null } }];
+    // "बिल भेजो" is exact: the bill goes at once and the receipt shows its figures from the ledger.
+    calls = 0;
     await jcbTalk.onText(owner, 'bill bhejo');
-    assert.equal(last(), 'step.send_bill');
-    assert.ok(said.at(-1)?.[2].includes('₹7,320'));
-    await jcbTalk.onText(owner, 'हाँ');
+    assert.equal(calls, 0);
     assert.equal(last(), 'jcb.bill_sent');
+    assert.ok(said.at(-1)?.[2].includes('₹7,320'));
     await settle();
 
-    // The contractor was asked "ठीक हो तो हाँ": one "हाँ" accepts, with no second question.
+    // The contractor was asked "ठीक हो तो हाँ": one "हाँ जी।" (as a voice note writes it) accepts, with no second question.
     assert.ok(said.some(([w, k]) => w === 'site:contractor' && k === 'site.bill_received'));
-    await siteTalk.onText(contractor, 'हाँ');
+    await siteTalk.onText(contractor, 'हाँ जी।');
     assert.equal(last(), 'site.bill_accepted');
     assert.equal(s.jcbCore.ledger.view(/** @type {any} */ (s.jcbCore.ledger.orders()[0]).order_id).state, 'accepted');
 
-    // "नहीं" to a read-back sends nothing.
+    // The contractor's own free-text request is read back once; "नहीं" to it sends nothing.
     nextCalls = [{ name: 'request_jcb', args: { site: 'Gwalior', day: '30-10', time: null, hours: null } }];
     await siteTalk.onText(contractor, 'Gwalior parso');
-    await siteTalk.onText(contractor, 'नहीं');
+    assert.equal(last(), 'step.request_jcb');
+    assert.doesNotMatch(said.at(-1)?.[2] ?? '', /—/);
+    await siteTalk.onText(contractor, 'नहीं, अभी नहीं।');
     assert.equal(last(), 'step.cancelled');
     assert.equal(s.siteCore.ledger.orders().length, 1);
 

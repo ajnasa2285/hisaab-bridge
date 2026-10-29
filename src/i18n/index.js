@@ -35,3 +35,13 @@ export function paramsOf(key) {
   if (template === undefined) throw new Error(`i18n: unknown key "${key}"`);
   return [...new Set([...template.matchAll(PLACEHOLDER)].map((m) => m[1]))];
 }
+
+/**
+ * The variant of a text for the optional parts a message has: the base key, then `_<part>` for each
+ * part present, in the order given. `variant('step.request_jcb', {time: true, hours: false})` is
+ * 'step.request_jcb_time'. A value that is absent is left out of the sentence, never shown as "—".
+ * @param {string} base @param {Record<string, unknown>} parts
+ */
+export function variant(base, parts) {
+  return [base, ...Object.entries(parts).filter(([, v]) => v !== undefined && v !== null && v !== false && v !== '').map(([k]) => k)].join('_');
+}

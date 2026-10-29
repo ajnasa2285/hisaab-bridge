@@ -1,6 +1,6 @@
 // Any photo, any time: the photo's kind (a stand-in for classifyPhoto here) decides the flow, not the
 // sender's role. A kind the person may not send is named with who sends it; an unsure kind is asked;
-// nothing is read twice and nothing is recorded without the person's "हाँ".
+// nothing is read twice; a clear, consistent reading is recorded with a receipt, anything else asks.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -125,8 +125,7 @@ test('unsure kind: asked once with the role\'s reply forms; the answer routes th
     await c.talks.jcb.onText(operator, 'मीटर');
     assert.equal(c.calls.meter, 1);
     assert.equal(c.calls.classify, 1);
-    assert.equal(c.last()?.[1], 'step.record_meter_start');
-    await c.talks.jcb.onText(operator, 'हाँ');
+    // A clear reading that code finds consistent is recorded at once.
     assert.equal(c.last()?.[1], 'jcb.meter_start_saved');
 
     // The contractor is offered both of their forms; "UPI" goes to the payment flow, "चालान" to the site count.
@@ -203,17 +202,19 @@ test('a photo while another question is open starts its own flow; the old questi
     await runTool(c.s.site.tools, contractor, { tool: 'request_jcb', args: { site: 'Site A', day: '2026-10-29' } });
     const orderId = /** @type {{order_id: string}} */ (c.s.siteCore.ledger.orders()[0]).order_id;
     await runTool(c.s.jcb.tools, owner, { tool: 'reply_booking', args: { orderId, answer: 'yes', ratePaise: 120000 } });
+    // The start is 2000.0, so the photo's 1234.5 as the end fails code's check: it is read back.
+    await runTool(c.s.jcb.tools, operator, { tool: 'record_meter', args: { orderId, which: 'start', valueTenths: 20000, sha256: 'a'.repeat(64) } });
     c.sees('meter');
     await c.talks.jcb.onImage(operator, photo);
-    assert.equal(c.last()?.[1], 'step.record_meter_start');
+    assert.equal(c.last()?.[1], 'step.record_meter_end');
     // An unsure photo now: the meter read-back lapses, so a "हाँ" can no longer record it.
     c.sees('meter', false);
     await c.talks.jcb.onImage(operator, photo);
     assert.equal(c.last()?.[1], 'photo.ask_kind');
     await c.talks.jcb.onText(operator, 'नहीं');
     await c.talks.jcb.onText(operator, 'हाँ');
-    assert.notEqual(c.last()?.[1], 'jcb.meter_start_saved');
-    assert.equal(c.s.jcbCore.ledger.view(orderId).state, 'booked');
+    assert.notEqual(c.last()?.[1], 'jcb.end_not_after_start');
+    assert.equal(c.s.jcbCore.ledger.events(orderId).filter((e) => e.type === 'EVIDENCE').length, 1, 'only the start reading');
   } finally {
     await c.s.close();
   }

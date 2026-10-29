@@ -237,3 +237,39 @@ The model writes only `{explanation}`. All `{figures}` fragments below come from
 
 `help.contractor`, `help.supervisor`, `help.jcb_owner` and `help.supplier` gained one question
 example each; `test/orchestrator/intake.test.js` checks they reach the ask route.
+
+## Fewer steps (docs/BUILD2.md "Fewer steps"; Claude drafted, Fable to polish)
+
+A value that was not given is left out of the sentence, never shown as "—": code picks the variant
+(`variant()` in `src/i18n/index.js`): the base key without the optional part, `_time`, `_hours`,
+`_time_hours`, `_estimate` or `_challan` with it.
+
+| Key | Params | When |
+|---|---|---|
+| `jcb.booking_request` / `_time` / `_hours` / `_time_hours` | ref, site, day, [time], [hours] | to the JCB owner; now names the exact reply "हाँ 1200" |
+| `jcb.job_booked` / `_time` | ref, site, day, [time] | to the operator |
+| `jcb.reply_sent_yes` | ref, site, day, rate | receipt of the owner's exact yes (was without figures) |
+| `jcb.reply_sent_no` / `_other_time` | ref, site, day | receipts |
+| `site.jcb_requested` / `_time` | ref, site, day, [time] | JCB request sent |
+| `site.booking_yes` / `_time` | ref, site, day, [time], rate | the JCB owner's yes; the day (and time) the request asked for when the yes carried none |
+| `site.booking_other_time` / `_time` | ref, site, day, [time] | another day offered (the rate, never given on this answer, is gone) |
+| `site.material_booking_yes` / `_time` | ref, site, day, [time], rates | the supplier's yes; the day asked for when the yes carried none |
+| `site.material_booking_other_time` / `_time` | ref, site, day, [time] | another day offered |
+| `site.delivery_received` / `_challan` | ref, site, items, [challan] | the delivery notice, with or without a challan number |
+| `site.challan_count_saved` / `_challan`, `site.challan_count_matches` / `_challan` | ref, site, items, [challan] | the site's count from its challan photo, recorded |
+| `site.challan_ask_person_blank` | ref, names | type the figures, when nothing was read to show |
+| `site.payment_claimed`, `site.material_payment_claimed` | ref, amount, utr | receipt of a payment claim (clear UPI photo, sent at once) |
+| `supplier.order_request` / `_time` | ref, site, day, [time], items | to the supplier |
+| `supplier.reply_sent_yes` | ref, site, day, rates | receipt of the supplier's exact yes (was without figures) |
+| `supplier.reply_sent_no` / `_other_time` | ref, site, day | receipts |
+| `challan.ask_person_blank` | items | the supplier types the quantities, when nothing was read to show |
+| `meter.ask_person_blank` | — | the person types the meter digits, when nothing was read to show |
+| `step.request_jcb`, `step.request_material` | what | the read-back now carries the request as a statement (`what.*`) |
+| `step.reply_booking_yes` / `_time`, `step.reply_booking_other_time` / `_time`, `step.reply_order_other_time` / `_time` | site, day, [time], rate | read-backs of an answer understood from free words |
+| `step.record_delivery` / `_challan`, `step.site_challan` / `_challan` | site, items, [challan] (+ ref, names) | read-backs; `step.site_challan` is now used only when the photo differs from the supplier's delivery, and says so |
+| `what.jcb` / `_time` / `_hours` / `_time_hours` | site, day, [time], [hours] | a JCB request as a plain statement |
+| `what.material` / `_time` | site, day, [time], items | a material request as a plain statement |
+| `office.held_step` | ref, what | to the supervisor, the one message when a request goes for approval |
+| `office.approval_needed` / `_estimate` | ref, by, [estimate], step | to the contractor; `step` is now the `what.*` statement |
+| `office.status_held` / `_estimate` | ref, step, [estimate], decision | `status <ref>` for a held step |
+| `reply.which_order` | refs, ref | an exact reply fits several open orders: write the reference in front |

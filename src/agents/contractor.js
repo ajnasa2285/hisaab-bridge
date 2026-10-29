@@ -9,6 +9,7 @@ import { tenths as hours, rupees, day as dayName, qty } from '../i18n/format.js'
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
 import { agreedRates, billFollows, countDifferences, delivery, itemsText, lineAmountPaise, linesText, materialBillBody, rateFor, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, validItems } from './material.js';
 import { openRefs } from '../ledger/refs.js';
+import { t, variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
 import { differenceFacts } from './explain-facts.js';
 
@@ -127,6 +128,31 @@ export function createContractorAgent(o) {
     return posInt(total) ? rupees(total) : '—';
   };
 
+  /**
+   * A JCB request as a plain statement, with only the parts given: "शिवपुरी पर 30 अक्टूबर 2026 को 8 बजे
+   * से JCB, 6 घंटे". @param {Record<string, any>} a @returns {{key: string, params: Record<string, string>}}
+   */
+  const jcbSummary = (a) => ({
+    key: variant('what.jcb', { time: isTime(a.time), hours: posInt(a.hoursTenths) }),
+    params: {
+      site: typeof a.site === 'string' ? a.site : '—', day: isDay(a.day) ? dayName(a.day) : '—',
+      ...(isTime(a.time) ? { time: a.time } : {}), ...(posInt(a.hoursTenths) ? { hours: hours(a.hoursTenths) } : {}),
+    },
+  });
+  /**
+   * A material request as a plain statement: "शिवपुरी पर 30 अक्टूबर 2026 को: सीमेंट 50 बोरी".
+   * @param {Record<string, any>} a @returns {{key: string, params: Record<string, string>}}
+   */
+  const materialSummary = (a) => ({
+    key: variant('what.material', { time: isTime(a.time) }),
+    params: {
+      site: typeof a.site === 'string' ? a.site : '—', day: isDay(a.day) ? dayName(a.day) : '—',
+      ...(isTime(a.time) ? { time: a.time } : {}), items: validItems(a.items) ? itemsText(a.items) : '—',
+    },
+  });
+  /** @param {{key: string, params: Record<string, string>}} w */
+  const said = (w) => t(w.key, w.params);
+
   /** @type {Record<string, Tool>} */
   const tools = {
     // The contractor or the supervisor asks for the JCB on a site and day.
@@ -141,7 +167,8 @@ export function createContractorAgent(o) {
           return posInt(a.hoursTenths) && rate !== null ? Math.round((a.hoursTenths * rate) / 10) : null;
         },
       },
-      describe: (a) => ({ key: 'step.request_jcb', params: { site: typeof a.site === 'string' ? a.site : '—', day: isDay(a.day) ? dayName(a.day) : '—', time: a.time ?? '—', hours: posInt(a.hoursTenths) ? hours(a.hoursTenths) : '—' } }),
+      describe: (a) => ({ key: 'step.request_jcb', params: { what: said(jcbSummary(a)) } }),
+      summary: jcbSummary,
       async run(_p, a) {
         if (typeof a.site !== 'string' || !a.site.trim() || a.site.length > 80 || !isDay(a.day)) return no('common.bad_args');
         if ((a.time !== undefined && !isTime(a.time)) || (a.hoursTenths !== undefined && !posInt(a.hoursTenths))) return no('common.bad_args');
@@ -152,7 +179,7 @@ export function createContractorAgent(o) {
         // A new order, or the same order again after the JCB owner offered another time.
         const orderId = a.orderId !== undefined && known(a.orderId) ? a.orderId : randomUUID();
         const d = await link.send({ type: 'BOOKING_REQUEST', to: a.orderId !== undefined && known(a.orderId) ? counterparty(a.orderId) : o.jcbAgentId, orderId, body });
-        return deliveryResult(d, 'site.jcb_requested', { ref: refOf(orderId), site: body.site, day: dayName(body.day), time: body.time ?? '—' });
+        return deliveryResult(d, variant('site.jcb_requested', { time: body.time }), { ref: refOf(orderId), site: body.site, day: dayName(body.day), ...(body.time ? { time: body.time } : {}) });
       },
     },
 
@@ -177,10 +204,8 @@ export function createContractorAgent(o) {
           return total;
         },
       },
-      describe: (a) => ({
-        key: 'step.request_material',
-        params: { site: typeof a.site === 'string' ? a.site : '—', day: isDay(a.day) ? dayName(a.day) : '—', time: a.time ?? '—', items: validItems(a.items) ? itemsText(a.items) : '—' },
-      }),
+      describe: (a) => ({ key: 'step.request_material', params: { what: said(materialSummary(a)) } }),
+      summary: materialSummary,
       async run(_p, a) {
         if (typeof a.site !== 'string' || !a.site.trim() || a.site.length > 80 || !isDay(a.day) || !validItems(a.items)) return no('common.bad_args');
         if (a.time !== undefined && !isTime(a.time)) return no('common.bad_args');
@@ -212,7 +237,7 @@ export function createContractorAgent(o) {
           const counted = challanItems(a.orderId, a.qtysHundredths);
           /** @type {string} */
           const challan = validChallan(a.challan) ? a.challan.number ?? '—' : '—';
-          return { key: 'step.site_challan', params: { ref: refOf(a.orderId), site: siteOf(a.orderId), challan, items: counted ? itemsText(counted) : '—', names: orderedNames(a.orderId) } };
+          return { key: variant('step.site_challan', { challan: challan !== '—' }), params: { ref: refOf(a.orderId), site: siteOf(a.orderId), challan, items: counted ? itemsText(counted) : '—', names: orderedNames(a.orderId) } };
         }
         const counted = countedItems(a.orderId, a.qtysHundredths);
         return { key: 'step.confirm_count', params: { site: siteOf(a.orderId), items: counted ? itemsText(counted) : '—' } };
@@ -305,7 +330,7 @@ export function createContractorAgent(o) {
         if (view.currentBill === null) return no('common.wrong_state');
         const body = { bill: view.currentBill, amountPaise: a.amountPaise, utr: a.utr, paidOn: a.paidOn, screenshot: { sha256: a.screenshotSha256 } };
         const d = await link.send({ type: 'PAYMENT_CLAIM', to: counterparty(a.orderId), orderId: a.orderId, body });
-        return deliveryResult(d, keyFor(a.orderId, 'site.payment_claimed'), { amount: rupees(a.amountPaise) });
+        return deliveryResult(d, keyFor(a.orderId, 'site.payment_claimed'), { ref: refOf(a.orderId), amount: rupees(a.amountPaise), utr: a.utr });
       },
     },
   };
@@ -335,9 +360,10 @@ export function createContractorAgent(o) {
     if (before !== null && !sameItems(before, items) && person.role !== 'contractor') {
       await tell('contractor', 'site.count_changed', { ref, site, old: itemsText(before), count: itemsText(items), challan: d ? itemsText(d.items) : '—' });
     }
-    if (d === null) return ok('site.challan_count_saved', { ref, site, items: itemsText(items), challan: challan.number ?? '—' });
+    if (d === null) return ok(variant('site.challan_count_saved', { challan: challan.number }), { ref, site, items: itemsText(items), ...(challan.number ? { challan: challan.number } : {}) });
     const c = compareCount(a.orderId, items, challan.number, d);
-    if (c.same) return ok('site.challan_count_matches', { ref, site, items: itemsText(items), challan: d.number ?? challan.number ?? '—' });
+    const number = d.number ?? challan.number;
+    if (c.same) return ok(variant('site.challan_count_matches', { challan: number }), { ref, site, items: itemsText(items), ...(number ? { challan: number } : {}) });
     // Code compares; the contractor is told both figures (in the reply, when the contractor counted).
     if (person.role !== 'contractor') await tell('contractor', 'site.challan_count_differs', c.params);
     return ok('site.challan_count_differs', c.params);
@@ -395,11 +421,17 @@ export function createContractorAgent(o) {
     const ref = refOf(m.order_id);
     switch (m.type) {
       case 'BOOKING_REPLY': {
+        // The day and time the answer is about: another day when offered, else what the order asked for.
+        const req = ofType(ledger.events(m.order_id), 'BOOKING_REQUEST', 'out').at(-1)?.body.body;
+        const day = b.day ?? req?.day;
+        const time = b.time ?? (b.answer === 'yes' ? req?.time : undefined);
         /** @type {Record<string, string>} */
-        const params = { ref, site, day: b.day ? dayName(b.day) : '—', time: b.time ?? '—' };
+        const params = { ref, site };
+        if (isDay(day)) params.day = dayName(day);
+        if (time) params.time = time;
         if (isMaterial(m.order_id)) params.rates = Array.isArray(b.rates) ? ratesText(b.rates) : '—';
-        else params.rate = b.ratePaise ? rupees(b.ratePaise) : '—';
-        const key = keyFor(m.order_id, `site.booking_${b.answer}`);
+        else if (b.ratePaise) params.rate = rupees(b.ratePaise);
+        const key = variant(keyFor(m.order_id, `site.booking_${b.answer}`), { time: b.answer !== 'no' && time });
         await tell('contractor', key, params);
         await tell('supervisor', key, params);
         break;
@@ -417,10 +449,11 @@ export function createContractorAgent(o) {
           break;
         }
         // The site is asked for its own count; a plain "हाँ" means "the same as the challan".
-        const params = { ref, site, items: itemsText(b.items), challan: b.challan?.number ?? '—' };
+        const params = { ref, site, items: itemsText(b.items), ...(b.challan?.number ? { challan: b.challan.number } : {}) };
         const expect = { tool: 'confirm_count', args: { orderId: m.order_id, qtysHundredths: b.items.map((/** @type {Item} */ it) => it.qtyHundredths), sameAsChallan: true } };
-        await tell('supervisor', 'site.delivery_received', params, expect);
-        await tell('contractor', 'site.delivery_received', params, expect);
+        const key = variant('site.delivery_received', { challan: b.challan?.number });
+        await tell('supervisor', key, params, expect);
+        await tell('contractor', key, params, expect);
         break;
       }
       case 'BILL':

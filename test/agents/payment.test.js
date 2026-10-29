@@ -64,12 +64,12 @@ test('a UPI screenshot becomes a confirmed payment claim; the owner\'s one "ह�
     await siteTalk.onText(contractor, 'नहीं');
     assert.equal(last(), 'step.cancelled');
 
-    // The right screenshot: read back, yes, claimed.
+    // The right screenshot, clear, the bill's amount: claimed at once (the owner's confirmation is the check),
+    // with a receipt of the figures.
     nextRead = { ok: true, kind: 'upi_payment', amountPaise: 732000, date: '2026-10-30', utr: '412345678901', status: 'success', clear: true };
     await siteTalk.onImage(contractor, shot);
-    assert.equal(last(), 'step.claim_payment');
-    await siteTalk.onText(contractor, 'हाँ');
     assert.equal(last(), 'site.payment_claimed');
+    assert.ok(said.at(-1)?.[2].includes('₹7,320') && said.at(-1)?.[2].includes('412345678901') && said.at(-1)?.[2].includes('J-1'), said.at(-1)?.[2]);
     await new Promise((r) => setImmediate(r));
     assert.equal(s.jcbCore.ledger.view(orderId).state, 'payment_claimed');
     assert.ok(said.some(([w, k]) => w === 'jcb:jcb_owner' && k === 'jcb.payment_claimed'));
