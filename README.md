@@ -104,14 +104,25 @@ The figure that matters most is the "wrong but confident" column: across all rea
 
 Not yet measured: UPI on unseen screenshots and other UPI apps, the challan reader and the photo-kind reader on real challans. Sample sizes are small and stated as such.
 
-**Tests:** 356 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and answered with the same receipt), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, the explanation and answer checks, and the judge page's file serving.
+**Tests:** 411 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and answered with the same receipt), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, exact replies and clear photos that act at once, evidence exchange with hash checks, the site's signed copy, the explanation and answer checks, and the judge page's file serving.
 
 ## What works today, honestly
 
 - Running live on EC2 with HTTPS: three agents, their keys and ledgers, the webhooks, the judge page.
-- The JCB WhatsApp number works end to end on real phones. Since 28 October all three agents run on it, each phone routed to its own agent and role (contractor, supervisor, supplier, JCB operator), while the contractor-side flow is tested with real people.
+- The JCB WhatsApp number works end to end on real phones. Since 28 October all three agents run on it, each phone routed to its own agent and role (contractor, supervisor, supplier, JCB owner, JCB operator), while the contractor-side flow is tested with real people.
 - The site and supplier numbers are Meta test numbers in separate business portfolios. As of 28 October the site number's business account is locked by Meta (error 131031), which we are resolving with Meta; until then all three agents can run on one number, routed by the sender's phone.
 - Real pilot jobs with a JCB owner and a contractor we work with start only after our own full run passes.
+
+## Roadmap: how the network grows
+
+Not built yet; this is where the same design goes.
+
+1. **Every business, its own agent.** The JCB owner and the supplier are the first two. A kiln, a transporter, a labour contractor or a hardware shop is the same pattern: its own keys, its own ledger, its own WhatsApp conversation.
+2. **Agents find each other.** Each agent publishes an Agent Card with what it offers, where, and its public key. A contractor's agent asks every JCB owner or supplier in the area at once, waits for their answers, and brings the contractor the options: who, when, at what rate. One reply chooses; the others are told, signed, that they are not needed.
+3. **No agent yet? Still in the network.** An owner the contractor already knows can answer on plain WhatsApp, after agreeing to receive requests. That answer is marked as unsigned. After the job, the owner is invited to get an agent of their own, so every deployed agent brings in the next business. The network grows from any agent, not from us.
+4. **One person, many businesses.** A contractor who also rents out his own JCB runs both from one phone, with one role per message.
+5. **A track record that travels.** Settled jobs, on-time deliveries and resolved disputes are signed by both sides; a business can show that history to a new partner, with its consent.
+6. **Each business on its own number.** Today all agents share one Meta test number, routed per phone; in production each business has its own WhatsApp number, with approved templates for the first message.
 
 ## Run it
 
