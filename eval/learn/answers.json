@@ -1,0 +1,651 @@
+{
+ "note": "Invented documents only: invented suppliers, numbers and phones (9190000000xx). qty is the delivered quantity a careful person would book; the other figures are only printed.",
+ "docs": [
+  {
+   "id": "p1a",
+   "pair": "p1",
+   "role": "A",
+   "layout": "rate-left",
+   "party": "navrang-traders",
+   "supplier": "NAVRANG TRADERS",
+   "phone": "919000000011",
+   "challanNo": "NT-417",
+   "date": "12/10/2026",
+   "items": [
+    {
+     "name": "Cement PPC",
+     "unit": "bag",
+     "rate": "385.00",
+     "qty": "50",
+     "amount": "19,250.00"
+    },
+    {
+     "name": "River Sand",
+     "unit": "cft",
+     "rate": "48.00",
+     "qty": "300",
+     "amount": "14,400.00"
+    },
+    {
+     "name": "Grit 20mm",
+     "unit": "cft",
+     "rate": "52.00",
+     "qty": "150",
+     "amount": "7,800.00"
+    }
+   ]
+  },
+  {
+   "id": "p1b",
+   "pair": "p1",
+   "role": "B",
+   "layout": "rate-left",
+   "party": "navrang-traders",
+   "supplier": "NAVRANG TRADERS",
+   "phone": "919000000011",
+   "challanNo": "NT-452",
+   "date": "19/10/2026",
+   "items": [
+    {
+     "name": "Cement PPC",
+     "unit": "bag",
+     "rate": "390.00",
+     "qty": "80",
+     "amount": "31,200.00"
+    },
+    {
+     "name": "River Sand",
+     "unit": "cft",
+     "rate": "48.00",
+     "qty": "250",
+     "amount": "12,000.00"
+    },
+    {
+     "name": "Grit 10mm",
+     "unit": "cft",
+     "rate": "55.00",
+     "qty": "120",
+     "amount": "6,600.00"
+    }
+   ]
+  },
+  {
+   "id": "p3a",
+   "pair": "p3",
+   "role": "A",
+   "layout": "handwritten-overwrite",
+   "party": "shivam-sand-supply",
+   "supplier": "SHIVAM SAND SUPPLY",
+   "phone": "919000000013",
+   "challanNo": "2231",
+   "date": "10/10/2026",
+   "items": [
+    {
+     "name": "Yamuna Sand",
+     "unit": "cft",
+     "printedQty": "400",
+     "qty": "350"
+    },
+    {
+     "name": "Stone Dust",
+     "unit": "cft",
+     "qty": "200"
+    },
+    {
+     "name": "Red Bricks",
+     "unit": "nos",
+     "printedQty": "3000",
+     "qty": "2500"
+    }
+   ]
+  },
+  {
+   "id": "p3b",
+   "pair": "p3",
+   "role": "B",
+   "layout": "handwritten-overwrite",
+   "party": "shivam-sand-supply",
+   "supplier": "SHIVAM SAND SUPPLY",
+   "phone": "919000000013",
+   "challanNo": "2268",
+   "date": "17/10/2026",
+   "items": [
+    {
+     "name": "Yamuna Sand",
+     "unit": "cft",
+     "printedQty": "500",
+     "qty": "450"
+    },
+    {
+     "name": "Stone Dust",
+     "unit": "cft",
+     "printedQty": "300",
+     "qty": "250"
+    },
+    {
+     "name": "Red Bricks",
+     "unit": "nos",
+     "qty": "4000"
+    }
+   ]
+  },
+  {
+   "id": "p4a",
+   "pair": "p4",
+   "role": "A",
+   "layout": "weight-beside-qty",
+   "party": "omkar-blocks",
+   "supplier": "OMKAR BLOCKS & PAVERS",
+   "phone": "919000000014",
+   "challanNo": "OB/1093",
+   "date": "11/10/2026",
+   "items": [
+    {
+     "name": "AAC Block 600x200x150",
+     "unit": "nos",
+     "weight": "2,700",
+     "qty": "250"
+    },
+    {
+     "name": "Paver Block 60mm",
+     "unit": "nos",
+     "weight": "1,980",
+     "qty": "600"
+    },
+    {
+     "name": "Kerb Stone",
+     "unit": "nos",
+     "weight": "1,440",
+     "qty": "40"
+    }
+   ]
+  },
+  {
+   "id": "p4b",
+   "pair": "p4",
+   "role": "B",
+   "layout": "weight-beside-qty",
+   "party": "omkar-blocks",
+   "supplier": "OMKAR BLOCKS & PAVERS",
+   "phone": "919000000014",
+   "challanNo": "OB/1121",
+   "date": "18/10/2026",
+   "items": [
+    {
+     "name": "AAC Block 600x200x150",
+     "unit": "nos",
+     "weight": "3,240",
+     "qty": "300"
+    },
+    {
+     "name": "Paver Block 80mm",
+     "unit": "nos",
+     "weight": "2,200",
+     "qty": "500"
+    },
+    {
+     "name": "Kerb Stone",
+     "unit": "nos",
+     "weight": "1,080",
+     "qty": "30"
+    }
+   ]
+  },
+  {
+   "id": "p5a",
+   "pair": "p5",
+   "role": "A",
+   "layout": "ordered-vs-supplied",
+   "party": "mahadev-hardware",
+   "supplier": "MAHADEV HARDWARE & STEEL",
+   "phone": "919000000015",
+   "challanNo": "MH-3307",
+   "date": "09/10/2026",
+   "items": [
+    {
+     "name": "MS Angle 40x40",
+     "unit": "kg",
+     "ordered": "500",
+     "qty": "420"
+    },
+    {
+     "name": "Cement PPC",
+     "unit": "bag",
+     "ordered": "100",
+     "qty": "100"
+    },
+    {
+     "name": "PVC Pipe 4 inch",
+     "unit": "nos",
+     "ordered": "30",
+     "qty": "24"
+    }
+   ]
+  },
+  {
+   "id": "p5b",
+   "pair": "p5",
+   "role": "B",
+   "layout": "ordered-vs-supplied",
+   "party": "mahadev-hardware",
+   "supplier": "MAHADEV HARDWARE & STEEL",
+   "phone": "919000000015",
+   "challanNo": "MH-3342",
+   "date": "15/10/2026",
+   "items": [
+    {
+     "name": "MS Angle 40x40",
+     "unit": "kg",
+     "ordered": "600",
+     "qty": "550"
+    },
+    {
+     "name": "Cement PPC",
+     "unit": "bag",
+     "ordered": "120",
+     "qty": "90"
+    },
+    {
+     "name": "PVC Pipe 4 inch",
+     "unit": "nos",
+     "ordered": "20",
+     "qty": "20"
+    }
+   ]
+  },
+  {
+   "id": "p6a",
+   "pair": "p6",
+   "role": "A",
+   "layout": "rate-x-qty-compact",
+   "party": "gaurav-cement-agency",
+   "supplier": "GAURAV CEMENT AGENCY",
+   "phone": "919000000016",
+   "challanNo": "GC-208",
+   "date": "07/10/2026",
+   "items": [
+    {
+     "name": "Cement PPC",
+     "unit": "bag",
+     "rate": "385",
+     "qty": "40",
+     "amount": "15,400"
+    },
+    {
+     "name": "White Cement",
+     "unit": "kg",
+     "rate": "28",
+     "qty": "150",
+     "amount": "4,200"
+    },
+    {
+     "name": "Wall Putty",
+     "unit": "bag",
+     "rate": "720",
+     "qty": "6",
+     "amount": "4,320"
+    }
+   ]
+  },
+  {
+   "id": "p6b",
+   "pair": "p6",
+   "role": "B",
+   "layout": "rate-x-qty-compact",
+   "party": "gaurav-cement-agency",
+   "supplier": "GAURAV CEMENT AGENCY",
+   "phone": "919000000016",
+   "challanNo": "GC-231",
+   "date": "14/10/2026",
+   "items": [
+    {
+     "name": "Cement PPC",
+     "unit": "bag",
+     "rate": "390",
+     "qty": "70",
+     "amount": "27,300"
+    },
+    {
+     "name": "White Cement",
+     "unit": "kg",
+     "rate": "28",
+     "qty": "90",
+     "amount": "2,520"
+    },
+    {
+     "name": "Wall Putty",
+     "unit": "bag",
+     "rate": "720",
+     "qty": "9",
+     "amount": "6,480"
+    }
+   ]
+  },
+  {
+   "id": "p7a",
+   "pair": "p7",
+   "role": "A",
+   "layout": "weighbridge-net",
+   "party": "balaji-stone-crusher",
+   "supplier": "BALAJI STONE CRUSHER",
+   "phone": "919000000017",
+   "challanNo": "5512",
+   "date": "06/10/2026",
+   "items": [
+    {
+     "name": "Grit 20mm",
+     "unit": "kg",
+     "gross": "31,450",
+     "tare": "12,300",
+     "qty": "19150"
+    },
+    {
+     "name": "Grit 10mm",
+     "unit": "kg",
+     "gross": "29,880",
+     "tare": "12,260",
+     "qty": "17620"
+    }
+   ]
+  },
+  {
+   "id": "p7b",
+   "pair": "p7",
+   "role": "B",
+   "layout": "weighbridge-net",
+   "party": "balaji-stone-crusher",
+   "supplier": "BALAJI STONE CRUSHER",
+   "phone": "919000000017",
+   "challanNo": "5579",
+   "date": "13/10/2026",
+   "items": [
+    {
+     "name": "Grit 20mm",
+     "unit": "kg",
+     "gross": "30,720",
+     "tare": "12,310",
+     "qty": "18410"
+    },
+    {
+     "name": "Grit 10mm",
+     "unit": "kg",
+     "gross": "32,140",
+     "tare": "12,280",
+     "qty": "19860"
+    }
+   ]
+  },
+  {
+   "id": "p8a",
+   "pair": "p8",
+   "role": "A",
+   "layout": "qty-after-amount",
+   "party": "jai-ambe-traders",
+   "supplier": "JAI AMBE TRADERS",
+   "phone": "919000000018",
+   "challanNo": "JA-771",
+   "date": "05/10/2026",
+   "items": [
+    {
+     "name": "Red Bricks",
+     "unit": "nos",
+     "rate": "7.50",
+     "qty": "3000",
+     "amount": "22,500.00"
+    },
+    {
+     "name": "Fly Ash Bricks",
+     "unit": "nos",
+     "rate": "6.00",
+     "qty": "2000",
+     "amount": "12,000.00"
+    },
+    {
+     "name": "Coarse Sand",
+     "unit": "cft",
+     "rate": "45.00",
+     "qty": "200",
+     "amount": "9,000.00"
+    }
+   ]
+  },
+  {
+   "id": "p8b",
+   "pair": "p8",
+   "role": "B",
+   "layout": "qty-after-amount",
+   "party": "jai-ambe-traders",
+   "supplier": "JAI AMBE TRADERS",
+   "phone": "919000000018",
+   "challanNo": "JA-806",
+   "date": "12/10/2026",
+   "items": [
+    {
+     "name": "Red Bricks",
+     "unit": "nos",
+     "rate": "7.50",
+     "qty": "4000",
+     "amount": "30,000.00"
+    },
+    {
+     "name": "Fly Ash Bricks",
+     "unit": "nos",
+     "rate": "6.25",
+     "qty": "1600",
+     "amount": "10,000.00"
+    },
+    {
+     "name": "Coarse Sand",
+     "unit": "cft",
+     "rate": "45.00",
+     "qty": "250",
+     "amount": "11,250.00"
+    }
+   ]
+  },
+  {
+   "id": "p2a",
+   "pair": "p2",
+   "role": "A",
+   "layout": "rate-times-qty",
+   "party": "kesar-building-store",
+   "supplier": "KESAR BUILDING STORE",
+   "phone": "919000000012",
+   "challanNo": "436",
+   "date": "16/10/2026",
+   "items": [
+    {
+     "name": "Cement OPC 53",
+     "unit": "bag",
+     "rate": "405",
+     "qty": "45",
+     "amount": "18,225"
+    },
+    {
+     "name": "TMT Bar 8mm",
+     "unit": "kg",
+     "rate": "66",
+     "qty": "275",
+     "amount": "18,150"
+    },
+    {
+     "name": "Binding Wire",
+     "unit": "kg",
+     "rate": "90",
+     "qty": "8",
+     "amount": "720"
+    }
+   ]
+  },
+  {
+   "id": "p2b",
+   "pair": "p2",
+   "role": "B",
+   "layout": "rate-times-qty",
+   "party": "kesar-building-store",
+   "supplier": "KESAR BUILDING STORE",
+   "phone": "919000000012",
+   "challanNo": "451",
+   "date": "22/10/2026",
+   "items": [
+    {
+     "name": "Cement OPC 53",
+     "unit": "bag",
+     "rate": "400",
+     "qty": "55",
+     "amount": "22,000"
+    },
+    {
+     "name": "TMT Bar 12mm",
+     "unit": "kg",
+     "rate": "65",
+     "qty": "320",
+     "amount": "20,800"
+    },
+    {
+     "name": "Binding Wire",
+     "unit": "kg",
+     "rate": "92",
+     "qty": "10",
+     "amount": "920"
+    }
+   ]
+  },
+  {
+   "id": "p9a",
+   "pair": "p9",
+   "role": "A",
+   "layout": "rate-times-qty",
+   "party": "sai-ram-traders",
+   "supplier": "SAI RAM TRADERS",
+   "phone": "919000000019",
+   "challanNo": "SR-118",
+   "date": "04/10/2026",
+   "items": [
+    {
+     "name": "Cement PPC",
+     "unit": "bag",
+     "rate": "380",
+     "qty": "35",
+     "amount": "13,300"
+    },
+    {
+     "name": "Coarse Sand",
+     "unit": "cft",
+     "rate": "46",
+     "qty": "220",
+     "amount": "10,120"
+    },
+    {
+     "name": "Grit 20mm",
+     "unit": "cft",
+     "rate": "54",
+     "qty": "180",
+     "amount": "9,720"
+    }
+   ]
+  },
+  {
+   "id": "p9b",
+   "pair": "p9",
+   "role": "B",
+   "layout": "rate-times-qty",
+   "party": "sai-ram-traders",
+   "supplier": "SAI RAM TRADERS",
+   "phone": "919000000019",
+   "challanNo": "SR-139",
+   "date": "11/10/2026",
+   "items": [
+    {
+     "name": "Cement PPC",
+     "unit": "bag",
+     "rate": "385",
+     "qty": "65",
+     "amount": "25,025"
+    },
+    {
+     "name": "Coarse Sand",
+     "unit": "cft",
+     "rate": "46",
+     "qty": "160",
+     "amount": "7,360"
+    },
+    {
+     "name": "Grit 20mm",
+     "unit": "cft",
+     "rate": "54",
+     "qty": "240",
+     "amount": "12,960"
+    }
+   ]
+  },
+  {
+   "id": "p10a",
+   "pair": "p10",
+   "role": "A",
+   "layout": "rate-times-qty",
+   "party": "laxmi-hardware-mart",
+   "supplier": "LAXMI HARDWARE MART",
+   "phone": "919000000020",
+   "challanNo": "LH-562",
+   "date": "03/10/2026",
+   "items": [
+    {
+     "name": "TMT Bar 16mm",
+     "unit": "kg",
+     "rate": "63",
+     "qty": "480",
+     "amount": "30,240"
+    },
+    {
+     "name": "MS Plate 6mm",
+     "unit": "kg",
+     "rate": "72",
+     "qty": "95",
+     "amount": "6,840"
+    },
+    {
+     "name": "Welding Rod",
+     "unit": "kg",
+     "rate": "180",
+     "qty": "5",
+     "amount": "900"
+    }
+   ]
+  },
+  {
+   "id": "p10b",
+   "pair": "p10",
+   "role": "B",
+   "layout": "rate-times-qty",
+   "party": "laxmi-hardware-mart",
+   "supplier": "LAXMI HARDWARE MART",
+   "phone": "919000000020",
+   "challanNo": "LH-590",
+   "date": "10/10/2026",
+   "items": [
+    {
+     "name": "TMT Bar 16mm",
+     "unit": "kg",
+     "rate": "62",
+     "qty": "520",
+     "amount": "32,240"
+    },
+    {
+     "name": "MS Plate 6mm",
+     "unit": "kg",
+     "rate": "72",
+     "qty": "140",
+     "amount": "10,080"
+    },
+    {
+     "name": "Welding Rod",
+     "unit": "kg",
+     "rate": "180",
+     "qty": "7",
+     "amount": "1,260"
+    }
+   ]
+  }
+ ]
+}

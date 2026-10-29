@@ -593,3 +593,13 @@ figure, and a person still decides. Branch `claude/learn-corrections`; brief
   differing amount is only read back for yes/no); a "सुधार" of a bill corrects the bill, and may be
   a real difference in what came rather than a misread, so neither is recorded as a reading's
   correction.
+
+Eval (29 Oct, `eval/learn/`, 10 pairs of invented challans rendered by us, `muse-spark-1.3`, 23
+live reads; `eval/results/learn-2026-10-29-*.json`): read doc A without memory, keep a correction for
+each quantity misread, then read the similar doc B from the same supplier with memory off and on.
+Doc B field accuracy (each item's quantity and the challan number): **30/39 off → 36/39 on**;
+wrong-but-confident 6 → 3. The whole gain is one layout, the rate printed before the quantity
+("380 x 35"): with memory 8/8 instead of 2/8 (p9, p10). The remaining 3 misses are p2, the same
+layout, where doc A happened to be read right, so nothing was learnt. Six other layouts were read
+right without memory (controls: no memory used). Muse varies between runs by a few fields; the
+sample is small; harm on another supplier's layout was not measured.
