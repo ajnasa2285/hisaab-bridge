@@ -210,6 +210,52 @@ duplicate requests rebuild the answer from private storage without reapplying hi
 
 Transport: the official A2A JavaScript SDK, `message/send` with the message above as a `data` part (`mediaType: application/json`); Agent Card at `/.well-known/agent-card.json` per agent. If the SDK proves unusable, plain JSON-RPC in the same shape; the README then says so and claims no A2A compatibility.
 
+### 4.1 Payments: part, cash and advance (Build 5, 30 Oct; agreed before building)
+
+Real payments are partial, in cash, or in advance. The single "one UPI claim settles the bill" path
+becomes a list of payments per order with a balance worked out by code. Old messages stay valid.
+
+| Type | From → to | Body |
+|---|---|---|
+| `PAYMENT_CLAIM` (extended) | buyer → seller | `bill: msg_id \| null` (the bill in force; `null` = an advance, before any bill), `method?: 'upi' \| 'cash'` (absent = `upi`), `amountPaise` (> 0; any amount: part, full or more), `paidOn`, `paidAt?`; `upi`: `utr` and `screenshot: {sha256}` as before; `cash`: no `utr`, `screenshot?: {sha256}` (photo of a handwritten cash receipt, optional) |
+| `PAYMENT_ACK` (new) | seller → buyer | `payment: msg_id` (one claim of this order not yet answered), `received: boolean`, `amountPaise` (the claim's amount) — only on the seller's own हाँ/नहीं |
+| `PAYMENT_RECEIVED` (new) | seller → buyer | the seller records money he received himself: `method: 'cash' \| 'upi'`, `amountPaise`, `receivedOn`, `bill: msg_id \| null`, `note?`; counts as confirmed at once |
+| `SETTLED` (extended) | seller → buyer | new form `{bill, amountPaise (all confirmed), payments: msg_id[] (every confirmed payment counted)}`; the old form `{bill, payment, amountPaise}` stays valid. Sent by the seller's agent itself (code) as soon as the bill is accepted and confirmed ≥ the bill total in force with no claim waiting |
+
+**When.** A claim or `PAYMENT_RECEIVED` fits an order from `booked` on and before `settled` (never
+`none`, `requested`, `offered`, `declined`). With a bill in force it must name that bill; before
+any bill it is an advance (`bill: null`). Several per order. A `PAYMENT_ACK` answers one claim once.
+
+**Balance** (pure, `paymentSummary` in `src/ledger/payments.js`, used by every agent and the judge
+page): `billTotal` = `totalPaise` of the bill in force (null before a bill); `confirmed` = Σ claims
+answered `received: true` + Σ `PAYMENT_RECEIVED` (+ the claim named by an old-form `SETTLED`);
+`pending` = claims not answered; `due` = max(billTotal − confirmed, 0); `credit` = max(confirmed −
+billTotal, 0). Advances count towards the bill when it comes; a correction changes `billTotal`, never
+the payments. A credit is only shown, never refunded or carried by code.
+
+**States.** New state `part_paid`. Payments never move the state before `ACCEPT`. From `accepted`:
+a claim waiting → `payment_claimed`; none waiting and 0 < confirmed < billTotal → `part_paid`; none
+waiting and confirmed = 0 → `accepted`; `SETTLED` → `settled`. When the bill is accepted with
+advances already covering it, the seller's agent sends `SETTLED` at once. The view adds
+`billTotalPaise`, `confirmedPaise`, `pending: msg_id[]`.
+
+**One payment for several orders ("P-1 और P-2 एक साथ").** The ledger stays per order, so a clubbed
+payment is one `PAYMENT_CLAIM` (or `PAYMENT_RECEIVED`) per order, each carrying `group: {id: uuid,
+totalPaise, orders: string[] (the order_ids in the group, in allocation order)}`, the same `method`,
+`utr`, `screenshot`, `paidOn`, `paidAt`; each message's `amountPaise` is that order's share and the
+shares add up to `totalPaise` exactly. Shares are worked out by code, never by the model: the orders
+the payer named (or, when only an amount is given, every order with that counterparty that has
+something due, oldest bill first) each take min(due, what is left), in order; anything left over is
+an advance on the last named order when it has no bill yet, else shown as credit on it. The payer
+sees the split read back once before anything is sent. The seller answers the whole group with one
+हाँ/नहीं (one `PAYMENT_ACK` per claim, same answer). A UTR already used by another group or claim of
+this counterparty is never accepted silently: both are shown and the payer is asked.
+
+**People.** Contractor: a UPI screenshot of any amount (partial is no longer a mismatch: "₹10,000
+मिले, बाक़ी ₹10,650"); `P-2 ₹10,000 नकद दिए`; `P-3 अग्रिम ₹5,000` (advance, UPI screenshot or नकद); `P-1 P-2 ₹39,650` with a screenshot or नकद (clubbed).
+Seller: हाँ/नहीं to each claim; `P-2 ₹10,000 नकद मिले` records cash he received. Every message shows
+the balance. No reminders, no "please pay", no due dates.
+
 ## 5. Ledger and order states (`src/ledger/`)
 
 One SQLite file per agent. Tables are append-only (triggers refuse UPDATE/DELETE on history):
@@ -217,7 +263,7 @@ One SQLite file per agent. Tables are append-only (triggers refuse UPDATE/DELETE
 - `events(seq INTEGER PRIMARY KEY, order_id, direction 'in'|'out'|'local', type, msg_id UNIQUE, body_json, at, prev_hash, hash)` — every message sent or received (the whole signed message) and every local decision or evidence (`EVIDENCE`, `NOTE`); `hash = sha256(prev_hash + canonical(row))`. API: `src/ledger/store.js` (`openLedger`, `ensureOrder`, `append`, `view`, `fits`, `events`, `verifyChain`).
 - `orders(order_id, kind, counterparty, site, created_at)` — identity only; the state is derived from events.
 
-Order states (derived): `requested → booked | declined → working (jcb) | delivered (material) → billed → accepted | disputed → billed (rev n+1) → payment_claimed → settled`. A message that does not fit the current state is refused with `WRONG_STATE`. A `yes` on a material order must carry `rates`, and a `yes` on a JCB order must not. The site's own count of a delivery is a local `NOTE {kind: 'site_count', items, challan?: {sha256, number}}` on the buyer's ledger only (`challan` when the count came from a photo of the site's copy of the challan; it may be recorded before the DELIVERY; `challan.signed` is kept when the reader reported it); it never changes the state. When such a count with a challan photo exists together with the DELIVERY, the contractor's agent sends it to the supplier as a `SITE_RECEIPT` (at the count if the DELIVERY is there, else when it arrives); the supplier's ledger keeps it as a received message. `SITE_RECEIPT` fits a material order from `delivered` on and never changes the state.
+Order states (derived): `requested → booked | declined → working (jcb) | delivered (material) → billed → accepted | disputed → billed (rev n+1) → payment_claimed ⇄ part_paid → settled` (payments: section 4.1). A message that does not fit the current state is refused with `WRONG_STATE`. A `yes` on a material order must carry `rates`, and a `yes` on a JCB order must not. The site's own count of a delivery is a local `NOTE {kind: 'site_count', items, challan?: {sha256, number}}` on the buyer's ledger only (`challan` when the count came from a photo of the site's copy of the challan; it may be recorded before the DELIVERY; `challan.signed` is kept when the reader reported it); it never changes the state. When such a count with a challan photo exists together with the DELIVERY, the contractor's agent sends it to the supplier as a `SITE_RECEIPT` (at the count if the DELIVERY is there, else when it arrives); the supplier's ledger keeps it as a received message. `SITE_RECEIPT` fits a material order from `delivered` on and never changes the state.
 
 Evidence requests, signed evidence metadata and received-photo reader notes do not change order
 state. They are append-only. An automatic request is made at most once per record, checked against
