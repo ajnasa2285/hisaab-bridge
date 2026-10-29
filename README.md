@@ -145,7 +145,7 @@ Our previous private project is Bhatta Munshi, a WhatsApp bookkeeping agent runn
 
 Pilot users: a JCB owner and a contractor we work with, with their consent. All data in this repository is invented; real photos, phone numbers and payments stay on the private server.
 
-Built by the owner with AI coding tools, all disclosed: Claude Code (lead and integrator), Astra (readers and measurement), Fable (Hindi texts, contractor features, judge page), Codex and Muse Code.
+Built by the owner with AI coding tools, all disclosed: Claude Code (lead and integrator), Astra (readers and measurement), Fable (Hindi texts, contractor features, judge page) and Codex.
 
 ## Licence
 

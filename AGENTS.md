@@ -1,4 +1,4 @@
-# Rules for every builder (Claude, Astra, Fable, Codex, Muse Code)
+# Rules for every builder (Claude, Astra, Fable, Codex)
 
 Read this file first, then `docs/CONTRACTS.md`, then your brief in `docs/briefs/`. These rules override convenience. Breaking rules 1–4 can get the whole entry disqualified from the Meta Global AI Developer Hackathon.
 
