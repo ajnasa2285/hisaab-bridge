@@ -235,3 +235,50 @@ Muse Spark plans and phrases; code produces every figure (`src/agents/ask.js`).
   about it. A passing answer goes out with the references it came from (`records.answer`). Otherwise
   code's own lines from the last lookup that worked (`records.unavailable`), or `records.no_answer`
   when none did (also on a timeout or outage before any lookup).
+
+## Fewer steps (30 Oct 2026)
+
+A live test on 29 Oct (supervisor orders cement → contractor OK → supplier "हाँ 380") had too many
+steps: the supplier's exact "हाँ 380" was read back and needed a second "हाँ". Every record already has
+a second person checking it downstream, so a read-back that only asks the same sender to repeat "हाँ"
+is dropped. The model proposes, code checks, people decide; a person's own exact reply is their
+decision. The ledger, protocol, message types, state machine, approvals and limits are unchanged.
+
+**Removed confirmations, and the check that covers each:**
+
+| Was read back | Now | Downstream check |
+|---|---|---|
+| Supplier's "हाँ 350 4000" / "नहीं" / a day; JCB owner's "हाँ 1200" / "नहीं" / a day | sent at once, one receipt with the figures | the contractor sees the answer and the rates; nothing is billed without a delivery or meter readings |
+| "बिल" from the JCB owner or supplier | sent at once (receipt shows the bill's figures) | the contractor accepts or disputes the bill |
+| Contractor's "नहीं <figure> <reason>" to a bill | dispute sent at once | the seller answers with a correction or keeps the bill |
+| Supervisor's request that goes for approval | no read-back; one message "P-n ठेकेदार की मंज़ूरी के लिए भेजी: …" | the contractor's OK (the approval notice shows the same statement) |
+| Clear meter photo (end above start) | recorded with a receipt | the bill carries both meter photos; the contractor accepts or disputes |
+| Clear supplier challan photo, every item read | DELIVERY signed and sent with a receipt | the site's own count is compared with it |
+| Clear site challan photo that agrees with the supplier's delivery (or no delivery yet) | site count recorded with a receipt | code compares with the delivery when it comes; the bill is checked against the count |
+| Clear UPI screenshot, successful, for the bill's amount | payment claim sent with a receipt | only the seller's own "हाँ, आ गया" settles it |
+| Figures or meter digits the person typed | recorded at once | as for the photo they replace |
+
+**Confirmations that stay:** free words understood by the model (a request, or an answer that is not
+exact) are read back once; the contractor's own requests, and a supervisor's within the limit (nobody
+else checks before they reach the seller); a photo that is unclear, misses a figure, or that code finds
+inconsistent (meter end not above start; site challan different from the supplier's delivery in a
+quantity or the challan number; UPI amount different from the bill) is read back or typed, and the
+existing difference message follows on "हाँ"; "यह फ़ोटो क्या है?" only when the kind is unsure; the
+exact commands as before.
+
+**Exact replies** are parsed by code before the model (`src/agents/replies.js`) against this agent's
+open orders: the seller's yes with one rate per item, in order (a wrong count asks only for the rates;
+a bare "हाँ" asks for them, or confirms a reported payment when that is the only thing waiting), "नहीं",
+a day (with an optional time), "बिल"; the contractor's "नहीं <figure> <reason>" to a bill (hours on a JCB
+bill, a quantity on a one-line material bill, or rupees with ₹/रुपये; no reason asks only for it). A
+reference in front or behind picks the order; several fitting orders and none named asks which
+(`reply.which_order`). Anything else goes to the model as before.
+
+**Short yes and no** (`yesNo`): at most 4 words, only yes words (or only no words) and the little words
+beside them ("जी", "है", "भेज दो", "अभी", "चाहिए", "आ गया"), no digits, never both; the punctuation a
+voice transcript adds (", । ? !") is stripped. "हाँ जी", "जी हाँ", "ok bhej do", "ठीक है भेजो",
+"नहीं चाहिए", "nahi abhi nahi" count; "हाँ 50 बोरी", "हाँ नहीं" and "हाँ सीमेंट कल भेजो" do not.
+
+**No "—" placeholders:** a time, hours, an estimate or a challan number that was not given is left out
+of the sentence by a variant key (`variant()`, `docs/text-keys.md`); a seller's answer without a day
+shows the day the order asked for.

@@ -1,20 +1,26 @@
 // One person's conversation with their agent. A text becomes one proposed step (Muse Spark, via the
-// orchestrator); a step that commits anything is read back and runs only after the person says yes.
+// orchestrator); a step the model understood from free words is read back and runs only after the
+// person says yes. A person's own exact reply to a request open for them ("हाँ 380", "नहीं", "30-10",
+// "बिल", typed figures; src/agents/replies.js) is their decision and runs at once, with one receipt.
+// A supervisor's request that waits for the contractor's approval goes to the contractor without a
+// read-back: the contractor's OK is the check (docs/BUILD2.md "Fewer steps").
 // Any photo, any time: Muse Spark first says what it is (meter, UPI, challan, other); code checks that
 // this person may send that kind here, and only then that kind's reader reads it (an unsure kind is
-// asked). The reading is confirmed by the person, or typed by them when the photo is not clear. Exact commands (status, pending, stock, ok,
-// no) are answered by code before the model sees anything, and a confirmed step passes the site
-// office's gate (approvals with limits, src/agents/office.js). A request with a value left out (site,
-// day, quantity, unit) is kept, and only what is missing is asked; the reply fills it, nothing is guessed.
-// A question about the person's own records is answered read-only (src/agents/ask.js): no read-back,
-// nothing committed.
+// asked). A clear reading with every figure, that code finds consistent, is recorded at once with a
+// receipt; an unclear one, a missing figure or a mismatch is read back or typed by the person.
+// Exact commands (status, pending, stock, ok, no) are answered by code before the model sees
+// anything, and every committing step passes the site office's gate (approvals with limits,
+// src/agents/office.js). A request with a value left out (site, day, quantity, unit) is kept, and only
+// what is missing is asked; the reply fills it, nothing is guessed. A question about the person's own
+// records is answered read-only (src/agents/ask.js): no read-back, nothing committed.
 // People decide; the model only proposes.
 
 import { createHash } from 'node:crypto';
 import { fillStep, proposeStep, orderRefs, pickOrder } from '../orchestrator/orchestrator.js';
 import { parseHundredthsList } from '../orchestrator/units.js';
 import { meterReadings } from './jcb.js';
-import { challanQuantities, requestedItems, siteCount } from './material.js';
+import { challanQuantities, countDifferences, delivery, requestedItems, sameChallanNo, siteCount } from './material.js';
+import { exactReply, yesNo } from './replies.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
 import { runTool } from './common.js';
 import { parseCommand } from './office.js';
@@ -52,8 +58,9 @@ import { t } from '../i18n/index.js';
  *   {ok: false, transient: boolean, reason: string}>} UpiReader */
 
 const PENDING_MS = 30 * 60 * 1000;
-const YES = new Set(['हाँ', 'हां', 'हा', 'जी', 'जी हाँ', 'ठीक', 'ठीक है', 'सही', 'सही है', 'han', 'haan', 'ha', 'haa', 'ji', 'yes', 'y', 'ok', 'okay', 'theek', 'thik', 'sahi', '👍', '✅']);
-const NO = new Set(['नहीं', 'नही', 'ना', 'न', 'गलत', 'ग़लत', 'nahi', 'nahin', 'nhi', 'na', 'no', 'n', 'galat', 'cancel', '❌']);
+// A short yes or no, typed or spoken ("हाँ जी", "ok bhej do", "नहीं चाहिए"; src/agents/replies.js).
+const YES = { has: (/** @type {string} */ said) => yesNo(said) === 'yes' };
+const NO = { has: (/** @type {string} */ said) => yesNo(said) === 'no' };
 const HELP = new Set(['मदद', 'help', 'madad', '?']);
 /** The replies to "यह फ़ोटो क्या है?"; the first of each is the form asked for. @type {Record<PhotoKind, string[]>} */
 const KIND_WORDS = {
@@ -67,7 +74,7 @@ const kindOfWord = (said) => /** @type {PhotoKind | null} */ (Object.entries(KIN
 const isImageMime = (mime) => mime === 'image/jpeg' || mime === 'image/png' || mime === 'image/webp';
 
 /** @param {string} text */
-const norm = (text) => text.trim().toLowerCase().replace(/[।.!]+$/u, '').replace(/\s+/g, ' ');
+const norm = (text) => text.trim().toLowerCase().replace(/[।.!?,]+$/u, '').replace(/\s+/g, ' ');
 
 /**
  * @param {{
@@ -113,9 +120,29 @@ export function createConversation(o) {
       const r = await runTool(o.tools, person, { tool, args });
       return o.reply(person, r.key, r.params);
     }
+    // A supervisor's request that waits for the contractor's approval is not read back: the
+    // contractor's OK is the check, and the supervisor is told what went for approval.
+    if (o.office && o.office.holds(person, tool, args)) return commitNow(person, tool, args);
     pending.set(keyOf(person), { kind: 'confirm', tool, args, at: o.now() });
     const d = readBack ?? t.describe(args);
     return o.reply(person, d.key, d.params);
+  }
+
+  /**
+   * Runs a committing step now, through the office's gate, and says what was recorded: the person's
+   * own exact reply, a clear photo reading code found consistent, or a step held for approval.
+   * @param {Person} person @param {string} tool @param {Record<string, any>} args
+   */
+  async function commitNow(person, tool, args) {
+    const t = Object.hasOwn(o.tools, tool) ? o.tools[tool] : undefined;
+    if (!t) return o.reply(person, 'common.unknown_step');
+    if (!t.roles.includes(person.role)) return o.reply(person, 'common.not_allowed');
+    const r = o.office ? await o.office.commit(person, tool, args) : await runTool(o.tools, person, { tool, args });
+    // Once the site's count is recorded, nobody else's count question on that order stays open.
+    if (r.ok && tool === 'confirm_count') {
+      for (const [k, q] of pending) if (q.kind === 'confirm' && q.tool === 'confirm_count' && q.args.orderId === args.orderId) pending.delete(k);
+    }
+    return o.reply(person, r.key, r.params);
   }
 
   /**
@@ -146,22 +173,17 @@ export function createConversation(o) {
     if (p && p.kind === 'confirm') {
       if (YES.has(said)) {
         pending.delete(keyOf(person));
-        const r = o.office ? await o.office.commit(person, p.tool, p.args) : await runTool(o.tools, person, { tool: p.tool, args: p.args });
-        // Once the site's count is recorded, nobody else's count question on that order stays open.
-        if (r.ok && p.tool === 'confirm_count') {
-          for (const [k, q] of pending) if (q.kind === 'confirm' && q.tool === 'confirm_count' && q.args.orderId === p.args.orderId) pending.delete(k);
-        }
-        return o.reply(person, r.key, r.params);
+        return commitNow(person, p.tool, p.args);
       }
       if (NO.has(said)) {
         pending.delete(keyOf(person));
         return o.reply(person, 'step.cancelled');
       }
-      // A meter read-back can be answered with the right digits: read back again with them.
+      // A meter read-back can be answered with the right digits: the person's own figure, recorded at once.
       const digits = /^(\d{1,7})(?:\.(\d))?$/.exec(said);
       if (p.tool === 'record_meter' && digits) {
         pending.delete(keyOf(person));
-        return propose(person, 'record_meter', { ...p.args, valueTenths: Number(digits[1]) * 10 + Number(digits[2] ?? '0') });
+        return commitNow(person, 'record_meter', { ...p.args, valueTenths: Number(digits[1]) * 10 + Number(digits[2] ?? '0') });
       }
       // A challan read-back or a delivery count can be answered with the right quantities, in order.
       const figures = parseHundredthsList(said);
@@ -171,11 +193,11 @@ export function createConversation(o) {
       }
       if (figures && p.tool === 'confirm_count' && p.args.challan) {
         pending.delete(keyOf(person));
-        return proposeSiteCount(person, { orderId: p.args.orderId, sha256: p.args.challan.sha256, challanNo: p.args.challan.number ?? null }, figures, false);
+        return proposeSiteCount(person, { orderId: p.args.orderId, sha256: p.args.challan.sha256, challanNo: p.args.challan.number ?? null }, figures, 'typed');
       }
       if (figures && p.tool === 'confirm_count') {
         pending.delete(keyOf(person));
-        return propose(person, 'confirm_count', { orderId: p.args.orderId, qtysHundredths: figures });
+        return commitNow(person, 'confirm_count', { orderId: p.args.orderId, qtysHundredths: figures });
       }
       // Anything else: the question lapses and the message is read as a new one.
       pending.delete(keyOf(person));
@@ -206,7 +228,7 @@ export function createConversation(o) {
     if (p && p.kind === 'site_challan_figures') {
       const figures = parseHundredthsList(said);
       pending.delete(keyOf(person));
-      if (figures) return proposeSiteCount(person, p, figures, false);
+      if (figures) return proposeSiteCount(person, p, figures, 'typed');
       if (NO.has(said)) return o.reply(person, 'step.cancelled');
     }
     if (p && p.kind === 'meter_digits') {
@@ -214,7 +236,8 @@ export function createConversation(o) {
       if (m) {
         pending.delete(keyOf(person));
         const valueTenths = Number(m[1]) * 10 + Number(m[2] ?? '0');
-        return propose(person, 'record_meter', { orderId: p.orderId, which: p.which, valueTenths, sha256: p.sha256, takenAt: p.takenAt });
+        // The person typed the reading from the meter: their own figure, recorded at once.
+        return commitNow(person, 'record_meter', { orderId: p.orderId, which: p.which, valueTenths, sha256: p.sha256, takenAt: p.takenAt });
       }
       if (NO.has(said)) {
         pending.delete(keyOf(person));
@@ -238,6 +261,11 @@ export function createConversation(o) {
       pending.delete(keyOf(person));
     }
     if (HELP.has(said)) return o.reply(person, `help.${person.role}`);
+
+    // A person's exact reply to a request open for them is read by code and runs at once.
+    const exact = exactReply({ ledger: o.ledger, person, text, nowMs: o.now() });
+    if (exact && exact.kind === 'ask') return o.reply(person, exact.key, exact.params);
+    if (exact) return commitNow(person, exact.tool, exact.args);
 
     const proposal = await proposeStep({ spark: o.spark, person, text, orders: orderRefs(o.ledger), nowMs: o.now(), ask: true });
     if (proposal.kind === 'ask') {
@@ -354,9 +382,13 @@ export function createConversation(o) {
     if (read.kind === 'not_meter') return o.reply(person, 'meter.not_meter');
     if (!read.clear || read.valueTenths === null) {
       pending.set(keyOf(person), { kind: 'meter_digits', orderId: picked.orderId, which, sha256, takenAt, at: o.now() });
-      return o.reply(person, 'meter.ask_person', { raw: read.raw || '—' });
+      return o.reply(person, read.raw ? 'meter.ask_person' : 'meter.ask_person_blank', { raw: read.raw });
     }
-    return propose(person, 'record_meter', { orderId: picked.orderId, which, valueTenths: read.valueTenths, sha256, takenAt });
+    const args = { orderId: picked.orderId, which, valueTenths: read.valueTenths, sha256, takenAt };
+    // Code's check: an end reading must be above the start (and a start below an end). A reading that
+    // fails it is read back, so the person can type the right digits; a clear one is recorded at once.
+    const mismatch = which === 'end' ? r.start !== null && read.valueTenths <= r.start.valueTenths : r.end !== null && read.valueTenths >= r.end.valueTenths;
+    return mismatch ? propose(person, 'record_meter', args) : commitNow(person, 'record_meter', args);
   }
 
   /**
@@ -391,12 +423,13 @@ export function createConversation(o) {
    */
   function askQuantities(person, orderId, raw) {
     const items = requestedItems(o.ledger.events(orderId)).map((i) => `${i.name} (${i.unit})`).join(', ');
-    return o.reply(person, 'challan.ask_person', { raw: raw || '—', items: items || '—' });
+    return o.reply(person, raw ? 'challan.ask_person' : 'challan.ask_person_blank', { raw, items });
   }
 
   /**
-   * Reads back a delivery: one quantity per ordered item, in order; an item at 0 was not delivered.
-   * Typed figures that do not fit the order are asked for again.
+   * A delivery: one quantity per ordered item, in order; an item at 0 was not delivered. A clear
+   * reading of every item, or the figures the supplier typed, is recorded at once (the site's own
+   * count checks it downstream). Typed figures that do not fit the order are asked for again.
    * @param {Person} person
    * @param {{orderId: string, sha256: string, challanNo: string | null}} c
    * @param {number[]} qtys
@@ -408,7 +441,7 @@ export function createConversation(o) {
       return askQuantities(person, c.orderId, '');
     }
     const items = ordered.map((it, i) => ({ name: it.name, qtyHundredths: qtys[i], unit: it.unit })).filter((it) => it.qtyHundredths > 0);
-    return propose(person, 'record_delivery', { orderId: c.orderId, items, sha256: c.sha256, challanNo: c.challanNo });
+    return commitNow(person, 'record_delivery', { orderId: c.orderId, items, sha256: c.sha256, challanNo: c.challanNo });
   }
 
   /** The material orders waiting for the site's count: booked or delivered, not yet counted. */
@@ -461,43 +494,52 @@ export function createConversation(o) {
   }
 
   /**
-   * What the reader saw, as the site's count of this order: read back when every item was read
-   * clearly, else the person types the figures. Nothing is filled in.
+   * What the reader saw, as the site's count of this order: recorded at once when every item was read
+   * clearly and agrees with the supplier's signed delivery (if it has come); read back when it differs;
+   * else the person types the figures. Nothing is filled in.
    * @param {Person} person @param {string} orderId @param {string} sha256 @param {SiteReading} reading
    */
   function siteCountFromRead(person, orderId, sha256, reading) {
     const qtys = challanQuantities(requestedItems(o.ledger.events(orderId)), reading.items);
     if (!reading.clear || qtys.some((q) => q === null)) {
       pending.set(keyOf(person), { kind: 'site_challan_figures', orderId, sha256, challanNo: reading.challanNo, at: o.now() });
-      return o.reply(person, 'site.challan_ask_person', { ref: refOf(orderId), raw: reading.items.map((i) => i.raw).filter(Boolean).join(', ') || '—', names: namesOf(orderId) });
+      const raw = reading.items.map((i) => i.raw).filter(Boolean).join(', ');
+      return o.reply(person, raw ? 'site.challan_ask_person' : 'site.challan_ask_person_blank', { ref: refOf(orderId), raw, names: namesOf(orderId) });
     }
-    return proposeSiteCount(person, { orderId, sha256, challanNo: reading.challanNo }, /** @type {number[]} */ (qtys), true);
+    return proposeSiteCount(person, { orderId, sha256, challanNo: reading.challanNo }, /** @type {number[]} */ (qtys), 'read');
   }
 
   /**
-   * Reads back the site's count from its challan: one figure per ordered item, in order (0 = did not
-   * come). `fromRead` marks figures the reader saw: a bare "हाँ" to them records a first count only.
+   * The site's count from its challan: one figure per ordered item, in order (0 = did not come).
+   * Figures the reader saw (`read`) are recorded at once unless they differ from the supplier's signed
+   * delivery (quantities, or both challan numbers known and different): then they are read back, and a
+   * bare "हाँ" records a first count only. Figures the person typed are their own and recorded at once.
    * Typed figures that do not fit the order are asked for again.
    * @param {Person} person
    * @param {{orderId: string, sha256: string, challanNo: string | null}} c
    * @param {number[]} qtys
-   * @param {boolean} fromRead
+   * @param {'read' | 'typed'} from
    */
-  function proposeSiteCount(person, c, qtys, fromRead) {
+  function proposeSiteCount(person, c, qtys, from) {
     const ordered = requestedItems(o.ledger.events(c.orderId));
     if (qtys.length !== ordered.length || qtys.every((q) => q === 0)) {
       pending.set(keyOf(person), { kind: 'site_challan_figures', orderId: c.orderId, sha256: c.sha256, challanNo: c.challanNo, at: o.now() });
-      return o.reply(person, 'site.challan_ask_person', { ref: refOf(c.orderId), raw: '—', names: namesOf(c.orderId) });
+      return o.reply(person, 'site.challan_ask_person_blank', { ref: refOf(c.orderId), names: namesOf(c.orderId) });
     }
     /** @type {Record<string, any>} */
     const args = { orderId: c.orderId, qtysHundredths: qtys, challan: { sha256: c.sha256, number: c.challanNo } };
-    if (fromRead) args.sameAsChallan = true;
-    return propose(person, 'confirm_count', args);
+    if (from === 'typed') return commitNow(person, 'confirm_count', args);
+    args.sameAsChallan = true;
+    const d = delivery(o.ledger.events(c.orderId));
+    const counted = ordered.map((it, i) => ({ name: it.name, unit: it.unit, qtyHundredths: qtys[i] })).filter((it) => it.qtyHundredths > 0);
+    const differs = d !== null && (countDifferences(counted, d.items).length > 0 || (c.challanNo !== null && d.number !== null && !sameChallanNo(c.challanNo, d.number)));
+    return differs ? propose(person, 'confirm_count', args) : commitNow(person, 'confirm_count', args);
   }
 
   /**
    * A UPI screenshot from the contractor is a payment claim for the accepted bill. The model reads
-   * it; the contractor confirms what was read; the JCB owner later confirms the money arrived.
+   * it; a clear reading of a successful payment for the bill's amount is sent at once (the seller
+   * confirms the money arrived); a different amount is read back first with both figures.
    * @param {Person} person
    * @param {{mime: string, bytes: Uint8Array}} image
    */
@@ -523,7 +565,7 @@ export function createConversation(o) {
     if (Number.isSafeInteger(total) && total !== read.amountPaise) {
       return propose(person, 'claim_payment', args, { key: 'payment.amount_differs', params: { seen: rupees(read.amountPaise), total: rupees(/** @type {number} */ (total)) } });
     }
-    return propose(person, 'claim_payment', args);
+    return commitNow(person, 'claim_payment', args);
   }
 
   /**

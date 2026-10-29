@@ -116,16 +116,15 @@ test('approvals with limits: above the limit or not estimable waits for the cont
     const refs = openRefs(s.siteCore.ledger);
 
     // No agreed rate yet: the estimate is unknown, so the step is held as J-1. Nothing is signed.
+    // No read-back for the supervisor (the contractor's OK is the check): one message with what went.
     await d.ask(supervisor, 'kal Shivpuri JCB 6 ghante', jcbCall('Shivpuri', '30-10', '6'));
-    assert.equal(d.last('supervisor')[1], 'step.request_jcb');
-    await d.ask(supervisor, 'हाँ');
-    assert.deepEqual(d.last('supervisor').slice(0, 2), ['supervisor', 'office.held']);
-    assert.ok(d.last('supervisor')[2].includes('J-1'));
+    assert.deepEqual(d.last('supervisor').slice(0, 2), ['supervisor', 'office.held_step']);
+    assert.ok(d.last('supervisor')[2].includes('J-1') && d.last('supervisor')[2].includes('Shivpuri') && d.last('supervisor')[2].includes('6.0 घंटे'));
     assert.equal(s.siteCore.ledger.orders().length, 0);
     const asked = d.last('all:contractor');
     assert.equal(asked[1], 'office.approval_needed');
     assert.ok(asked[2].includes('Supervisor') && asked[2].includes('Shivpuri') && asked[2].includes('"OK J-1"') && asked[2].includes('"नहीं J-1 कारण"'));
-    assert.ok(asked[2].includes('अनुमान —'), 'no estimate without an agreed rate');
+    assert.ok(!asked[2].includes('अनुमान') && !asked[2].includes('—'), 'no estimate without an agreed rate, and no "—" for it');
     assert.ok(!asked[2].includes('हाँ / नहीं'), 'the contractor is not asked a bare yes/no');
 
     // The supervisor cannot approve; an unknown reference is said so.
@@ -136,17 +135,17 @@ test('approvals with limits: above the limit or not estimable waits for the cont
 
     // The contractor approves: the stored step runs as the supervisor's request, with the same args.
     await d.ask(contractor, 'OK j1 theek hai');
-    assert.deepEqual(d.last('contractor').slice(0, 2), ['contractor', 'site.jcb_requested']);
+    assert.deepEqual(d.last('contractor').slice(0, 2), ['contractor', 'site.jcb_requested_time']);
     assert.equal(d.last('contractor')[3].ref, 'J-1');
     const toSup = d.said.filter((x) => x[0] === 'supervisor').slice(-2);
-    assert.deepEqual(toSup.map((x) => x[1]), ['office.approved_note', 'site.jcb_requested']);
+    assert.deepEqual(toSup.map((x) => x[1]), ['office.approved_note', 'site.jcb_requested_time']);
     assert.ok(toSup[0][2].includes('Contractor') && toSup[0][2].includes('theek hai'));
     assert.equal(jcbOrders().length, 1);
     const sent = s.jcbCore.ledger.events(jcbOrders()[0].order_id).find((e) => e.type === 'BOOKING_REQUEST');
     assert.deepEqual(sent?.body.body, { kind: 'jcb_hours', site: 'Shivpuri', day: '2026-10-30', time: '08:00', hoursTenths: 60 });
     assert.equal(refs.refOf(jcbOrders()[0].order_id), 'J-1');
     await settle();
-    assert.ok(s.told.some(([a, role, key, p]) => a === 'jcb' && role === 'jcb_owner' && key === 'jcb.booking_request' && p.ref === 'J-1'));
+    assert.ok(s.told.some(([a, role, key, p]) => a === 'jcb' && role === 'jcb_owner' && key === 'jcb.booking_request_time_hours' && p.ref === 'J-1'));
 
     // A second OK changes nothing and says who decided.
     await d.ask(contractor, 'ok J-1');
@@ -157,16 +156,16 @@ test('approvals with limits: above the limit or not estimable waits for the cont
     // The JCB owner agrees ₹1,200 an hour; now a supervisor's step can be estimated.
     await runTool(s.jcb.tools, owner, { tool: 'reply_booking', args: { orderId: jcbOrders()[0].order_id, answer: 'yes', ratePaise: 120000 } });
     await settle();
-    // 6 h × ₹1,200 = ₹7,200, within ₹10,000: sent straight away as J-2.
+    // 6 h × ₹1,200 = ₹7,200, within ₹10,000: nobody else checks it, so it is read back once, then sent as J-2.
     await d.ask(supervisor, 'parso Gwalior 6 ghante', jcbCall('Gwalior', '31-10', '6'));
+    assert.equal(d.last('supervisor')[1], 'step.request_jcb');
     await d.ask(supervisor, 'हाँ');
-    assert.equal(d.last('supervisor')[1], 'site.jcb_requested');
+    assert.equal(d.last('supervisor')[1], 'site.jcb_requested_time');
     assert.equal(d.last('supervisor')[3].ref, 'J-2');
     assert.equal(jcbOrders().length, 2);
     // 10 h = ₹12,000, above the limit: held as J-3 with its estimate.
     await d.ask(supervisor, 'parso Datia 10 ghante', jcbCall('Datia', '31-10', '10'));
-    await d.ask(supervisor, 'हाँ');
-    assert.equal(d.last('supervisor')[1], 'office.held');
+    assert.equal(d.last('supervisor')[1], 'office.held_step');
     assert.ok(d.last('all:contractor')[2].includes('J-3') && d.last('all:contractor')[2].includes('₹12,000'));
 
     // What waits: the contractor sees the held step; the supervisor his own step and the open jobs.
@@ -177,7 +176,7 @@ test('approvals with limits: above the limit or not estimable waits for the cont
     await d.ask(supervisor, 'बाक़ी');
     for (const ref of ['J-1', 'J-2', 'J-3']) assert.ok(d.last('supervisor')[2].includes(ref), ref);
     await d.ask(supervisor, 'status J-3');
-    assert.equal(d.last('supervisor')[1], 'office.status_held');
+    assert.equal(d.last('supervisor')[1], 'office.status_held_estimate');
     assert.ok(d.last('supervisor')[2].includes('मंज़ूरी बाक़ी') && d.last('supervisor')[2].includes('₹12,000'));
     await d.ask(contractor, 'स्थिति J-1');
     assert.equal(d.last('contractor')[1], 'office.status');
@@ -200,7 +199,7 @@ test('approvals with limits: above the limit or not estimable waits for the cont
     // The contractor's own step is never held, whatever its size.
     await d.ask(contractor, 'Datia 20 ghante', jcbCall('Datia', '31-10', '20'));
     await d.ask(contractor, 'हाँ');
-    assert.equal(d.last('contractor')[1], 'site.jcb_requested');
+    assert.equal(d.last('contractor')[1], 'site.jcb_requested_time');
     assert.equal(d.last('contractor')[3].ref, 'J-4', 'J-3 stays with the declined step');
     assert.equal(jcbOrders().length, 3);
 
@@ -226,8 +225,7 @@ test('with no limit set every supervisor step waits; a held step survives a rest
     const first = /** @type {any} */ (s.siteCore.ledger.orders()[0]).order_id;
     await runTool(s.jcb.tools, owner, { tool: 'reply_booking', args: { orderId: first, answer: 'yes', ratePaise: 120000 } });
     await d.ask(supervisor, 'parso Gwalior 1 ghanta', jcbCall('Gwalior', '31-10', '1'));
-    await d.ask(supervisor, 'हाँ');
-    assert.equal(d.last('supervisor')[1], 'office.held');
+    assert.equal(d.last('supervisor')[1], 'office.held_step');
     assert.ok(d.last('all:contractor')[2].includes('J-2') && d.last('all:contractor')[2].includes('₹1,200'));
     await s.close();
     s.siteCore.ledger.close();
@@ -237,7 +235,7 @@ test('with no limit set every supervisor step waits; a held step survives a rest
     d = siteDesk(s, undefined);
     assert.deepEqual(d.office.held().map((h) => [h.ref, h.tool, h.args.site, h.person.role, h.decision]), [['J-2', 'request_jcb', 'Gwalior', 'supervisor', null]]);
     await d.ask(contractor, 'ok J-2');
-    assert.equal(d.last('contractor')[1], 'site.jcb_requested');
+    assert.equal(d.last('contractor')[1], 'site.jcb_requested_time');
     assert.equal(d.last('contractor')[3].ref, 'J-2');
     const orders = /** @type {any[]} */ (s.jcbCore.ledger.orders());
     assert.equal(orders.length, 1);

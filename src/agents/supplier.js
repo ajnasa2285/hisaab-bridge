@@ -8,6 +8,7 @@ import { rupees, day as dayName, qty } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, ofType, posInt } from './common.js';
 import { agreedRates, delivery, itemsText, linesText, materialBillBody, rateFor, ratesText, requestedItems, validItems } from './material.js';
 import { openRefs } from '../ledger/refs.js';
+import { variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
 import { differenceFacts } from './explain-facts.js';
 
@@ -70,9 +71,10 @@ export function createSupplierAgent(o) {
         const rates = isUuid(a.orderId) ? ratesFromArgs(a.orderId, a.ratesPaise) : null;
         // The day the answer is about: another day when offered, else the day asked for.
         const day = isDay(a.day) ? a.day : ofType(eventsOf(a.orderId), 'BOOKING_REQUEST', 'in').at(-1)?.body.body.day;
+        const time = a.answer === 'other_time' && isTime(a.time) ? a.time : null;
         return {
-          key: `step.reply_order_${a.answer}`,
-          params: { site: siteOf(a.orderId), day: isDay(day) ? dayName(day) : '—', time: a.time ?? '—', rates: rates ? ratesText(rates) : '—' },
+          key: variant(`step.reply_order_${a.answer}`, { time }),
+          params: { site: siteOf(a.orderId), day: isDay(day) ? dayName(day) : '—', ...(time ? { time } : {}), rates: rates ? ratesText(rates) : '—' },
         };
       },
       async run(_p, a) {
@@ -88,7 +90,9 @@ export function createSupplierAgent(o) {
         if (a.time !== undefined) body.time = a.time;
         if (rates !== null) body.rates = rates;
         const d = await link.send({ type: 'BOOKING_REPLY', to: /** @type {string} */ (counterparty(a.orderId)), orderId: a.orderId, body });
-        return deliveryResult(d, `supplier.reply_sent_${a.answer}`);
+        // One receipt of what was sent, with the figures.
+        const day = isDay(a.day) ? a.day : ofType(ledger.events(a.orderId), 'BOOKING_REQUEST', 'in').at(-1)?.body.body.day;
+        return deliveryResult(d, `supplier.reply_sent_${a.answer}`, { ref: refOf(a.orderId), site: siteOf(a.orderId), day: isDay(day) ? dayName(day) : '—', ...(rates ? { rates: ratesText(rates) } : {}) });
       },
     },
 
@@ -96,10 +100,13 @@ export function createSupplierAgent(o) {
     record_delivery: {
       roles: ['supplier'],
       commits: true,
-      describe: (a) => ({
-        key: 'step.record_delivery',
-        params: { site: siteOf(a.orderId), items: validItems(a.items) ? itemsText(a.items) : '—', challan: typeof a.challanNo === 'string' && a.challanNo ? a.challanNo : '—' },
-      }),
+      describe: (a) => {
+        const challan = typeof a.challanNo === 'string' && a.challanNo ? a.challanNo : null;
+        return {
+          key: variant('step.record_delivery', { challan }),
+          params: { site: siteOf(a.orderId), items: validItems(a.items) ? itemsText(a.items) : '—', ...(challan ? { challan } : {}) },
+        };
+      },
       async run(_p, a) {
         if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
         if (!validItems(a.items) || !isSha256(a.sha256)) return no('common.bad_args');
@@ -204,7 +211,7 @@ export function createSupplierAgent(o) {
     const b = m.body;
     switch (m.type) {
       case 'BOOKING_REQUEST':
-        await tell('supplier', 'supplier.order_request', { ref: refOf(m.order_id), site: b.site, day: dayName(b.day), time: b.time ?? '—', items: itemsText(b.items ?? []) || '—' });
+        await tell('supplier', variant('supplier.order_request', { time: b.time }), { ref: refOf(m.order_id), site: b.site, day: dayName(b.day), ...(b.time ? { time: b.time } : {}), items: itemsText(b.items ?? []) || '—' });
         break;
       case 'ACCEPT':
         await tell('supplier', 'supplier.bill_accepted', { ref: refOf(m.order_id), site: siteOf(m.order_id) });

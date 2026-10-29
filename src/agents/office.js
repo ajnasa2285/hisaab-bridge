@@ -9,7 +9,7 @@
 import { runTool, ok, no, ofType, posInt, nonNegInt } from './common.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
 import { day as dayName, qty, rupees, tenths } from '../i18n/format.js';
-import { t } from '../i18n/index.js';
+import { t, variant } from '../i18n/index.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('./common.js').Tool} Tool */
@@ -178,9 +178,12 @@ export function createOffice(o) {
   const nameOf = (p) => p.name || t(`role.${p.role}`);
   /** @param {number | null} paise */
   const money = (paise) => (paise === null ? '—' : rupees(paise));
-  /** The step's read-back without its closing question, for someone else to decide on. @param {string} tool @param {Record<string, any>} args */
+  /** What the step does, for someone else to decide on: its summary, else its read-back without the closing question. @param {string} tool @param {Record<string, any>} args */
   const stepText = (tool, args) => {
-    const d = Object.hasOwn(o.tools, tool) ? o.tools[tool].describe?.(args) : undefined;
+    const step = Object.hasOwn(o.tools, tool) ? o.tools[tool] : undefined;
+    const what = step?.summary?.(args);
+    if (what) return t(what.key, what.params);
+    const d = step?.describe?.(args);
     return d ? t(d.key, d.params).replace(/\s*हाँ \/ नहीं\s*$/u, '') : '—';
   };
   /** @param {string} orderId */
@@ -194,12 +197,22 @@ export function createOffice(o) {
    */
   async function commit(person, tool, args) {
     const step = Object.hasOwn(o.tools, tool) ? o.tools[tool] : undefined;
-    if (step?.hold && o.kind === 'contractor' && person.role === 'supervisor' && step.roles.includes(person.role)) {
-      const limit = step.hold.limit === 'procurement' ? o.limits?.procurementPaise : o.limits?.paymentPaise;
-      const estimate = step.hold.estimatePaise(args);
-      if (limit === undefined || estimate === null || estimate > limit) return hold(person, tool, step.hold.limit, args, estimate);
-    }
+    if (step?.hold && holds(person, tool, args)) return hold(person, tool, step.hold.limit, args, step.hold.estimatePaise(args));
     return runTool(o.tools, person, { tool, args });
+  }
+
+  /**
+   * Would this step be held for a contractor's decision rather than run? A supervisor's step above
+   * the limit, that cannot be estimated, or with no limit set. Such a step needs no read-back to the
+   * supervisor: the contractor's OK is the check.
+   * @param {Person} person @param {string} tool @param {Record<string, any>} args
+   */
+  function holds(person, tool, args) {
+    const step = Object.hasOwn(o.tools, tool) ? o.tools[tool] : undefined;
+    if (!step?.hold || o.kind !== 'contractor' || person.role !== 'supervisor' || !step.roles.includes(person.role)) return false;
+    const limit = step.hold.limit === 'procurement' ? o.limits?.procurementPaise : o.limits?.paymentPaise;
+    const estimate = step.hold.estimatePaise(args);
+    return limit === undefined || estimate === null || estimate > limit;
   }
 
   /**
@@ -211,8 +224,10 @@ export function createOffice(o) {
   async function hold(person, tool, limit, args, estimate) {
     const ref = knownOrder(args.orderId) ? refs.refOf(args.orderId) ?? refs.reserve('J') : refs.reserve(NEW_ORDER_REF[tool] ?? 'J');
     q.insertHeld.run(ref, JSON.stringify(person), tool, JSON.stringify(args), limit, estimate, nowIso());
-    await o.tell('contractor', 'office.approval_needed', { ref, by: nameOf(person), estimate: money(estimate), step: stepText(tool, args) });
-    return ok('office.held', { ref });
+    await o.tell('contractor', variant('office.approval_needed', { estimate: estimate !== null }), { ref, by: nameOf(person), ...(estimate !== null ? { estimate: money(estimate) } : {}), step: stepText(tool, args) });
+    // One message to the supervisor: what was understood, and that it went for approval.
+    const what = Object.hasOwn(o.tools, tool) ? o.tools[tool].summary?.(args) : undefined;
+    return what ? ok('office.held_step', { ref, what: t(what.key, what.params) }) : ok('office.held', { ref });
   }
 
   /**
@@ -280,7 +295,7 @@ export function createOffice(o) {
       if (!h) return no('office.no_such_ref', { ref });
       const d = h.decision;
       const decision = !d ? t('office.held_waiting') : d.decision === 'ok' ? t('office.held_ok', { by: nameOf(d.by) }) : t('office.held_no', { by: nameOf(d.by), reason: d.note ?? '—' });
-      return ok('office.status_held', { ref, step: stepText(h.tool, h.args), estimate: money(h.estimatePaise), decision });
+      return ok(variant('office.status_held', { estimate: h.estimatePaise !== null }), { ref, step: stepText(h.tool, h.args), ...(h.estimatePaise !== null ? { estimate: money(h.estimatePaise) } : {}), decision });
     }
     const order = /** @type {{kind: string, site: string}} */ (ledger.order(orderId));
     const view = ledger.view(orderId);
@@ -359,6 +374,7 @@ export function createOffice(o) {
 
   return {
     commit,
+    holds,
     command,
     /** Every held step with its decision, oldest first (for tests and the judge export). @returns {HeldStep[]} */
     held: () => q.all.all().map(toHeld),

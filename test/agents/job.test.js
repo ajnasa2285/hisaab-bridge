@@ -15,11 +15,11 @@ test('a whole JCB job, from booking to settled, leaves both ledgers in agreement
   const s = await setup();
   try {
     let r = await runTool(s.site.tools, supervisor, { tool: 'request_jcb', args: { site: 'Shivpuri', day: '2026-10-29', time: '08:00', hoursTenths: 60 } });
-    assert.deepEqual([r.ok, r.key], [true, 'site.jcb_requested']);
+    assert.deepEqual([r.ok, r.key], [true, 'site.jcb_requested_time']);
     const orderId = /** @type {{order_id: string}} */ (s.siteCore.ledger.orders()[0]).order_id;
     assert.equal(s.jcbCore.ledger.view(orderId).state, 'requested');
     await new Promise((res) => setImmediate(res));
-    assert.ok(s.told.some(([a, role, key, p]) => a === 'jcb' && role === 'jcb_owner' && key === 'jcb.booking_request' && p.site === 'Shivpuri' && p.hours === '6.0'));
+    assert.ok(s.told.some(([a, role, key, p]) => a === 'jcb' && role === 'jcb_owner' && key === 'jcb.booking_request_time_hours' && p.site === 'Shivpuri' && p.hours === '6.0'));
 
     // "Yes" needs a rate; the rate is what the bill will use.
     r = await runTool(s.jcb.tools, owner, { tool: 'reply_booking', args: { orderId, answer: 'yes' } });

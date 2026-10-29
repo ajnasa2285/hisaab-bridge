@@ -96,12 +96,12 @@ test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents
     await say('site', 'line-site', 'secret-site', CONTRACTOR, 'मदद');
 
     nextCalls = [{ name: 'request_jcb', args: { site: 'Shivpuri', day: 'tomorrow', time: '8', hours: '6' } }];
+    // No limit is set, so the supervisor's step waits for the contractor, who approves it by reference.
+    // The contractor's OK is the check: the supervisor gets one message, no read-back.
     await say('site', 'line-site', 'secret-site', SUPERVISOR, 'kal 8 baje Shivpuri JCB 6 ghante');
     assert.deepEqual([sent.at(-1)?.to, sent.at(-1)?.line], [SUPERVISOR, 'line-site']);
-    assert.ok(sent.at(-1)?.text.includes('हाँ / नहीं'));
-    // No limit is set, so the supervisor's step waits for the contractor, who approves it by reference.
-    await say('site', 'line-site', 'secret-site', SUPERVISOR, 'हाँ');
-    assert.ok(sent.some((s) => s.to === SUPERVISOR && s.text?.includes('J-1') && s.text.includes('मंज़ूरी')));
+    assert.ok(sent.at(-1)?.text.includes('J-1') && sent.at(-1)?.text.includes('मंज़ूरी') && sent.at(-1)?.text.includes('Shivpuri'));
+    assert.ok(!sent.at(-1)?.text.includes('हाँ / नहीं'));
     const ask = sent.filter((s) => s.to === CONTRACTOR).at(-1);
     assert.ok(ask?.text.includes('Shivpuri') && ask.text.includes('"OK J-1"'), 'the contractor sees the step and the reply forms');
     assert.equal(sent.filter((s) => s.to === OWNER && s.text?.includes('Shivpuri')).length, 0, 'nothing reached the JCB owner yet');
@@ -115,12 +115,14 @@ test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents
     const orderId = site.core.ledger.orders()[0].order_id;
     assert.equal(jcb.core.ledger.view(orderId).state, 'requested');
 
-    // A voice note is transcribed and handled like the same words typed: read back before anything goes.
+    // A contractor's voice note is transcribed and handled like the same words typed: nobody else checks
+    // it before it goes, so it is read back once, without "—" for the time not said.
     nextCalls = [{ name: 'request_jcb', args: { site: 'Gwalior', day: 'day_after', time: null, hours: null } }];
     const before = sent.length;
-    await say('site', 'line-site', 'secret-site', SUPERVISOR, '', { type: 'audio', audio: { id: 'media-voice', mime_type: 'audio/ogg; codecs=opus', voice: true } });
+    await say('site', 'line-site', 'secret-site', CONTRACTOR, '', { type: 'audio', audio: { id: 'media-voice', mime_type: 'audio/ogg; codecs=opus', voice: true } });
     await wait(() => sent.length > before);
     assert.ok(sent.at(-1)?.text.includes('Gwalior') && sent.at(-1)?.text.includes('हाँ / नहीं'));
+    assert.ok(!sent.at(-1)?.text.includes('—'));
 
     // The export for the judge page needs the token.
     assert.equal((await fetch(`${base}/agents/jcb/export`)).status, 404);
@@ -234,11 +236,9 @@ test('three agents in one service: a material order goes from the site line to t
 
     await say('site', 'line-site', 'secret-site', CONTRACTOR, 'मदद');
     nextCalls = [{ name: 'request_material', args: { site: 'Shivpuri', day: 'tomorrow', time: null, items: [{ name: 'सीमेंट', quantity: '50', unit: 'बोरी' }] } }];
+    // No limit is set: the supervisor's order goes to the contractor as P-1 with no read-back.
     await supervisorSays('kal Shivpuri cement 50 bori');
-    assert.ok(lastTo(SUPERVISOR)?.text.includes('सीमेंट 50 बोरी') && lastTo(SUPERVISOR)?.text.includes('हाँ / नहीं'));
-    // No limit is set: the supervisor's order waits for the contractor as P-1, who approves it.
-    await supervisorSays('हाँ');
-    assert.ok(lastTo(SUPERVISOR)?.text.includes('P-1'));
+    assert.ok(lastTo(SUPERVISOR)?.text.includes('सीमेंट 50 बोरी') && lastTo(SUPERVISOR)?.text.includes('P-1') && !lastTo(SUPERVISOR)?.text.includes('हाँ / नहीं'));
     assert.ok(lastTo(CONTRACTOR)?.text.includes('"OK P-1"') && lastTo(CONTRACTOR)?.text.includes('सीमेंट 50 बोरी'));
     assert.ok(!sent.some((s) => s.to === SUPPLIER && s.text.includes('Shivpuri')), 'nothing reached the supplier yet');
     await say('site', 'line-site', 'secret-site', CONTRACTOR, 'ok p1');
@@ -246,19 +246,19 @@ test('three agents in one service: a material order goes from the site line to t
     assert.ok(lastTo(SUPPLIER)?.text.includes('सीमेंट 50 बोरी') && lastTo(SUPPLIER)?.text.includes('P-1'), 'the supplier is told the items on the JCB line, with its own reference');
     assert.ok(!sent.some((s) => s.to === OWNER && s.text.includes('Shivpuri')), 'the JCB owner hears nothing of it');
 
-    nextCalls = [{ name: 'reply_order', args: { order: null, answer: 'yes', rates_rupees: ['350'], day: null, time: null } }];
-    await supplierSays('haan 350');
-    assert.ok(lastTo(SUPPLIER)?.text.includes('₹350/बोरी'));
-    await supplierSays('हाँ');
+    // The supplier's exact "हाँ 350" is the decision: read by code (no model), sent at once, one receipt.
+    nextCalls = [];
+    await supplierSays('हाँ, 350।');
+    await wait(() => lastTo(SUPPLIER)?.text.includes('₹350/बोरी') === true);
+    assert.ok(lastTo(SUPPLIER)?.text.includes('₹350/बोरी') && lastTo(SUPPLIER)?.text.includes('P-1') && !lastTo(SUPPLIER)?.text.includes('हाँ / नहीं'), lastTo(SUPPLIER)?.text);
     await wait(() => sent.some((s) => s.to === SUPERVISOR && s.text.includes('विक्रेता ने हाँ')));
 
-    // The challan photo: read by the supplier's reader only, read back, confirmed.
+    // The challan photo: read by the supplier's reader only; clear, so recorded at once with a receipt.
     await supplierSays('', [{ type: 'image', image: { id: 'media-challan', mime_type: 'image/jpeg' } }]);
-    await wait(() => lastTo(SUPPLIER)?.text.includes('412') === true);
+    await wait(() => sent.some((s) => s.to === SUPERVISOR && s.text.includes('सामान पहुँचा')) && lastTo(SUPPLIER)?.text.includes('पहुँच दर्ज') === true);
     assert.equal(challanReads.length, 1);
-    assert.ok(lastTo(SUPPLIER)?.text.includes('सीमेंट 50 बोरी') && lastTo(SUPPLIER)?.text.includes('हाँ / नहीं'));
-    await supplierSays('हाँ');
-    await wait(() => sent.some((s) => s.to === SUPERVISOR && s.text.includes('सामान पहुँचा')));
+    assert.ok(lastTo(SUPPLIER)?.text.includes('सीमेंट 50 बोरी') && !lastTo(SUPPLIER)?.text.includes('हाँ / नहीं'));
+    assert.ok(sent.some((s) => s.to === SUPERVISOR && s.text.includes('चालान 412')));
 
     const site = app.agent('agent:contractor-1');
     const sup = app.agent('agent:supplier-1');

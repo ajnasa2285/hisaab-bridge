@@ -1,7 +1,8 @@
 // The site's own copy of the challan: the supervisor (or the contractor) photographs it, the reader
-// (a stand-in here) reads it, code matches it to the open material order, the person confirms with
-// "हाँ" or types the figures, and it becomes the site's count with the photo as evidence. Code
-// compares it with the supplier's signed DELIVERY, whichever comes first.
+// (a stand-in here) reads it, code matches it to the open material order, and it becomes the site's
+// count with the photo as evidence: at once when every item was read clearly and agrees with the
+// supplier's signed DELIVERY (if it has come), read back first when it differs, typed by the person when
+// unclear. Code compares it with the DELIVERY, whichever comes first.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -85,18 +86,14 @@ async function start(opts = {}) {
   };
 }
 
-test('one open order: the photo is read back with its reference; "हाँ" records it; a later delivery that differs is told, with the dispute offered', async () => {
+test('one open order: a clear photo is recorded at once with its reference; a later delivery that differs is told, with the dispute offered', async () => {
   const c = await start();
   try {
     c.read(clearRead('96', [{ name: 'I', qtyHundredths: 28000, unit: 'cft' }]));
     await c.siteTalk.onImage(supervisor, photo);
-    assert.equal(c.last()?.[1], 'step.site_challan');
+    assert.equal(c.last()?.[1], 'site.challan_count_saved_challan');
     assert.ok(c.last()?.[2].includes('P-1') && c.last()?.[2].includes('96') && c.last()?.[2].includes('बालू 280 cft'), c.last()?.[2]);
-    assert.equal(c.count(c.orderId), null, 'nothing recorded before "हाँ"');
-
-    await c.siteTalk.onText(supervisor, 'हाँ');
-    assert.equal(c.last()?.[1], 'site.challan_count_saved');
-    assert.ok(c.last()?.[2].includes('P-1') && c.last()?.[2].includes('बालू 280 cft'));
+    assert.equal(c.siteTalk.pending(supervisor), null, 'no "हाँ / नहीं" question left');
     const note = c.note(c.orderId);
     assert.deepEqual([note?.direction, note?.body.items, note?.body.challan], ['local', [{ name: 'बालू', qtyHundredths: 28000, unit: 'cft' }], { sha256: SHA, number: '96' }]);
     assert.equal(c.s.supCore.ledger.events(c.orderId).filter((e) => e.type === 'NOTE').length, 0, 'the count stays on the contractor ledger');
@@ -135,7 +132,7 @@ test('different challan numbers are told even when the quantities agree', async 
   try {
     c.read(clearRead('96', [{ name: 'बालू', qtyHundredths: 30000, unit: 'cft' }]));
     await c.siteTalk.onImage(supervisor, photo);
-    await c.siteTalk.onText(supervisor, 'हाँ');
+    assert.equal(c.last()?.[1], 'site.challan_count_saved_challan');
     await c.deliver(c.orderId, [SAND], '97');
     const m = c.said.find(([w, k]) => w === 'site:contractor' && k === 'site.challan_count_differs');
     assert.ok(m && m[2].includes('96') && m[2].includes('97'));
@@ -144,7 +141,7 @@ test('different challan numbers are told even when the quantities agree', async 
   }
 });
 
-test('several open orders: the reference is asked with the exact reply forms, then the read-back is for that order', async () => {
+test('several open orders: the reference is asked with the exact reply forms, then the count is recorded for that order', async () => {
   const c = await start({ orders: [[SAND], [SAND, GITTI]] });
   try {
     c.read(clearRead('412', [{ name: 'बालू', qtyHundredths: 30000 }, { name: 'गिट्टी', qtyHundredths: 150 }]));
@@ -156,22 +153,18 @@ test('several open orders: the reference is asked with the exact reply forms, th
     await c.siteTalk.onText(supervisor, 'P-7');
     assert.equal(c.last()?.[1], 'site.challan_which_order');
     await c.siteTalk.onText(supervisor, 'p-2');
-    assert.equal(c.last()?.[1], 'step.site_challan');
+    assert.equal(c.last()?.[1], 'site.challan_count_saved_challan');
     assert.ok(c.last()?.[2].includes('P-2') && c.last()?.[2].includes('बालू 300 cft, गिट्टी 1.5 brass'), c.last()?.[2]);
     assert.equal(c.reads(), 1, 'the photo is read once');
-    await c.siteTalk.onText(supervisor, 'हाँ');
-    assert.equal(c.last()?.[1], 'site.challan_count_saved');
     assert.equal(c.count(c.orderIds[0]), null);
     assert.deepEqual(c.count(c.orderIds[1]), [{ name: 'बालू', qtyHundredths: 30000, unit: 'cft' }, { name: 'गिट्टी', qtyHundredths: 150, unit: 'brass' }]);
 
     // Now only P-1 is open: the next photo goes straight to it.
     c.read(clearRead('413', [{ name: 'बालू', qtyHundredths: 30000 }]));
     await c.siteTalk.onImage(supervisor, photo);
-    assert.equal(c.last()?.[1], 'step.site_challan');
+    assert.equal(c.last()?.[1], 'site.challan_count_saved_challan');
     assert.ok(c.last()?.[2].includes('P-1'));
-    await c.siteTalk.onText(supervisor, 'नहीं');
-    assert.equal(c.last()?.[1], 'step.cancelled');
-    assert.equal(c.count(c.orderIds[0]), null);
+    assert.deepEqual(c.count(c.orderIds[0]), [{ name: 'बालू', qtyHundredths: 30000, unit: 'cft' }]);
   } finally {
     await c.s.close();
   }
@@ -190,7 +183,7 @@ test('no open material order: the person is told how to make one and nothing is 
   }
 });
 
-test('an unclear read asks for the figures; a bare "हाँ" records nothing; typed figures are read back first', async () => {
+test('an unclear read asks for the figures; a bare "हाँ" records nothing; typed figures are recorded at once', async () => {
   const c = await start({ orders: [[SAND, GITTI]] });
   try {
     // Like a real handwritten challan: number read, the item code and quantity seen, unit not, not clear.
@@ -204,15 +197,12 @@ test('an unclear read asks for the figures; a bare "हाँ" records nothing; 
     await c.siteTalk.onImage(supervisor, photo);
     // One figure for two items is asked again; 0 means that item did not come.
     await c.siteTalk.onText(supervisor, '300');
-    assert.equal(c.last()?.[1], 'site.challan_ask_person');
-    await c.siteTalk.onText(supervisor, '300, 0');
-    assert.equal(c.last()?.[1], 'step.site_challan');
-    assert.ok(c.last()?.[2].includes('बालू 300 cft') && !c.last()?.[2].includes('गिट्टी 0'));
-    // The read-back can be corrected with figures again.
-    await c.siteTalk.onText(supervisor, '290 0');
-    assert.ok(c.last()?.[2].includes('बालू 290 cft'));
-    await c.siteTalk.onText(supervisor, 'हाँ');
-    assert.equal(c.last()?.[1], 'site.challan_count_saved');
+    assert.equal(c.last()?.[1], 'site.challan_ask_person_blank');
+    assert.doesNotMatch(c.last()?.[2] ?? '', /—/);
+    // The person's own figures are their count: recorded at once.
+    await c.siteTalk.onText(supervisor, '290, 0');
+    assert.equal(c.last()?.[1], 'site.challan_count_saved_challan');
+    assert.ok(c.last()?.[2].includes('बालू 290 cft') && !c.last()?.[2].includes('गिट्टी 0'));
     assert.deepEqual(c.note(c.orderId)?.body.challan, { sha256: SHA, number: '96' });
     assert.deepEqual(c.count(c.orderId), [{ name: 'बालू', qtyHundredths: 29000, unit: 'cft' }]);
 
@@ -229,12 +219,10 @@ test('a delivery already present that matches: the photo count is recorded and a
   const c = await start({ orders: [[SAND, GITTI]] });
   try {
     await c.deliver(c.orderId, [SAND, GITTI], '0412');
-    assert.ok(c.said.some(([w, k]) => w === 'site:supervisor' && k === 'site.delivery_received'));
+    assert.ok(c.said.some(([w, k]) => w === 'site:supervisor' && k === 'site.delivery_received_challan'));
     c.read(clearRead('412', [{ name: 'Sand', qtyHundredths: 30000 }, { name: 'Gitti 20mm', qtyHundredths: 200 }]));
     await c.siteTalk.onImage(supervisor, photo);
-    assert.equal(c.last()?.[1], 'step.site_challan');
-    await c.siteTalk.onText(supervisor, 'हाँ');
-    assert.equal(c.last()?.[1], 'site.challan_count_matches');
+    assert.equal(c.last()?.[1], 'site.challan_count_matches_challan');
     assert.ok(c.last()?.[2].includes('P-1') && c.last()?.[2].includes('0412'));
     assert.ok(!c.said.some(([, k]) => k === 'site.challan_count_differs'));
     assert.deepEqual(c.note(c.orderId)?.body.challan, { sha256: SHA, number: '412' });
@@ -243,13 +231,17 @@ test('a delivery already present that matches: the photo count is recorded and a
   }
 });
 
-test('a delivery already present that differs: the contractor is told both figures', async () => {
+test('a delivery already present that differs: the reading is read back first; on "हाँ" the contractor is told both figures', async () => {
   const c = await start({ orders: [[SAND, GITTI]] });
   try {
     await c.deliver(c.orderId, [SAND, GITTI], '412');
     c.read(clearRead('412', [{ name: 'बालू', qtyHundredths: 30000 }, { name: 'गिट्टी', qtyHundredths: 150 }]));
     await c.siteTalk.onImage(supervisor, photo);
-    await c.siteTalk.onText(supervisor, 'हाँ');
+    // Code found a mismatch with the supplier's delivery: a misread is possible, so it is read back.
+    assert.equal(c.last()?.[1], 'step.site_challan_challan');
+    assert.ok(c.last()?.[2].includes('गिट्टी 1.5 brass') && c.last()?.[2].includes('अलग'));
+    assert.equal(c.count(c.orderId), null, 'nothing recorded before "हाँ"');
+    await c.siteTalk.onText(supervisor, 'हाँ जी');
     assert.equal(c.last()?.[1], 'site.challan_count_differs');
     const m = c.said.find(([w, k]) => w === 'site:contractor' && k === 'site.challan_count_differs');
     assert.ok(m && m[2].includes('गिट्टी 1.5 brass') && m[2].includes('गिट्टी 2 brass'));
@@ -289,9 +281,7 @@ test('roles: the contractor may send the site challan; other roles and other age
     // The contractor's challan photo is the site challan.
     c.read(clearRead('96', [{ name: 'बालू', qtyHundredths: 30000 }]));
     await c.siteTalk.onImage(contractor, photo);
-    assert.equal(c.last()?.[1], 'step.site_challan');
-    await c.siteTalk.onText(contractor, 'हाँ');
-    assert.equal(c.last()?.[1], 'site.challan_count_saved');
+    assert.equal(c.last()?.[1], 'site.challan_count_saved_challan');
 
     // The tool itself: only supervisor and contractor.
     for (const role of ['jcb_owner', 'operator', 'supplier']) {
@@ -335,14 +325,14 @@ async function mixed(payable) {
 }
 const UPI = { ok: true, kind: 'upi_payment', amountPaise: 1500000, date: '2026-10-29', utr: '123456789012', status: 'success', clear: true };
 
-test('mixed, two bills to pay: a challan photo gets the site challan read-back; the UPI reader is never tried', async () => {
+test('mixed, two bills to pay: a challan photo goes to the site challan flow; the UPI reader is never tried', async () => {
   const c = await mixed(2);
   try {
     c.read(clearRead('96', [{ name: 'गिट्टी', qtyHundredths: 200 }]));
     await c.siteTalk.onImage(contractor, photo);
     assert.equal(c.upiReads(), 0);
     assert.equal(c.reads(), 1);
-    assert.equal(c.last()?.[1], 'step.site_challan');
+    assert.equal(c.last()?.[1], 'site.challan_count_saved_challan');
     assert.ok(c.last()?.[2].includes('P-3') && c.last()?.[2].includes('गिट्टी 2 brass'), c.last()?.[2]);
   } finally {
     await c.s.close();
@@ -363,23 +353,21 @@ test('mixed, two bills to pay: a UPI screenshot is asked which order, and neithe
   }
 });
 
-test('mixed, one bill to pay: a challan photo gets the site challan read-back; a UPI screenshot the payment read-back', async () => {
+test('mixed, one bill to pay: a challan photo is the site count; a clear UPI screenshot for the bill is claimed', async () => {
   const c = await mixed(1);
   try {
     c.read(clearRead('96', [{ name: 'गिट्टी', qtyHundredths: 200 }]));
     await c.siteTalk.onImage(contractor, photo);
     assert.equal(c.upiReads(), 0);
-    assert.equal(c.last()?.[1], 'step.site_challan');
+    assert.equal(c.last()?.[1], 'site.challan_count_saved_challan');
     assert.ok(c.last()?.[2].includes('P-2'));
-    await c.siteTalk.onText(contractor, 'हाँ');
-    assert.equal(c.last()?.[1], 'site.challan_count_saved');
 
     c.sees('upi');
     c.upi(UPI);
     await c.siteTalk.onImage(contractor, photo);
     assert.equal(c.reads(), 1);
     assert.equal(c.upiReads(), 1);
-    assert.equal(c.last()?.[1], 'step.claim_payment');
+    assert.equal(c.last()?.[1], 'site.material_payment_claimed');
   } finally {
     await c.s.close();
   }
