@@ -8,7 +8,7 @@ import { validateSplit } from '../../eval/private-data.js';
  * @returns {import('../../eval/metrics.js').Reading} */
 function reading(overrides = {}) {
   return { ok: true, kind: 'hour_meter', raw: '00123.4', valueTenths: 1234, clear: true,
-    dashClock: '09:17', model: 'muse-spark-1.3', latencyMs: 100, ...overrides };
+    dashClock: '09:17', displayDate: null, model: 'muse-spark-1.3', latencyMs: 100, ...overrides };
 }
 
 test('answer-key parser needs explicit valid digits and human confirmation provenance', () => {

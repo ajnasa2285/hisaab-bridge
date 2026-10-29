@@ -54,7 +54,8 @@ test('a received site photo runs only its matching reader and both sides enter c
       } });
     assert.ok(note);
     assert.deepEqual(note.body.reading, { challanNo: 'S-8', items: [item(4800)] });
-    assert.doesNotMatch(JSON.stringify(note), /discarded|999|bytes|base64/);
+    // Random ids and hashes may contain "999" by chance; look at everything else.
+    assert.doesNotMatch(JSON.stringify(note).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{64}/g, ''), /discarded|999|bytes|base64/);
     assert.equal(f.ledger.view(f.orderId).state, 'disputed');
     const facts = differenceFacts(f.ledger, f.orderId, 'P-1');
     const context = /** @type {any} */ (facts.context);

@@ -39,7 +39,7 @@ export async function startService(o = {}) {
     sent.push({ to: body.to, line, text: body.text?.body ?? body.image?.caption ?? '' });
     return Response.json({ messages: [{ id: `wamid.out${sent.length}` }] });
   };
-  /** What the stand-in Muse Spark proposes next (understanding a message). @type {{name: string, args: any}[]} */
+  /** What the stand-in Muse Spark proposes next (understanding a message), and what the readers return. */
   const model = { calls: /** @type {{name: string, args: any}[]} */ ([]), kind: 'meter', meters: /** @type {number[]} */ ([]), upiPaise: 0 };
   const spark = o.spark ?? (async (/** @type {any} */ req) => {
     if (req.schema) return { ok: true, json: { explanation: 'x' }, text: '', toolCalls: [], model: 'muse-spark-1.2', latencyMs: 5, usage: { input_tokens: 1, output_tokens: 1 } };
