@@ -109,3 +109,10 @@ h2 { font-size: 1.05rem; margin: 0 0 8px; color: var(--accent); }
 .payment-row.waiting { border-left: 3px solid #a87914; padding-left: 8px; }
 .payment-row.denied { border-left: 3px solid #a73e35; padding-left: 8px; }
 .payment-group a { margin-right: 8px; }
+/* Remembered figures belong to the ledger card, grouped by that agent's counterparty. */
+.usual-figures { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.usual-figures h3, .usual-party h4 { margin: 0 0 8px; }
+.usual-party { margin-top: 14px; overflow-wrap: anywhere; }
+.usual-list { list-style: none; padding: 0; margin: 0; }
+.usual-list li { padding: 8px 0; border-top: 1px solid var(--line); line-height: 1.5; }
+.tr.check.flagged { border-inline-start-color: #a87914; background: var(--local); }

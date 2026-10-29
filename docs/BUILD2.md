@@ -543,3 +543,31 @@ read-only preview. The recording branch must bind the receipt to its exact order
 claim with human confirmation; this branch creates no cash payment from a photo. Missing fields
 are omitted; uncertain readings stay uncertain. See `docs/payments-view-report.md` for live checks,
 focused tests and integration details. Full tests/typecheck remain the lead's AWS step.
+
+## Usual figures (Build 6, 29 Oct 2026)
+
+`src/ledger/usual.js` remembers the latest 10 accepted or settled orders from one agent's own
+ledger, per counterparty, item, unit and metric (rate before GST, quantity per order, JCB hours
+per job, GST percent). One order contributes once; the accepted correction replaces its disputed
+figure. Refused outgoing records and unaccepted bills do not count. Acceptance sequence determines
+recency, not payment activity. Integer medians round the middle pair half up. Fewer than 3 values
+produces no usual notice. `USUAL_RULES` holds every threshold: strictly more than 25% from the
+median, or outside half the minimum to 1.5 times the maximum; integer cross-products decide.
+
+One line is appended to the contractor's bill, a seller's yes read-back/receipt, and a held order's
+approval request when unusual. The current order never contributes to its own baseline. An unusually
+large supervisor request within the existing limit still goes through; its existing order receipt
+is also shown to the contractor with the quantity note. The supervisor gets the ordinary receipt.
+Approving a held order returns one enriched receipt to the contractor. Nothing is held, changed,
+accepted or disputed because it is unusual. The approval gate and all reply bindings are unchanged.
+Approval context also compares the estimate with an estimate computed from each item's median
+quantity and pre-tax rate, explicitly labelled as an estimate; combined changes can flag even when
+neither component crosses the threshold alone. No historical total is invented.
+
+Ask-anything adds `usual`, with separate counterparty/unit rows, optional site/item/metric filters,
+and the existing code checks on answer numbers. JCB hours are per job, never asserted as daily hours.
+Insufficient history is said plainly when asked. Disputed-bill explanations include an unusual
+median from history already accepted before that bill. GST percentages remain code display only
+under the existing conservative prose guard. Trace checks show both normal and unusual comparisons;
+the judge page uses the same pure calculator for each ledger's counterparty cards. The signed
+sample has accepted cement history at ₹380 and one ₹500 bill flagged at 32% above usual.

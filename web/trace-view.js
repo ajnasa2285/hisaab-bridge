@@ -11,7 +11,7 @@
  * One timeline row: an icon, the kind's label, the entry's own title, a line of figures, whether it
  * is Meta's model at work, a ✓/✗/⏸ state, and the ledger row it points to (by sequence number).
  * @typedef {{id: number, icon: string, cls: string, label: string, text: string, extra: string, meta: boolean,
- *   mark: '' | 'ok' | 'bad' | 'held', seq: number | null, at: string}} TraceRow
+ *   mark: '' | 'ok' | 'bad' | 'held' | 'flagged', seq: number | null, at: string}} TraceRow
  */
 
 export const ICONS = /** @type {Record<string, string>} */ ({
@@ -65,7 +65,7 @@ export function traceRow(e, t, events = []) {
     if (d.vision) extra.push('vision');
     mark = d.ok === false ? 'bad' : '';
   } else if (e.kind === 'check') {
-    mark = d.name === 'approval' && d.held ? 'held' : d.pass ? 'ok' : 'bad';
+    mark = d.name === 'usual' && d.unusual ? 'flagged' : d.name === 'approval' && d.held ? 'held' : d.pass ? 'ok' : 'bad';
     if (d.name === 'payment_balance') {
       for (const key of ['billTotalPaise', 'confirmedPaise', 'waitingPaise', 'duePaise', 'creditPaise']) {
         if (d[key] !== null && d[key] !== undefined) extra.push(`${key}: ${d[key]}`);
@@ -90,7 +90,7 @@ export function traceRow(e, t, events = []) {
   const ms = duration(e.ms);
   if (ms) extra.push(ms);
   return {
-    id: e.id, icon: mark === 'held' ? '⏸' : ICONS[e.kind] ?? '•', cls: `tr ${e.kind}${meta ? ' muse' : ''}${mark ? ` ${mark}` : ''}`,
+    id: e.id, icon: mark === 'held' ? '⏸' : mark === 'flagged' ? '⚑' : ICONS[e.kind] ?? '•', cls: `tr ${e.kind}${meta ? ' muse' : ''}${mark ? ` ${mark}` : ''}`,
     label, text: e.kind === 'check' ? t.payment_checks[/** @type {keyof Texts['payment_checks']} */ (d.name)] ?? e.title : e.title,
     extra: extra.filter(Boolean).join(' · '), meta, mark, seq: seqOf(e, events), at: e.at,
   };

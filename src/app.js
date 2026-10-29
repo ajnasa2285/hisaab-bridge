@@ -57,6 +57,7 @@ const JUDGE_FILES = {
   'texts.js': 'text/javascript; charset=utf-8',
   'trace-view.js': 'text/javascript; charset=utf-8',
   'payments-view.js': 'text/javascript; charset=utf-8',
+  'usual-view.js': 'text/javascript; charset=utf-8',
   'order-state.js': 'text/javascript; charset=utf-8',
   'sample/export.json': 'application/json; charset=utf-8',
 };
@@ -302,7 +303,7 @@ export function createApp(cfg) {
       return;
     }
     if (await wa.handle(req, res)) return;
-    if (path === '/judge' || path.startsWith('/judge/') || path === '/src/ledger/payments.js') {
+    if (path === '/judge' || path.startsWith('/judge/') || path === '/src/ledger/payments.js' || path === '/src/ledger/usual.js') {
       await serveJudge(path, req, res);
       return;
     }
@@ -354,9 +355,10 @@ export function createApp(cfg) {
       res.writeHead(status, { ...JUDGE_HEADERS, 'content-type': type });
       res.end(req.method === 'HEAD' ? undefined : body);
     };
-    // The one pure ledger module used by the browser. No general source-directory serving.
-    if (path === '/src/ledger/payments.js') {
-      try { send(200, 'text/javascript; charset=utf-8', await readFile(new URL('./ledger/payments.js', import.meta.url))); }
+    // Only the two pure ledger modules used by the browser, no general source-directory serving.
+    if (path === '/src/ledger/payments.js' || path === '/src/ledger/usual.js') {
+      const module = path === '/src/ledger/payments.js' ? './ledger/payments.js' : './ledger/usual.js';
+      try { send(200, 'text/javascript; charset=utf-8', await readFile(new URL(module, import.meta.url))); }
       catch { send(404, 'text/plain; charset=utf-8', 'not found'); }
       return;
     }

@@ -89,6 +89,13 @@ test('the page and its own files are served at /judge/ with the headers and the 
       assert.match(await shared.text(), /paymentSummary/);
     }
     assert.equal((await fetch(`${s.base}/src/ledger/store.js`)).status, 404);
+    for (const path of ['/judge/usual-view.js', '/src/ledger/usual.js']) {
+      const shared = await fetch(`${s.base}${path}`);
+      assert.equal(shared.status, 200);
+      checkHeaders(shared);
+      assert.match(await shared.text(), /usualFigures/);
+    }
+    assert.equal((await fetch(`${s.base}/src/ledger/usual.js`, { method: 'POST' })).status, 405);
     assert.equal((await fetch(`${s.base}/src/ledger/payments.js`, { method: 'POST' })).status, 405);
 
     const head = await fetch(`${s.base}/judge/judge.js`, { method: 'HEAD' });

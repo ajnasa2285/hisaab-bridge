@@ -450,3 +450,20 @@ No longer used by the agents (kept for the old texts): `site.payment_claimed`, `
 | `office.state_unknown`, `office.step_unknown` | none | an unavailable state/step description |
 | `office.site_receipt_no_number` | count, signed | signed-copy text when no serial was read |
 | `state.part_paid`, `office.await.buyer.part_paid`, `office.await.seller.part_paid` | none | partially confirmed payment, without chasing |
+
+## Usual figures (Astra, 29 Oct 2026)
+
+| Key | Params | When |
+|---|---|---|
+| `usual.notice` | message, figures | the original message plus one code-written line; no new question or step |
+| `usual.above` / `usual.below` | pct, n, item, metric, value | unusual figure versus the median of accepted history; integer percent |
+| `usual.changed` | n, item, metric, value | unusual figure when a percentage is undefined (for example GST previously zero) |
+| `usual.estimate` | amount | estimate from median quantities and pre-tax rates, explicitly labelled |
+| `usual.estimate_above` / `usual.estimate_below` | pct, amount | combined estimate differs from that computed usual estimate |
+| `usual.metric.rate` / `.quantity` / `.hours` / `.gst` | none | names of the remembered figures |
+| `records.fig.usual` | who, n, item, metric, value, min, max | one usual lookup row, with separate counterparties and units |
+| `records.usual.none` | none | asked for usual figures before 3 accepted values exist |
+| `explain.figures.usual` | item, n, metric, value | historical median of an unusual disputed bill figure |
+
+The wrapper preserves the original reference and decision metadata. With no unusual figure the
+original key and text remain unchanged. Judge labels live in `web/texts.js` in both languages.

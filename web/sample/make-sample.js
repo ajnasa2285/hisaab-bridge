@@ -20,6 +20,7 @@ import { canonicalize } from '../../src/protocol/canonical.js';
 import { generateKeys, publicKeyFromText, publicKeyText, signMessage } from '../../src/protocol/keys.js';
 import { allocate, paymentSummary } from '../../src/ledger/payments.js';
 import { paymentChecks } from '../../src/trace/payments.js';
+import { usualChecks } from '../../src/trace/usual.js';
 import { openLedger } from '../../src/ledger/store.js';
 import { openRefs } from '../../src/ledger/refs.js';
 import { agentCardJson, createA2AHandler, sendToAgent } from '../../src/transport/a2a.js';
@@ -233,6 +234,7 @@ function paymentExample(x, s) {
       const sameParty = side.orders.filter((o) => o.counterparty === (side === x.contractor ? x.supplier.agentId : x.contractor.agentId))
         .map((o) => ({ orderId: o.order_id, events: side.events.filter((e) => e.orderId === o.order_id) }));
       for (const check of paymentChecks(event, sameParty)) trace.push({ ...traceBase, id: (trace.at(-1)?.id ?? 0) + 1, kind: 'check', title: check.title, detail: check.detail });
+      for (const check of usualChecks(event, side.events)) trace.push({ ...traceBase, id: (trace.at(-1)?.id ?? 0) + 1, kind: 'check', title: check.title, detail: check.detail });
       side.chain = { ok: true, events: side.events.length };
     }
     return message.msg_id;
@@ -263,6 +265,21 @@ function paymentExample(x, s) {
   const denied = send(ids[1], 'PAYMENT_CLAIM', { bill: bills[1], method: 'cash', amountPaise: 1000, paidOn: '2026-11-02' }, false);
   send(ids[1], 'PAYMENT_ACK', { payment: denied, amountPaise: 1000, received: false }, true);
   send(ids[1], 'PAYMENT_RECEIVED', { bill: bills[1], method: 'cash', amountPaise: 25000, receivedOn: '2026-11-02' }, true);
+  // Three invented accepted cement orders establish the usual rate. The fourth bill stays for a
+  // person's decision at ₹500 instead of ₹380: code flags it but leaves the order billed.
+  for (let i = 0; i < 4; i += 1) {
+    const id = randomUUID(), at = now(), ratePaise = i === 3 ? 50000 : 38000;
+    for (const side of [x.contractor, x.supplier]) {
+      side.orders.push({ order_id: id, kind: 'material', counterparty: side === x.contractor ? x.supplier.agentId : x.contractor.agentId, site: 'नमूना साइट', created_at: at });
+      (side.refs ??= {})[id] = `P-${i + 4}`;
+    }
+    send(id, 'BOOKING_REQUEST', { kind: 'material', site: 'नमूना साइट', day: '2026-11-02', items: [CEMENT] }, false);
+    send(id, 'BOOKING_REPLY', { answer: 'yes', rates: [{ name: CEMENT.name, unit: CEMENT.unit, ratePaise }] }, true);
+    send(id, 'DELIVERY', { items: [CEMENT], challan: { sha256: 'f'.repeat(64), number: `U-${i + 1}` }, deliveredAt: now() }, true);
+    const bill = send(id, 'BILL', { lines: [{ what: CEMENT.name, qtyHundredths: CEMENT.qtyHundredths, ratePaise, amountPaise: ratePaise * 50 }], totalPaise: ratePaise * 50,
+      evidence: [{ kind: 'challan', sha256: 'f'.repeat(64), readValue: `U-${i + 1}`, takenAt: null, sentAt: now() }] }, true);
+    if (i < 3) send(id, 'ACCEPT', { bill }, false);
+  }
   x.exportedAt = now();
 }
 

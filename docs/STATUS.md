@@ -33,6 +33,17 @@ Each builder adds a dated entry (IST) at the end of every work session: **done, 
 
 ## Astra
 
+- 2026-10-29 (IST), `astra/usual-figures`: Done: own-ledger usual figures (last 10 accepted orders,
+  accepted corrections, per counterparty/item/unit, integer thresholds), non-blocking bill/yes/
+  approval/order context, guarded usual lookups and dispute facts, trace checks and judge cards,
+  signed invented history with one unusual bill. Final focused checks 61/61 pass (35 new cases),
+  including Meta-only; diff clean. Live invented-data questions: 3 checked answers and 1 safe
+  insufficient-history fallback. Next: lead's AWS full suite/typecheck and branch review/merge.
+  Blocked: no implementation blocker; rendered browser QA unavailable in this environment.
+  Questions/review notes: GST-percent prose keeps the existing fallback; supervisor orders reuse
+  the order receipt for contractor context; combined estimate is labelled as derived, not a
+  historical total. Details and file list: `docs/usual-figures-report.md`. No merge/deploy/settings changes.
+
 - 2026-10-29 IST — Done: `astra/payments-view` in its own `hb-astra-payview` worktree, from `claude/wa` `0c32d2c`. Shared-summary payments and balances in ask-anything, explanation facts, status/pending, seller missed-window lists and judge panels; clubbed refs and payment trace checks; signed invented sample. Strict cash-receipt reader and explicit read-only photo preview; classifier unchanged. CONTRACTS 3.7 and Hindi keys documented (Astra drafted, Fable to polish). Final focused run: **100/100 passed**, including Meta-only rules; photo-route regression also **6/6**. Six live payment questions obtained accepted code-checked answers; four invented receipts read/abstained as expected. Full report, answers, changed files and cash wiring: `docs/payments-view-report.md`.
   - Next: Claude combines the recording branch, wires receipt previews to its confirmed cash-claim flow and aligns new seller-notice keys with `missedWaiting`; runs the full suite/typecheck on AWS, reviews and merges. Fable polishes marked texts.
   - Blocked: none on this branch. Questions/limits: recording states/tools remain the other session's; tests supply contract histories without that branch. Existing explanation payment-word guard remains conservative, with complete code-figure fallback. No new paymentSummary/allocate fields or signature changes, no new dependencies, no full laptop suite/typecheck, no merge/deploy/server/settings changes.
