@@ -68,6 +68,7 @@ flowchart LR
 - **Approvals** (`src/agents/office.js`): a supervisor's order or payment above the contractor's limit (or with no estimate) is held under its reference until the contractor replies `ok` or `no`. Nobody approves their own entry; a decision is made once.
 - **Readers** (`src/readers/`): Muse Spark with a strict JSON schema decides what a photo is (meter, UPI receipt, challan, other) and reads the hour meter, the UPI screenshot and the delivery challan, printed and handwritten. Amounts become integer paise, quantities integer hundredths. An unsure reading says so and the person is asked; a value is never guessed.
 - **Explanations** (`src/agents/explain.js`): when two sides' figures differ, each agent gives Muse Spark the facts from its own ledger and gets back a short, neutral Hindi explanation of where the figures differ and what each rests on. Code checks that every number in it exists in the ledger and that it takes no side, tells no one to pay and invents no reason; otherwise only the plain figures go out.
+- **Ask anything** (`src/agents/ask.js`): a question about one's own records goes to a read-only route. Muse Spark chooses lookups (orders, one order, totals, payments, stock) over that agent's own ledger, filtered by the person's role; code computes every figure; Muse Spark writes the answer, and code checks that every number came from a lookup and that it takes no side and asks no one to pay. Otherwise a plain answer written by code goes out. Nothing is written.
 
 ## Where Meta's models do the work
 
@@ -79,6 +80,7 @@ Every model called at runtime is Meta's, through the Meta Model API. A test (`te
 | Deciding what every incoming photo is (hour meter, UPI receipt, delivery challan or other) before the right reader runs; asks the person when unsure | Muse Spark (vision, strict schema) |
 | Reading the hour meter, the UPI screenshot, the delivery challan (printed and handwritten on one page) | Muse Spark (vision, strict schema) |
 | Explaining a difference between two parties' figures to each side, in Hindi, from that side's evidence | Muse Spark (strict schema, every number checked by code) |
+| Answering any question about one's own records ("इस महीने शिवपुरी पर कितना सीमेंट आया?"): planning which read-only lookups to run, up to 4, and phrasing a short Hindi answer | Muse Spark (tool calling; code runs every lookup and checks every number) |
 | Voice notes from the site | Muse Voice Transcribe |
 | Hours, continuity, rates, amounts, matching payment to bill, signatures, permissions | Code, never a model |
 
@@ -98,9 +100,11 @@ The figure that matters most is the "wrong but confident" column: across all rea
 
 **Explanations**, live with Muse Spark on 8 invented disputes (JCB hours, material counts, corrections): 8 / 8 passed the number and wording checks, median 3.75 s, slowest 5.6 s (`docs/explanation-live-check.md`). Eight cases show the path works; they are not a measured pass rate.
 
+**Ask anything**, live with Muse Spark on 10 invented questions over invented ledgers (contractor, supervisor, JCB owner, supplier): 9 fully correct, 1 with right figures but missing the order's state, no wrong figure; 10 / 10 passed the number and wording checks; median 8.9 s, slowest 12.6 s for the whole question (`docs/ask-live-check.md`).
+
 Not yet measured: UPI on unseen screenshots and other UPI apps, the challan reader and the photo-kind reader on real challans. Sample sizes are small and stated as such.
 
-**Tests:** 338 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and answered with the same receipt), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, the explanation checks, and the judge page's file serving.
+**Tests:** 356 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and answered with the same receipt), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, the explanation and answer checks, and the judge page's file serving.
 
 ## What works today, honestly
 
