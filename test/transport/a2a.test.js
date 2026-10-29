@@ -2,9 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { generateKeys, publicKeyFromText, publicKeyText } from '../../src/protocol/keys.js';
 import { openLedger } from '../../src/ledger/store.js';
-import { prepare, recordAnswer } from '../../src/protocol/exchange.js';
+import { prepare, recordAnswer, receive } from '../../src/protocol/exchange.js';
+import { openMediaStore } from '../../src/media/store.js';
 import { agentCardJson, createA2AHandler, sendToAgent } from '../../src/transport/a2a.js';
 
 /** @typedef {import('../../src/protocol/messages.js').MessageType} MessageType */
@@ -106,5 +110,41 @@ test('a tampered message over A2A gets a signed refusal and changes nothing', as
     assert.equal(jcb.ledger.events(orderId).length, 0);
   } finally {
     await s.close();
+  }
+});
+
+test('a signed photo larger than the old JSON cap travels over the official A2A SDK', async () => {
+  const pair = agents();
+  const dataDir = mkdtempSync(join(tmpdir(), 'hb-a2a-evidence-'));
+  const jcb = { ...pair.jcb, mediaStore: openMediaStore({ dataDir, agentId: pair.jcb.self.id }) };
+  const contractor = { ...pair.contractor, mediaStore: openMediaStore({ dataDir, agentId: pair.contractor.self.id }) };
+  for (const core of [jcb, contractor]) for (const peer of core.peers.values()) {
+    peer.mayReceiveFrom.add('EVIDENCE'); peer.mayReceiveFrom.add('EVIDENCE_REQUEST');
+  }
+  const server = await serve(contractor, 'Contractor evidence');
+  try {
+    const orderId = randomUUID();
+    const booking = prepare(contractor, { type: 'BOOKING_REQUEST', to: jcb.self.id, orderId, body: { kind: 'jcb_hours', site: 'Invented Site', day: '2026-10-29' } });
+    assert.ok(booking); recordAnswer(contractor, receive(jcb, booking).answer);
+    const yes = prepare(jcb, { type: 'BOOKING_REPLY', to: contractor.self.id, orderId, body: { answer: 'yes', ratePaise: 10000 } });
+    assert.ok(yes); recordAnswer(jcb, receive(contractor, yes).answer);
+    const photo = jcb.mediaStore.put({ bytes: Buffer.alloc(300 * 1024, 42), mime: 'image/png' });
+    const record = randomUUID(); const at = new Date(jcb.now()).toISOString();
+    jcb.ledger.append({ orderId, direction: 'local', type: 'EVIDENCE', msgId: record, at, body: { kind: 'meter', which: 'start', valueTenths: 100, sha256: photo.sha256 } });
+    const bill = prepare(jcb, { type: 'BILL', to: contractor.self.id, orderId, body: {
+      lines: [{ what: 'JCB', hoursTenths: 10, ratePaise: 10000, amountPaise: 10000 }], totalPaise: 10000,
+      evidence: [{ record, sha256: photo.sha256, kind: 'meter', readValue: '10.0', takenAt: null, sentAt: at }] } });
+    assert.ok(bill); recordAnswer(jcb, receive(contractor, bill).answer);
+    const request = prepare(contractor, { type: 'EVIDENCE_REQUEST', to: jcb.self.id, orderId, body: { order: orderId, refers_to: record, reason: 'asked' } });
+    assert.ok(request);
+    const response = receive(jcb, request).answer;
+    assert.equal(response.type, 'EVIDENCE');
+    const receipt = await sendToAgent(server.baseUrl, response);
+    assert.deepEqual(recordAnswer(jcb, receipt), { ok: true, kind: 'receipt' });
+    assert.equal(contractor.mediaStore.get(photo.sha256)?.bytes.length, 300 * 1024);
+    assert.equal(JSON.stringify(contractor.ledger.events(orderId)).includes('"bytes"'), false);
+  } finally {
+    await server.close(); jcb.ledger.close(); contractor.ledger.close();
+    rmSync(dataDir, { recursive: true, force: true });
   }
 });

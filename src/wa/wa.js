@@ -54,6 +54,22 @@ export function createWa(o) {
     return r;
   }
 
+  /**
+   * Images have the same session boundary as texts; no media is uploaded outside the window.
+   * @param {string} phoneNumberId
+   * @param {string} phone
+   * @param {{bytes: Uint8Array, mime: string, caption: string}} image
+   * @returns {Promise<{ok: true, id: string} | {ok: false, reason: string}>}
+   */
+  async function sendImage(phoneNumberId, phone, image) {
+    const line = byId.get(phoneNumberId);
+    if (!line) return { ok: false, reason: 'unknown line' };
+    if (!o.store.windowOpen(phoneNumberId, phone, now())) return { ok: false, reason: 'outside 24h window' };
+    const r = await line.client.sendImage(phone, image, { canSend: () => o.store.windowOpen(phoneNumberId, phone, now()) });
+    if (!r.ok) log(`wa ${line.name}: image to ${maskPhone(phone)} failed: ${r.reason}`);
+    return r;
+  }
+
   /** @param {Line} line @param {Inbound} msg */
   async function dispatch(line, msg) {
     if (msg.phoneNumberId !== line.phoneNumberId) {
@@ -129,7 +145,7 @@ export function createWa(o) {
     return true;
   }
 
-  return { handle, send };
+  return { handle, send, sendImage };
 }
 
 /** @param {import('node:http').IncomingMessage} req @returns {Promise<Buffer>} */
