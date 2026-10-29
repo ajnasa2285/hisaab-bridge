@@ -63,7 +63,7 @@ test('a broken trace drops its entries and never throws into the agent', async (
   const rec = openTrace({ agent: 'site' });
   rec.close();
   assert.doesNotThrow(() => rec.add('check', 'x', {}));
-  const spark = traceSpark(async () => ({ ok: true, toolCalls: [{ name: 'request_jcb', args: {} }] }), rec);
+  const spark = traceSpark(async (/** @type {any} */ _req) => ({ ok: true, toolCalls: [{ name: 'request_jcb', args: {} }] }), rec);
   assert.deepEqual(await spark({ text: 'x', tools: [] }), { ok: true, toolCalls: [{ name: 'request_jcb', args: {} }] });
   const tools = traceTools({ step: { roles: ['contractor'], commits: true, run: () => ({ ok: true, key: 'done' }) } }, rec);
   assert.deepEqual(await withTrace(rec, { convo: 'c' }, () => tools.step.run(/** @type {any} */ ({ role: 'contractor' }), {})), { ok: true, key: 'done' });
@@ -75,9 +75,9 @@ test('model steps: the job from the request shape, the model, effort, latency an
   assert.equal(sparkJob({ tools: [{ function: { name: 'orders' } }, { function: { name: 'answer' } }] }, { ok: true, toolCalls: [{ name: 'orders' }] }), 'ask_plan');
   assert.equal(sparkJob({ tools: [{ function: { name: 'answer' } }] }, { ok: true, toolCalls: [{ name: 'answer', args: {} }] }), 'ask_answer');
   assert.equal(sparkJob({ tools: [{ function: { name: 'request_jcb' } }] }, {}), 'understand');
-  const spark = traceSpark(async () => ({ ok: true, toolCalls: [{ name: 'request_jcb', args: { site: 'Shivpuri', hours: '6' } }], model: 'muse-spark-1.2', latencyMs: 812 }), rec);
+  const spark = traceSpark(async (/** @type {any} */ _req) => ({ ok: true, toolCalls: [{ name: 'request_jcb', args: { site: 'Shivpuri', hours: '6' } }], model: 'muse-spark-1.2', latencyMs: 812 }), rec);
   await spark({ system: 'SECRET PROMPT', text: 'kal JCB', tools: [{ type: 'function', function: { name: 'request_jcb' } }], reasoningEffort: 'minimal' });
-  const read = traceReader('meter', async () => ({ ok: true, kind: 'hour_meter', raw: '1234.5', valueTenths: 12345, clear: true, dashClock: null, model: 'muse-spark-1.2', latencyMs: 2100 }), rec);
+  const read = traceReader('meter', async (/** @type {any} */ _image) => ({ ok: true, kind: 'hour_meter', raw: '1234.5', valueTenths: 12345, clear: true, dashClock: null, model: 'muse-spark-1.2', latencyMs: 2100 }), rec);
   await read?.({ mime: 'image/jpeg', bytes: new TextEncoder().encode('IMAGE-BYTES') });
   const [m, r] = rec.list();
   assert.deepEqual([m.kind, m.detail.job, m.detail.model, m.detail.reasoningEffort, m.ms, m.detail.calls[0].tool, m.detail.calls[0].args.site], ['model', 'understand', 'muse-spark-1.2', 'minimal', 812, 'request_jcb', 'Shivpuri']);

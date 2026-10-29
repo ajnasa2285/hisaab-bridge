@@ -74,7 +74,7 @@ async function explainStandIn(req) {
   const explanation = material
     ? 'चालान और बिल में सीमेंट 50 बोरी लिखा है; साइट की गिनती में 48 बोरी दर्ज है।'
     : 'बिल के 6.1 घंटे मीटर की फ़ोटो से निकले हैं; ठेकेदार का आँकड़ा 5.5 घंटे है।';
-  return { ok: true, json: { explanation }, text: '', toolCalls: [], model: MODEL, latencyMs: material ? 3410 : 3780, usage: { input_tokens: 900, output_tokens: 60 } };
+  return { ok: /** @type {const} */ (true), json: { explanation }, text: '', toolCalls: [], model: MODEL, latencyMs: material ? 3410 : 3780, usage: { input_tokens: 900, output_tokens: 60 } };
 }
 
 /**
