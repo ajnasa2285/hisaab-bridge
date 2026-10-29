@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openLedger } from '../../src/ledger/store.js';
-import { openRefs, parseRef } from '../../src/ledger/refs.js';
+import { openRefs, parseRef, spokenRefs } from '../../src/ledger/refs.js';
 
 const id = (/** @type {number} */ n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
@@ -62,4 +62,12 @@ test('references are numbered per kind in order of creation, kept across a resta
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('spoken references in a voice transcript become references (live: "पीवन" for P-1)', () => {
+  assert.equal(spokenRefs('पीवन का पंद्रह हजार आज नगद दिया।'), 'P-1 का पंद्रह हजार आज नगद दिया।');
+  assert.equal(spokenRefs('पी वन और पी टू का'), 'P-1 और P-2 का');
+  assert.equal(spokenRefs('जे दो का बिल'), 'J-2 का बिल');
+  assert.equal(spokenRefs('पानी पी लो'), 'पानी पी लो');
+  assert.equal(spokenRefs('सीमेंट 50 बोरी'), 'सीमेंट 50 बोरी');
 });

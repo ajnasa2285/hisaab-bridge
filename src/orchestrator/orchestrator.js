@@ -390,6 +390,9 @@ export async function proposeStep(o) {
   if (args === null) return { kind: 'none', key: 'common.bad_args' };
   if ('order' in spec.properties) {
     const picked = pickOrder(o.orders, blank(call.args.order) ? null : call.args.order, spec.states ?? []);
+    // A payment without its order is not lost: the conversation offers the orders owed, with their
+    // balance (live, 30 Oct: "पंद्रह हजार नगद दिया" with no order understood).
+    if (picked === 'orchestrator.which_job' && spec.name === 'claim_payment') return { kind: 'step', tool: spec.name, args };
     if (typeof picked === 'string') return { kind: 'none', key: picked };
     args.orderId = picked.orderId;
   }

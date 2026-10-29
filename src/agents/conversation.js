@@ -365,6 +365,11 @@ export function createConversation(o) {
     if (proposal.kind === 'help') return o.reply(person, `help.${person.role}`);
     if (proposal.kind === 'none') return o.reply(person, proposal.key);
     if (proposal.kind === 'ask') return o.reply(person, 'common.unknown_step');
+    // A cash payment understood without its order: which order (with balances), or the split.
+    if (proposal.kind === 'step' && proposal.tool === 'claim_payment' && !proposal.args.orderId) {
+      const { amountPaise, ...base } = proposal.args;
+      return payTo(person, null, amountPaise, base);
+    }
     if (proposal.kind === 'missing') {
       pending.set(keyOf(person), { kind: 'fill', tool: proposal.tool, raw: proposal.raw, args: proposal.args, missing: proposal.missing, said: text, at: o.now() });
       return o.reply(person, 'ask.missing', { questions: askText(proposal.args, proposal.missing) });

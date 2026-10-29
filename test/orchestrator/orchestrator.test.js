@@ -172,3 +172,16 @@ test('jobs carry their stable references; a reference is picked however it is wr
   assert.match(f.seen[0].system, /P-1 \| site: Gwalior/);
   ledger.close();
 });
+
+test('a cash payment understood without its order is kept for the choice, not dropped (live, 30 Oct)', async () => {
+  const orders = [
+    { ref: 'P-1', orderId: 'o1', site: 'A', day: '2026-10-29', state: 'accepted' },
+    { ref: 'P-2', orderId: 'o2', site: 'B', day: '2026-10-29', state: 'accepted' },
+  ];
+  const f = fakeSpark([{ name: 'claim_payment', args: { order: 'null', amount_rupees: 'पंद्रह हजार' } }]);
+  const p = await proposeStep({ spark: f.spark, person: person('contractor'), text: 'पंद्रह हजार आज नगद दिया', orders, nowMs: NOW });
+  assert.equal(p.kind, 'step');
+  assert.equal(/** @type {any} */ (p).tool, 'claim_payment');
+  assert.equal(/** @type {any} */ (p).args.amountPaise, 1500000);
+  assert.equal(/** @type {any} */ (p).args.orderId, undefined);
+});

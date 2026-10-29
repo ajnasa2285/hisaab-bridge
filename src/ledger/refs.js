@@ -48,6 +48,21 @@ export function parseRef(text) {
   return `${kind}-${n}`;
 }
 
+// Numbers as a voice note writes them after "पी"/"जे" (live, 30 Oct: "P-1" came back as "पीवन").
+/** @type {Record<string, number>} */
+const SPOKEN = { 'वन': 1, 'एक': 1, 'टू': 2, 'दो': 2, 'थ्री': 3, 'तीन': 3, 'फोर': 4, 'फ़ोर': 4, 'चार': 4, 'फाइव': 5, 'फ़ाइव': 5, 'पाँच': 5, 'पांच': 5,
+  'सिक्स': 6, 'छह': 6, 'सेवन': 7, 'सात': 7, 'एट': 8, 'आठ': 8, 'नाइन': 9, 'नौ': 9, 'टेन': 10, 'दस': 10 };
+const SPOKEN_REF = new RegExp(`(^|[\s,।])(पी|जे)\s*-?\s*(${Object.keys(SPOKEN).join('|')})(?=$|[\s,।.?!])`, 'gu');
+
+/**
+ * A voice transcript with spoken references written as references: "पीवन" / "पी वन" / "पी एक" →
+ * "P-1", "जे दो" → "J-2". Only "पी"/"जे" right before a number word (1–10); the rest is untouched.
+ * @param {string} text @returns {string}
+ */
+export function spokenRefs(text) {
+  return text.normalize('NFC').replace(SPOKEN_REF, (_m, before, letter, n) => `${before}${letter === 'पी' ? 'P' : 'J'}-${SPOKEN[n]}`);
+}
+
 /** @type {WeakMap<object, ReturnType<typeof create>>} */
 const opened = new WeakMap();
 

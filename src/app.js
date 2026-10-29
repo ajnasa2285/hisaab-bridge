@@ -15,7 +15,7 @@
 
 import { readdir, readFile } from 'node:fs/promises';
 import { openLedger } from './ledger/store.js';
-import { openRefs } from './ledger/refs.js';
+import { openRefs, spokenRefs } from './ledger/refs.js';
 import { agentCardJson, createA2AHandler, sendToAgent } from './transport/a2a.js';
 import { publicKeyText } from './protocol/keys.js';
 import { createLink } from './agents/link.js';
@@ -272,7 +272,8 @@ export function createApp(cfg) {
           if (!said.ok || !said.text.trim()) { await sendTo(person, t('voice.not_understood')); return; }
           const c = currentTrace();
           if (c) c.text = said.text;
-          return entry.talk.onText(person, said.text);
+          // "पीवन" → "P-1" before anything reads it (live, 30 Oct).
+          return entry.talk.onText(person, spokenRefs(said.text));
         }
         // Documents are not handled yet.
         { await sendTo(person, t('common.unknown_step')); return; }
