@@ -23,7 +23,7 @@ import { fillStep, proposeStep, orderRefs, pickOrder } from '../orchestrator/orc
 import { parseHundredthsList } from '../orchestrator/units.js';
 import { impossible, meterReadings, MAX_JOB_TENTHS } from './jcb.js';
 import { displayDateWrong, jobDay } from './meter-guard.js';
-import { challanQuantities, countDifferences, delivery, requestedItems, sameChallanNo, siteCount } from './material.js';
+import { challanQuantities, countDifferences, delivery, invoiceFromReading, requestedItems, sameChallanNo, siteCount } from './material.js';
 import { exactReply, yesNo } from './replies.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
 import { runTool } from './common.js';
@@ -39,7 +39,7 @@ import { t } from '../i18n/index.js';
 /**
  * @typedef {{kind: 'confirm', tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}, at: number} |
  *   {kind: 'meter_digits', orderId: string, which: 'start' | 'end', sha256: string, takenAt: string | null, at: number} |
- *   {kind: 'challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number} |
+ *   {kind: 'challan_figures', orderId: string, sha256: string, challanNo: string | null, invoice?: Invoice | null, at: number} |
  *   {kind: 'site_challan_order', orderIds: string[], sha256: string, reading: SiteReading, at: number} |
  *   {kind: 'site_challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number} |
  *   {kind: 'fill', tool: string, raw: Record<string, any>, args: Record<string, any>, missing: string[], said: string, at: number} |
@@ -48,6 +48,7 @@ import { t } from '../i18n/index.js';
 /** `forwarded`: WhatsApp marked the message as forwarded (src/wa/webhook.js).
  * @typedef {{mime: string, bytes: Uint8Array, takenAt?: string | null, forwarded?: boolean}} Photo */
 /** @typedef {'meter' | 'upi' | 'challan'} PhotoKind */
+/** @typedef {NonNullable<ReturnType<typeof invoiceFromReading>>} Invoice */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) =>
  *   Promise<import('../readers/photo.js').PhotoClassification>} PhotoClassifier */
 /** @typedef {{challanNo: string | null, items: {name: string, qtyHundredths: number | null, raw: string}[], clear: boolean}} SiteReading */
@@ -233,7 +234,7 @@ export function createConversation(o) {
       const figures = parseHundredthsList(said);
       if (figures && p.tool === 'record_delivery') {
         pending.delete(keyOf(person));
-        return proposeDelivery(person, { orderId: p.args.orderId, sha256: p.args.sha256, challanNo: p.args.challanNo ?? null }, figures);
+        return proposeDelivery(person, { orderId: p.args.orderId, sha256: p.args.sha256, challanNo: p.args.challanNo ?? null, invoice: p.args.orderedInvoice ?? null }, figures);
       }
       if (figures && p.tool === 'confirm_count' && p.args.challan) {
         pending.delete(keyOf(person));
@@ -306,10 +307,11 @@ export function createConversation(o) {
     }
     if (HELP.has(said)) return o.reply(person, `help.${person.role}`);
 
-    // A person's exact reply to a request open for them is read by code and runs at once.
+    // A person's exact reply to a request open for them is read by code and runs at once (a correction,
+    // or a bill that differs from the tax invoice, is read back once first).
     const exact = exactReply({ ledger: o.ledger, person, text, nowMs: o.now() });
     if (exact && exact.kind === 'ask') return o.reply(person, exact.key, exact.params);
-    if (exact) return commitNow(person, exact.tool, exact.args);
+    if (exact) return exact.confirm ? propose(person, exact.tool, exact.args) : commitNow(person, exact.tool, exact.args);
 
     const proposal = await proposeStep({ spark: o.spark, person, text, orders: orderRefs(o.ledger), nowMs: o.now(), ask: true });
     if (proposal.kind === 'ask') {
@@ -509,11 +511,13 @@ export function createConversation(o) {
     rememberPhoto(person, image);
     const challanNo = typeof read.challanNo === 'string' && read.challanNo.trim() ? read.challanNo.trim().slice(0, 40) : null;
     const qtys = challanQuantities(items, read.items);
+    // A tax invoice's GST rates, rates and grand total, as read, go with the delivery (never as quantities).
+    const invoice = invoiceFromReading(items, read);
     if (!read.clear || qtys.some((q) => q === null)) {
-      pending.set(keyOf(person), { kind: 'challan_figures', orderId: picked.orderId, sha256, challanNo, at: o.now() });
+      pending.set(keyOf(person), { kind: 'challan_figures', orderId: picked.orderId, sha256, challanNo, invoice, at: o.now() });
       return askQuantities(person, picked.orderId, read.items.map((i) => i.raw).filter(Boolean).join(', '));
     }
-    return proposeDelivery(person, { orderId: picked.orderId, sha256, challanNo }, /** @type {number[]} */ (qtys));
+    return proposeDelivery(person, { orderId: picked.orderId, sha256, challanNo, invoice }, /** @type {number[]} */ (qtys));
   }
 
   /**
@@ -530,7 +534,8 @@ export function createConversation(o) {
    * reading of every item, or the figures the supplier typed, is recorded at once (the site's own
    * count checks it downstream). Typed figures that do not fit the order are asked for again.
    * @param {Person} person
-   * @param {{orderId: string, sha256: string, challanNo: string | null}} c
+   * @param {{orderId: string, sha256: string, challanNo: string | null, invoice?: Invoice | null}} c `invoice`: what a tax
+   *   invoice printed, one line per ordered item (src/agents/material.js invoiceFromReading)
    * @param {number[]} qtys
    */
   function proposeDelivery(person, c, qtys) {
@@ -539,8 +544,12 @@ export function createConversation(o) {
       pending.set(keyOf(person), { kind: 'challan_figures', ...c, at: o.now() });
       return askQuantities(person, c.orderId, '');
     }
-    const items = ordered.map((it, i) => ({ name: it.name, qtyHundredths: qtys[i], unit: it.unit })).filter((it) => it.qtyHundredths > 0);
-    return commitNow(person, 'record_delivery', { orderId: c.orderId, items, sha256: c.sha256, challanNo: c.challanNo });
+    const kept = ordered.map((it, i) => ({ item: { name: it.name, qtyHundredths: qtys[i], unit: it.unit }, line: c.invoice?.lines[i] })).filter((x) => x.item.qtyHundredths > 0);
+    const items = kept.map((x) => x.item);
+    // The invoice's lines follow the delivered items; the whole reading stays for figures typed again.
+    const invoice = c.invoice ? { lines: kept.map((x) => x.line ?? null), grandTotalPaise: c.invoice.grandTotalPaise } : null;
+    return commitNow(person, 'record_delivery', { orderId: c.orderId, items, sha256: c.sha256, challanNo: c.challanNo,
+      ...(invoice ? { invoice, orderedInvoice: c.invoice } : {}) });
   }
 
   /** The material orders waiting for the site's count: booked or delivered, not yet counted. */

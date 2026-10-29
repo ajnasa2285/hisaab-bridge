@@ -38,6 +38,8 @@ import { toWav } from './wa/audio.js';
 import { t } from './i18n/index.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 
+// The reason src/wa/wa.js gives when a person has not written in the last 24 hours.
+const OUTSIDE_WINDOW = 'outside 24h window';
 const RETRY_MS = 60 * 1000;
 
 // The judge page is served from web/ by the app itself, file by file from this list and nothing
@@ -105,13 +107,38 @@ export function createApp(cfg) {
   const store = openWaStore(cfg.waStoreFile);
   const clients = new Map(cfg.lines.map((l) => [l.phoneNumberId, createCloudClient({ phoneNumberId: l.phoneNumberId, accessToken: l.accessToken, graphVersion: l.graphVersion, fetch: cfg.fetch })]));
 
-  /** Sends a text to a person on their line; outside the 24-hour window it is only logged. @param {Person} p @param {string} text */
-  async function sendTo(p, text) {
+  /**
+   * Sends a text to a person on their line; outside the 24-hour window it is only logged, and a notice
+   * about an order (`missed`: its reference and text key) is remembered to be told again, rebuilt from
+   * the ledger, when the person next writes (tellWaiting).
+   * @param {Person} p @param {string} text @param {{ref: unknown, key: string}} [missed]
+   * @returns {Promise<boolean>} sent
+   */
+  async function sendTo(p, text, missed) {
     const r = await wa.send(p.line, p.phone, text);
     if (!r.ok) log(`notice to ${p.role} ${maskPhone(p.phone)} not sent: ${r.reason}`);
+    if (!r.ok && r.reason === OUTSIDE_WINDOW && missed && typeof missed.ref === 'string' && missed.ref !== '—') store.missed(p.line, p.phone, missed.ref, missed.key, now());
+    return r.ok;
   }
 
-  /** @type {Map<string, {cfg: AgentConfig, core: any, agent: {tools: any, onApplied: (m: any) => Promise<void>}, link: ReturnType<typeof createLink>, talk: ReturnType<typeof createConversation>, a2a: ReturnType<typeof createA2AHandler>,
+  /**
+   * A person writes after notices to them could not be sent: first what is still waiting for them,
+   * each notice once, as the agent rebuilds it from its ledger now (an order that moved on is not told
+   * again; a notice that is not about an open request of theirs is dropped). Then their message is
+   * handled as usual.
+   * @param {Person} person @param {{agent: {waiting?: (role: string) => {key: string, params: Record<string, string | number>}[]}}} entry
+   */
+  async function tellWaiting(person, entry) {
+    const missed = store.takeMissed(person.line, person.phone);
+    if (!missed.length || !entry.agent.waiting) return;
+    const open = entry.agent.waiting(person.role);
+    for (const m of missed) {
+      const n = open.find((x) => x.params.ref === m.ref && x.key === m.key);
+      if (n) await sendTo(person, t(n.key, n.params));
+    }
+  }
+
+  /** @type {Map<string, {cfg: AgentConfig, core: any, agent: {tools: any, onApplied: (m: any) => Promise<void>, waiting?: (role: string) => {key: string, params: Record<string, string | number>}[]}, link: ReturnType<typeof createLink>, talk: ReturnType<typeof createConversation>, a2a: ReturnType<typeof createA2AHandler>,
    *   trace: import('./trace/trace.js').Recorder, transcribe: ((req: {audio: Uint8Array, mime: string, language?: 'hi'}) => Promise<{ok: true, text: string} | {ok: false, transient: boolean, reason: string}>) | undefined}>} */
   const agents = new Map();
   // People's own words go into the trace only when asked for (the demo), digits masked.
@@ -145,7 +172,7 @@ export function createApp(cfg) {
       const people = directory.people(a.id, role);
       traceReply(key, role, people.length);
       for (const p of people) {
-        await sendTo(p, t(key, params));
+        await sendTo(p, t(key, params), { ref: params?.ref, key });
         if (expect) entry.talk.expect(p, expect.tool, expect.args, expect.no);
       }
     };
@@ -218,6 +245,7 @@ export function createApp(cfg) {
     onMessage: async (msg, person) => {
       const entry = agents.get(person.agent);
       if (!entry) return;
+      await tellWaiting(person, entry);
       const text = msg.kind === 'text' || msg.kind === 'button' ? msg.text ?? '' : null;
       // One handling per message: everything recorded while it runs carries this person's conversation.
       return withTrace(entry.trace, { convo: entry.trace.convoOf(person), role: person.role, text }, async () => {

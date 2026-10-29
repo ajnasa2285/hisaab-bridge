@@ -5,9 +5,9 @@ import { t, keys, paramsOf } from '../../src/i18n/index.js';
 
 const DEVANAGARI = /[ऀ-ॿ]/;
 const LATIN_WORD = /[A-Za-z]+/g;
-const ALLOWED_LATIN = new Set(['JCB', 'UPI', 'UTR', 'OK']);
+const ALLOWED_LATIN = new Set(['JCB', 'UPI', 'UTR', 'OK', 'GST']);
 // Keys whose text is legitimately without Devanagari.
-const NO_DEVANAGARI_OK = new Set(['account.none', 'kind.jcb', 'bill.line', 'request.list_line', 'account.line', 'account.material', 'explain.wrapper', 'office.stock_line', 'office.pending_order']);
+const NO_DEVANAGARI_OK = new Set(['account.none', 'kind.jcb', 'bill.line', 'request.list_line', 'account.line', 'account.material', 'explain.wrapper', 'office.stock_line', 'office.pending_order', 'bill.line_gst', 'bill.rate_gst']);
 // Order references as written in examples ("J-1", "P-2") are Latin by design (docs/BUILD2.md section 4).
 const REF_EXAMPLE = /\b[JP]-\d+\b/g;
 // AGENTS.md rule 9: status only, never a nudge to pay.
@@ -24,7 +24,7 @@ const SAMPLE = {
   explanation: 'बिल 6.1 घंटे का है।', figures: '3671.6, 3677.7, ₹1,200', utr: '123456789012', status: 'सफल',
   seen: '₹7,000', state: 'बिल आया', role: 'ठेकेदार', question: 'बिल ₹7,320 ठीक है?', id: 3, neededOn: '30 अक्टूबर 2026',
   by: 'मोहन', estimate: '₹12,000', materials: 'सीमेंट 50 बोरी', billed: '₹7,320', paid: '—', pending: '₹7,320',
-  disputes: 0, name: 'सीमेंट', their: '5.5 घंटे', photos: 2,
+  disputes: 0, name: 'सीमेंट', their: '5.5 घंटे', photos: 2, percent: 28, gst: '₹5,320', invoiceTotal: '₹24,320', example: '48 बोरी', taxable: '₹19,000',
   rates: 'सीमेंट ₹350/बोरी', count: 'सीमेंट 48 बोरी', expected: 'सीमेंट 50 बोरी × ₹350 = ₹17,500',
   expectedTotal: '₹17,500', siteTotal: '₹16,800', item: 'सरिया (टन)',
   ref: 'J-1', step: 'शिवपुरी पर 29 अक्टूबर 2026 को 8 बजे से 6 घंटे के लिए JCB माँगें?', note: 'ठीक है', decision: 'मंज़ूर',
@@ -121,7 +121,7 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'jcb.reply_sent_yes': ['ref', 'site', 'day', 'rate'], 'jcb.reply_sent_no': ['ref', 'site', 'day'], 'jcb.reply_sent_other_time': ['ref', 'site', 'day'],
     'jcb.job_booked': ['ref', 'site', 'day', 'time'], 'jcb.meter_start_saved': ['reading'], 'jcb.meter_end_saved': ['reading', 'hours'],
     'jcb.start_first': [], 'jcb.end_not_after_start': ['start'], 'jcb.meter_hours_impossible': ['start', 'end', 'hours'], 'jcb.meter_done': ['hours'], 'jcb.readings_missing': [],
-    'jcb.bill_sent': ['hours', 'rate', 'total'], 'jcb.bill_accepted': ['ref', 'site'], 'jcb.bill_disputed': ['ref', 'site', 'their', 'reason'],
+    'jcb.bill_sent': ['hours', 'rate', 'total'], 'jcb.bill_accepted': ['ref', 'site'], 'jcb.bill_disputed': ['ref', 'site', 'their', 'reason', 'example'],
     'jcb.correction_sent': ['hours', 'total'], 'jcb.payment_claimed': ['ref', 'site', 'amount', 'utr', 'day'], 'jcb.settled_sent': ['amount'],
     'site.jcb_requested': ['ref', 'site', 'day', 'time'], 'site.booking_yes': ['ref', 'site', 'day', 'time', 'rate'],
     'site.booking_no': ['ref', 'site', 'day', 'time', 'rate'], 'site.booking_other_time': ['ref', 'site', 'day', 'time', 'rate'],
@@ -149,7 +149,14 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'supplier.order_request': ['ref', 'site', 'day', 'time', 'items'], 'supplier.rates_needed': ['items'], 'supplier.reply_sent_yes': ['ref', 'site', 'day', 'rates'],
     'supplier.reply_sent_no': ['ref', 'site', 'day'], 'supplier.reply_sent_other_time': ['ref', 'site', 'day'], 'supplier.item_not_agreed': ['item'],
     'supplier.delivery_sent': ['ref', 'site', 'items'], 'supplier.delivery_missing': [], 'supplier.bill_sent': ['lines', 'total'],
-    'supplier.bill_accepted': ['ref', 'site'], 'supplier.bill_disputed': ['ref', 'site', 'their', 'reason'], 'supplier.correction_sent': ['lines', 'total'],
+    'supplier.bill_sent_invoice_match': ['lines', 'total'], 'supplier.bill_sent_invoice_differs': ['lines', 'total', 'invoiceTotal'],
+    'step.send_material_bill_invoice_match': ['site', 'lines', 'total'], 'step.send_material_bill_invoice_differs': ['site', 'lines', 'total', 'invoiceTotal'],
+    'site.material_bill_received_invoice_match': ['ref', 'site', 'lines', 'total', 'photos'],
+    'site.material_bill_received_invoice_differs': ['ref', 'site', 'lines', 'total', 'photos', 'invoiceTotal'],
+    'site.material_correction_received_invoice_match': ['ref', 'site', 'lines', 'total'],
+    'site.material_correction_received_invoice_differs': ['ref', 'site', 'lines', 'total', 'invoiceTotal'],
+    'bill.line_gst': ['percent', 'gst', 'amount'], 'bill.rate_gst': ['percent'],
+    'supplier.bill_accepted': ['ref', 'site'], 'supplier.bill_disputed': ['ref', 'site', 'their', 'reason', 'example'], 'supplier.correction_sent': ['lines', 'total'],
     'supplier.payment_claimed': ['ref', 'site', 'amount', 'utr', 'day'], 'supplier.settled_sent': ['amount'],
     'challan.not_challan': [], 'challan.ask_person': ['raw', 'items'], 'challan.no_order_for_photo': [],
     'photo.ask_kind': ['forms'], 'photo.other': ['kinds'], 'photo.none': [], 'photo.sent_by_meter': ['kinds'],

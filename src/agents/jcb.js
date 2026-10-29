@@ -120,7 +120,8 @@ export function createJcbAgent(o) {
         const d = await link.send({ type: 'BOOKING_REPLY', to: /** @type {string} */ (counterparty(a.orderId)), orderId: a.orderId, body });
         const w = answered(a);
         if (d.ok && a.answer === 'yes') {
-          await tell('operator', variant('jcb.job_booked', { time: w.time }), { ref: refOf(a.orderId), site: siteOf(a.orderId), day: w.day, ...(w.time ? { time: w.time } : {}) });
+          const n = jobBookedNotice(a.orderId, w);
+          await tell('operator', n.key, n.params);
         }
         // One receipt of what was sent, with the figures.
         return deliveryResult(d, `jcb.reply_sent_${a.answer}`, { ref: refOf(a.orderId), site: siteOf(a.orderId), day: w.day, ...(posInt(a.ratePaise) ? { rate: rupees(a.ratePaise) } : {}) });
@@ -235,43 +236,106 @@ export function createJcbAgent(o) {
     },
   };
 
+  /** @typedef {{key: string, params: Record<string, string | number>}} Notice */
+
+  /** To the operator: a job is booked. @param {string} orderId @param {{day: string, time: string | null}} w @returns {Notice} */
+  const jobBookedNotice = (orderId, w) => ({
+    key: variant('jcb.job_booked', { time: w.time }),
+    params: { ref: refOf(orderId), site: siteOf(orderId), day: w.day, ...(w.time ? { time: w.time } : {}) },
+  });
+
+  /**
+   * To the owner: the notice for a contractor's message that asks something of them (a booking request,
+   * an objection to the bill, a reported payment). The same text when first told and when told again
+   * after a missed 24-hour window (waiting()).
+   * @param {Message} m @returns {Notice | null}
+   */
+  function ownerNotice(m) {
+    const b = m.body;
+    switch (m.type) {
+      case 'BOOKING_REQUEST':
+        return { key: variant('jcb.booking_request', { time: b.time, hours: b.hoursTenths }), params: {
+          ref: refOf(m.order_id), site: b.site, day: dayName(b.day), ...(b.time ? { time: b.time } : {}), ...(b.hoursTenths ? { hours: hours(b.hoursTenths) } : {}),
+        } };
+      case 'DISPUTE': {
+        // How to answer with a correction: the hours the contractor named, else the hours billed.
+        const billed = ledger.eventOfMessage(b.bill)?.body.body.lines?.[0]?.hoursTenths;
+        const example = posInt(b.theirFigure?.hoursTenths) ? b.theirFigure.hoursTenths : posInt(billed) ? billed : null;
+        return { key: 'jcb.bill_disputed', params: {
+          ref: refOf(m.order_id),
+          site: siteOf(m.order_id),
+          their: b.theirFigure?.hoursTenths !== undefined ? `${hours(b.theirFigure.hoursTenths)} h` : b.theirFigure?.totalPaise !== undefined ? rupees(b.theirFigure.totalPaise) : '—',
+          reason: b.reason,
+          example: example !== null ? hours(example) : '6',
+        } };
+      }
+      case 'PAYMENT_CLAIM':
+        // With the receipt's clock when it was visible; an old claim without `paidAt` reads as before.
+        return { key: typeof b.paidAt === 'string' ? 'jcb.payment_claimed_at' : 'jcb.payment_claimed', params: { ref: refOf(m.order_id), site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn), ...(typeof b.paidAt === 'string' ? { time: b.paidAt } : {}) } };
+      default:
+        return null;
+    }
+  }
+
   /**
    * Called once when the contractor's agent's message has been written to our ledger.
    * @param {Message} m
    */
   async function onApplied(m) {
-    const b = m.body;
+    const n = ownerNotice(m);
     switch (m.type) {
       case 'BOOKING_REQUEST':
-        await tell('jcb_owner', variant('jcb.booking_request', { time: b.time, hours: b.hoursTenths }), {
-          ref: refOf(m.order_id), site: b.site, day: dayName(b.day), ...(b.time ? { time: b.time } : {}), ...(b.hoursTenths ? { hours: hours(b.hoursTenths) } : {}),
-        });
+        if (n) await tell('jcb_owner', n.key, n.params);
         break;
       case 'ACCEPT':
         await tell('jcb_owner', 'jcb.bill_accepted', { ref: refOf(m.order_id), site: siteOf(m.order_id) });
         break;
       case 'DISPUTE': {
-        await tell('jcb_owner', 'jcb.bill_disputed', {
-          ref: refOf(m.order_id),
-          site: siteOf(m.order_id),
-          their: b.theirFigure?.hoursTenths !== undefined ? `${hours(b.theirFigure.hoursTenths)} h` : b.theirFigure?.totalPaise !== undefined ? rupees(b.theirFigure.totalPaise) : '—',
-          reason: b.reason,
-        });
+        if (n) await tell('jcb_owner', n.key, n.params);
         const explanation = await explainDifference({ spark: o.spark, audience: 'seller', facts: differenceFacts(ledger, m.order_id, refOf(m.order_id)) });
         await tell('jcb_owner', explanation.key, explanation.params);
         break;
       }
       case 'PAYMENT_CLAIM':
-        // With the receipt's clock when it was visible; an old claim without `paidAt` reads as before.
-        await tell('jcb_owner', typeof b.paidAt === 'string' ? 'jcb.payment_claimed_at' : 'jcb.payment_claimed', { ref: refOf(m.order_id), site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn), ...(typeof b.paidAt === 'string' ? { time: b.paidAt } : {}) }, { tool: 'confirm_payment', args: { orderId: m.order_id } });
+        if (n) await tell('jcb_owner', n.key, n.params, { tool: 'confirm_payment', args: { orderId: m.order_id } });
         break;
       default:
         break;
     }
   }
 
+  // What still waits for each role, by the order's state, and the message that asked for it.
+  /** @type {Record<string, [string, string]>} */
+  const OWNER_WAITS = { requested: ['BOOKING_REQUEST', 'in'], disputed: ['DISPUTE', 'in'], payment_claimed: ['PAYMENT_CLAIM', 'in'] };
+
+  /**
+   * What is still waiting for a person of this role, rebuilt from the ledger (docs/BUILD2.md "GST on
+   * material", 24-hour window): the owner's open requests, objections and reported payments, the
+   * operator's booked jobs not started. The text is the notice's own, as it would be told now.
+   * @param {string} role @returns {Notice[]}
+   */
+  function waiting(role) {
+    /** @type {Notice[]} */
+    const out = [];
+    for (const order of /** @type {{order_id: string}[]} */ (ledger.orders())) {
+      const id = order.order_id;
+      const state = ledger.view(id).state;
+      if (role === 'jcb_owner' && Object.hasOwn(OWNER_WAITS, state)) {
+        const [type, direction] = OWNER_WAITS[state];
+        const e = ofType(ledger.events(id), type, direction).at(-1);
+        const n = e ? ownerNotice(/** @type {Message} */ (e.body)) : null;
+        if (n) out.push(n);
+      }
+      if (role === 'operator' && state === 'booked') {
+        const yes = ofType(ledger.events(id), 'BOOKING_REPLY', 'out').filter((e) => e.body.body.answer === 'yes').at(-1);
+        if (yes) out.push(jobBookedNotice(id, answered({ orderId: id, answer: 'yes', day: yes.body.body.day, time: yes.body.body.time })));
+      }
+    }
+    return out;
+  }
+
   /** @param {string} orderId */
   const siteOf = (orderId) => /** @type {{site: string} | null} */ (ledger.order(orderId))?.site ?? '—';
 
-  return { tools, onApplied };
+  return { tools, onApplied, waiting };
 }

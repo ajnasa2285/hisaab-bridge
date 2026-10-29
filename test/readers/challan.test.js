@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { CHALLAN_SCHEMA, CHALLAN_UNITS, normaliseUnit, parseChallanDate, parseQtyHundredths, readChallan } from '../../src/readers/challan.js';
+import { CHALLAN_SCHEMA, CHALLAN_UNITS, gstPercentFrom, normaliseUnit, parseChallanDate, parseMoneyPaise, parseQtyHundredths, parseRateHundredths, readChallan } from '../../src/readers/challan.js';
 import { supportedSchema } from '../../src/meta/schema.js';
 
 const image = { mime: /** @type {const} */ ('image/png'), bytes: new Uint8Array([1, 2, 3]) };
@@ -9,12 +9,17 @@ const image = { mime: /** @type {const} */ ('image/png'), bytes: new Uint8Array(
 function field(raw, state = raw === null ? 'absent' : 'visible') { return { raw, state }; }
 /** @param {string} name @param {string|null} qty @param {string|null} unit */
 function item(name, qty, unit) {
-  return { name, qty: field(qty), unit: field(unit), raw: `${name} ${qty ?? ''} ${unit ?? ''}`.trim(), state: 'visible' };
+  return { name, qty: field(qty), unit: field(unit), raw: `${name} ${qty ?? ''} ${unit ?? ''}`.trim(), state: 'visible', ...noInvoiceLine() };
+}
+/** A plain challan prints no money: every tax invoice field absent. */
+function noInvoiceLine() {
+  return { rate: field(null), taxableValue: field(null), cgstRate: field(null), sgstRate: field(null), igstRate: field(null) };
 }
 function inventedChallan() {
   return { kind: 'challan', clear: true, singleChallan: true, legible: true, moreLines: false,
     challanNo: field('KC-0042'), date: field('27/10/2026'), vehicle: field('XX 00 AB-0000'),
-    items: [item('Cement', '200', 'bags'), item('Sand', '12.25', 'cft')], signature: 'visible' };
+    items: [item('Cement', '200', 'bags'), item('Sand', '12.25', 'cft')], signature: 'visible',
+    cgstRate: field(null), sgstRate: field(null), igstRate: field(null), grandTotal: field(null) };
 }
 
 /** @param {import('node:test').TestContext} t @param {object} response @param {{status?: number}} [opts] */
@@ -57,8 +62,10 @@ test('a clear challan returns the contract fields, with code-made hundredths and
   assert.ok(result.ok && result.kind === 'challan');
   if (result.ok && result.kind === 'challan') {
     const { model: modelName, latencyMs, ...reading } = result;
-    assert.deepEqual(reading, { ok: true, kind: 'challan', challanNo: 'KC-0042', date: '2026-10-27', vehicle: 'XX00AB0000', clear: true, signed: true,
-      items: [{ name: 'Cement', qtyHundredths: 20000, unit: 'bag', raw: 'Cement 200 bags' }, { name: 'Sand', qtyHundredths: 1225, unit: 'cft', raw: 'Sand 12.25 cft' }] });
+    // A plain challan: the tax invoice's figures (added 30 Oct) are all null.
+    const none = { ratePaise: null, taxablePaise: null, gstPercent: null };
+    assert.deepEqual(reading, { ok: true, kind: 'challan', challanNo: 'KC-0042', date: '2026-10-27', vehicle: 'XX00AB0000', clear: true, signed: true, grandTotalPaise: null,
+      items: [{ name: 'Cement', qtyHundredths: 20000, unit: 'bag', raw: 'Cement 200 bags', ...none }, { name: 'Sand', qtyHundredths: 1225, unit: 'cft', raw: 'Sand 12.25 cft', ...none }] });
     assert.equal(modelName, 'muse-spark-1.3'); assert.ok(Number.isInteger(latencyMs));
   }
 });
@@ -198,4 +205,63 @@ for (const [state, signed] of /** @type {[string, boolean|null][]} */ ([['visibl
 test("the reader asks for the receiver's mark in its schema", () => {
   assert.ok(CHALLAN_SCHEMA.required.includes('signature'));
   assert.deepEqual(CHALLAN_SCHEMA.properties.signature.enum, ['visible', 'absent', 'unclear']);
+});
+
+// --- Tax invoice figures (GST on material, 30 Oct) ---------------------------------------------------
+
+/** An invented GST tax invoice: 50 bags at ₹380, CGST 14% + SGST 14% on the line, grand total ₹24,320. */
+function inventedInvoice() {
+  return { ...inventedChallan(), challanNo: field('INV-7'),
+    items: [{ ...item('Cement', '50', 'bags'), rate: field('380.00'), taxableValue: field('19,000.00'), cgstRate: field('14%'), sgstRate: field('14%'), igstRate: field(null) }],
+    grandTotal: field('24,320.00') };
+}
+
+test('money and tax rates are parsed by code exactly; anything doubtful is null', () => {
+  for (const [raw, paise] of /** @type {[string, number][]} */ ([['19,000.00', 1900000], ['₹ 24,320', 2432000], ['Rs. 380/-', 38000], ['2,660.5', 266050], ['1,23,456.78', 12345678]])) {
+    assert.equal(parseMoneyPaise(raw), paise, raw);
+  }
+  for (const raw of ['', '0', '19.000,00', '380.123', 'abc', '₹', '12,34']) assert.equal(parseMoneyPaise(raw), null, raw);
+  assert.equal(parseMoneyPaise(null), null);
+  assert.equal(parseRateHundredths('14%'), 1400);
+  assert.equal(parseRateHundredths('2.5 %'), 250);
+  assert.equal(parseRateHundredths('9.00'), 900);
+  assert.equal(parseRateHundredths('fourteen'), null);
+  // CGST + SGST equal halves, or IGST alone; the sum must be a GST slab.
+  assert.equal(gstPercentFrom(1400, 1400, null), 28);
+  assert.equal(gstPercentFrom(250, 250, null), 5);
+  assert.equal(gstPercentFrom(null, null, 1800), 18);
+  assert.equal(gstPercentFrom(900, null, null), null);
+  assert.equal(gstPercentFrom(900, 600, null), null);
+  assert.equal(gstPercentFrom(700, 700, null), null);
+  assert.equal(gstPercentFrom(900, 900, 1800), null);
+});
+
+test('a tax invoice gives rate, taxable value, GST percent per line and the grand total, never as quantities', async t => {
+  model(t, inventedInvoice());
+  const result = await readChallan(image);
+  assert.ok(result.ok && result.kind === 'challan');
+  if (!(result.ok && result.kind === 'challan')) return;
+  assert.equal(result.clear, true);
+  assert.equal(result.grandTotalPaise, 2432000);
+  assert.deepEqual(result.items.map(({ name, qtyHundredths, ratePaise, taxablePaise, gstPercent }) => ({ name, qtyHundredths, ratePaise, taxablePaise, gstPercent })),
+    [{ name: 'Cement', qtyHundredths: 5000, ratePaise: 38000, taxablePaise: 1900000, gstPercent: 28 }]);
+});
+
+test('GST printed once for the invoice applies to lines without their own rate; unclear figures are null and never unclear the reading', async t => {
+  const doc = { ...inventedInvoice(), cgstRate: field('9'), sgstRate: field('9'),
+    items: [{ ...item('Cement', '50', 'bags'), ...noInvoiceLine() }, { ...item('Sand', '10', 'cft'), ...noInvoiceLine(), rate: field(null, 'unclear') }],
+    grandTotal: field(null, 'unclear') };
+  model(t, doc);
+  const result = await readChallan(image);
+  assert.ok(result.ok && result.kind === 'challan');
+  if (!(result.ok && result.kind === 'challan')) return;
+  assert.equal(result.clear, true);
+  assert.equal(result.grandTotalPaise, null);
+  assert.deepEqual(result.items.map((i) => [i.gstPercent, i.ratePaise]), [[18, null], [18, null]]);
+});
+
+test('the reader keeps the instruction that money is never a quantity', () => {
+  const text = readFileSync(new URL('../../src/readers/challan.js', import.meta.url), 'utf8');
+  assert.match(text, /Do not copy rates, amounts, totals, tax or weights of a vehicle as quantities/);
+  assert.ok(CHALLAN_SCHEMA.required.includes('grandTotal'));
 });

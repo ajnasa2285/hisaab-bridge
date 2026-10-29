@@ -28,7 +28,7 @@ import { traceCheck } from '../trace/trace.js';
  * @typedef {{ref: string, kind: 'jcb_hours' | 'material', site: string, day: string, state: string,
  *   requested: Item[], hoursTenths: number | null, ratePaise: number | null, rates: {name: string, unit: string, ratePaise: number}[],
  *   delivered: Item[] | null, counted: Item[] | null,
- *   bill: {totalPaise: number, hoursTenths: number | null, lines: {what: string, qtyHundredths: number | null, amountPaise: number}[]} | null,
+ *   bill: {totalPaise: number, hoursTenths: number | null, lines: {what: string, qtyHundredths: number | null, amountPaise: number, gstPaise: number | null}[]} | null,
  *   bills: number, claim: {amountPaise: number, paidOn: string, paidAt: string | null} | null, settled: {amountPaise: number, day: string} | null,
  *   siteReceipt: {items: Item[], number: string | null, signed: boolean | null} | null}} OrderFacts
  */
@@ -162,7 +162,8 @@ export function orderFacts(ledger) {
         totalPaise: bill.totalPaise,
         hoursTenths: billHours.length ? billHours.reduce((/** @type {number} */ a, /** @type {number} */ b) => a + b, 0) : null,
         lines: lines.filter((/** @type {any} */ l) => typeof l?.what === 'string' && nonNegInt(l.amountPaise))
-          .map((/** @type {any} */ l) => ({ what: l.what, qtyHundredths: nonNegInt(l.qtyHundredths) ? l.qtyHundredths : null, amountPaise: l.amountPaise })),
+          .map((/** @type {any} */ l) => ({ what: l.what, qtyHundredths: nonNegInt(l.qtyHundredths) ? l.qtyHundredths : null, amountPaise: l.amountPaise,
+            gstPaise: nonNegInt(l.gstPaise) ? l.gstPaise : null })),
       } : null,
       bills: ofType(events, 'BILL').length + ofType(events, 'CORRECTION').length,
       claim: claim && nonNegInt(claim.amountPaise) && typeof claim.paidOn === 'string'
@@ -407,6 +408,9 @@ export function runLookup(name, raw, ctx) {
     if (o.counted) data.counted_at_site = itemsShown(c, o.counted);
     if (o.bill) {
       data.bill_in_force = c.money(o.bill.totalPaise);
+      // A material bill with GST: the GST in it, as its own figure (the bill in force already includes it).
+      const gst = o.bill.lines.filter((l) => l.gstPaise !== null);
+      if (gst.length) data.bill_gst_included = c.money(gst.reduce((s, l) => s + /** @type {number} */ (l.gstPaise), 0));
       if (o.bill.hoursTenths !== null) data.bill_hours = c.hours(o.bill.hoursTenths);
       if (o.bills > 1) data.bills_and_corrections = c.count(o.bills);
     }

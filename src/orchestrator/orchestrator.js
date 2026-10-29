@@ -5,7 +5,7 @@
 // sends.
 
 import { blank, dayWord, parseHundredths, parsePaise, parseQuantity, parseTenths, parseTime, resolveDay } from './units.js';
-import { itemsText } from '../agents/material.js';
+import { isGstPercent, itemsText } from '../agents/material.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
@@ -154,6 +154,8 @@ export const SPECS = [
       order: ORDER,
       answer: { type: 'string', enum: ['yes', 'no', 'other_time'] },
       rates_rupees: FIGURES(true, "Only for yes: the rate in rupees per unit for each item, in the order of the job's items, digits exactly as written; else null."),
+      gst_percents: { type: ['array', 'null'], minItems: 1, maxItems: 20, items: { type: ['string', 'null'], maxLength: 4 },
+        description: 'Only when the supplier names GST: the GST percent written for each rate, in the same order, digits only like "28" (null for a rate without GST); else null.' },
       day: NULLABLE_TEXT(10, "Only for other_time: 'today', 'tomorrow', 'day_after' or the date as written like '30-10'; else null."),
       time: NULLABLE_TEXT(5, 'Time as written like "8" or "08:30", or null.'),
     },
@@ -163,6 +165,12 @@ export const SPECS = [
         const r = figures(a.rates_rupees, parsePaise, false);
         if (r === null) return null;
         out.ratesPaise = r;
+      }
+      // GST as written per rate: one per rate, a GST slab or null; code checks the slab again.
+      if (Array.isArray(a.gst_percents) && a.gst_percents.some((g) => !blank(g))) {
+        const g = a.gst_percents.map((x) => (blank(x) ? null : /^\d{1,2}$/.test(String(x).replace('%', '').trim()) ? Number(String(x).replace('%', '').trim()) : NaN));
+        if (!Array.isArray(out.ratesPaise) || g.length !== out.ratesPaise.length || g.some((x) => x !== null && !isGstPercent(x))) return null;
+        out.gstPercents = g;
       }
       if (!blank(a.day)) {
         const d = resolveDay(a.day, ctx.nowMs);

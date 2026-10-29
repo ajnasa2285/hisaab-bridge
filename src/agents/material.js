@@ -4,12 +4,39 @@
 // builds a bill with these; the contractor's code checks the bill it receives with the same ones.
 
 import { qty, rupees } from '../i18n/format.js';
+import { t } from '../i18n/index.js';
 import { ofType, posInt } from './common.js';
 
 /** @typedef {import('../ledger/store.js').LedgerEvent} LedgerEvent */
-/** @typedef {{name: string, qtyHundredths: number, unit: string}} Item */
-/** @typedef {{name: string, unit: string, ratePaise: number}} Rate */
-/** @typedef {{what: string, qtyHundredths: number, ratePaise: number, amountPaise: number}} Line */
+/** @typedef {{name: string, qtyHundredths: number, unit: string, gstPercent?: number}} Item */
+/** @typedef {{name: string, unit: string, ratePaise: number, gstPercent?: number}} Rate */
+/**
+ * A bill line. Without GST `amountPaise` is quantity × rate. With GST known it also carries
+ * `taxablePaise` (quantity × rate), `gstPercent` and `gstPaise`, and `amountPaise` is taxable + GST, so
+ * a bill's `totalPaise` (the sum of the amounts) is always what is to be paid.
+ * @typedef {{what: string, qtyHundredths: number, ratePaise: number, amountPaise: number,
+ *   taxablePaise?: number, gstPercent?: number, gstPaise?: number}} Line
+ */
+
+/** The GST rates a rate or an invoice line may carry, in whole percent (the slabs, and 0 for exempt). */
+export const GST_PERCENTS = Object.freeze([0, 5, 12, 18, 28, 40]);
+/** @param {unknown} n @returns {n is number} */
+export const isGstPercent = (n) => typeof n === 'number' && GST_PERCENTS.includes(n);
+
+/**
+ * GST on a taxable value, the way a tax invoice prints it: CGST and SGST are each half the rate, each
+ * half rounded to the nearest paisa (half a paisa up), and GST is the two halves together
+ * (₹19,000 at 28% → 2 × ₹2,660 = ₹5,320). Integers only; null beyond the safe integers.
+ * @param {number} taxablePaise
+ * @param {number} gstPercent
+ * @returns {number | null}
+ */
+export function gstPaise(taxablePaise, gstPercent) {
+  if (!Number.isSafeInteger(taxablePaise) || taxablePaise < 0 || !isGstPercent(gstPercent)) return null;
+  const product = taxablePaise * gstPercent;
+  if (!Number.isSafeInteger(product + 100)) return null;
+  return 2 * Math.floor((product + 100) / 200);
+}
 
 /**
  * One bill line's amount: quantity (hundredths of a unit) × rate (paise per unit) / 100, rounded to
@@ -39,6 +66,42 @@ export function rateFor(rates, item) {
 }
 
 /**
+ * The GST rate of an item: the one the supplier wrote in their "yes", else the one read from the tax
+ * invoice and carried on the delivered item (`delivered`, by name and unit, for a count that is not
+ * the delivery itself), else null (no GST known).
+ * @param {Rate[]} rates
+ * @param {{name: string, unit: string, gstPercent?: number}} item
+ * @param {Item[]} [delivered]
+ * @returns {number | null}
+ */
+export function gstFor(rates, item, delivered = []) {
+  const fromYes = rates.find((r) => r.name === item.name && r.unit === item.unit)?.gstPercent;
+  if (isGstPercent(fromYes)) return fromYes;
+  if (isGstPercent(item.gstPercent)) return item.gstPercent;
+  const fromInvoice = delivered.find((d) => d.name === item.name && d.unit === item.unit)?.gstPercent;
+  return isGstPercent(fromInvoice) ? fromInvoice : null;
+}
+
+/**
+ * One bill line for an item at its agreed rate, with GST when its rate is known; null when the item
+ * has no agreed rate or an amount cannot be computed.
+ * @param {{name: string, qtyHundredths: number, unit: string, gstPercent?: number}} it
+ * @param {Rate[]} rates
+ * @param {Item[]} [delivered]
+ * @returns {Line | null}
+ */
+export function billLine(it, rates, delivered) {
+  const ratePaise = rateFor(rates, it);
+  const taxablePaise = ratePaise === null ? null : lineAmountPaise(it.qtyHundredths, ratePaise);
+  if (ratePaise === null || taxablePaise === null) return null;
+  const gstPercent = gstFor(rates, it, delivered);
+  if (gstPercent === null) return { what: it.name, qtyHundredths: it.qtyHundredths, ratePaise, amountPaise: taxablePaise };
+  const gst = /** @type {number} */ (gstPaise(taxablePaise, gstPercent));
+  if (!Number.isSafeInteger(taxablePaise + gst)) return null;
+  return { what: it.name, qtyHundredths: it.qtyHundredths, ratePaise, taxablePaise, gstPercent, gstPaise: gst, amountPaise: taxablePaise + gst };
+}
+
+/**
  * Bill lines for these quantities at the agreed rates, in the items' order; null when an item has no
  * agreed rate or an amount cannot be computed.
  * @param {Item[]} items
@@ -49,12 +112,35 @@ export function billLines(items, rates) {
   /** @type {Line[]} */
   const lines = [];
   for (const it of items) {
-    const ratePaise = rateFor(rates, it);
-    const amountPaise = ratePaise === null ? null : lineAmountPaise(it.qtyHundredths, ratePaise);
-    if (ratePaise === null || amountPaise === null) return null;
-    lines.push({ what: it.name, qtyHundredths: it.qtyHundredths, ratePaise, amountPaise });
+    const line = billLine(it, rates);
+    if (line === null) return null;
+    lines.push(line);
   }
   return lines;
+}
+
+/**
+ * What an item list comes to at the agreed rates with GST (an item at 0 adds nothing; an item without
+ * an agreed rate adds nothing, as the site's count may list items the order did not have).
+ * @param {Item[]} items @param {Rate[]} rates @param {Item[]} [delivered]
+ */
+export function itemsTotalPaise(items, rates, delivered) {
+  return items.reduce((s, it) => s + (it.qtyHundredths === 0 ? 0 : billLine(it, rates, delivered)?.amountPaise ?? 0), 0);
+}
+
+/**
+ * The tax invoice's grand total against the bill's total: 'match' when equal, or when the invoice is
+ * rounded off to whole rupees and equals the bill's total rounded to the nearest rupee (half up);
+ * 'differs' otherwise; null when the delivery carried no grand total.
+ * @param {number | null | undefined} invoicePaise
+ * @param {number} totalPaise
+ * @returns {'match' | 'differs' | null}
+ */
+export function invoiceCheck(invoicePaise, totalPaise) {
+  if (!posInt(invoicePaise)) return null;
+  if (invoicePaise === totalPaise) return 'match';
+  if (invoicePaise % 100 === 0 && invoicePaise === Math.floor((totalPaise + 50) / 100) * 100) return 'match';
+  return 'differs';
 }
 
 /**
@@ -86,10 +172,11 @@ export function billFollows(body, delivered, rates, o) {
   if (!Array.isArray(body.lines) || body.lines.length !== delivered.length) return false;
   return body.lines.every((l, i) => {
     const it = delivered[i];
-    const ratePaise = rateFor(rates, it);
-    return l.what === it.name && posInt(l.qtyHundredths) && l.ratePaise === ratePaise
-      && l.amountPaise === lineAmountPaise(l.qtyHundredths, /** @type {number} */ (ratePaise))
-      && (!o.sameQty || l.qtyHundredths === it.qtyHundredths);
+    if (!posInt(l.qtyHundredths) || (o.sameQty && l.qtyHundredths !== it.qtyHundredths)) return false;
+    // The same line this side would build: rate, taxable, GST (rate and amount) and the line's total.
+    const want = billLine({ ...it, qtyHundredths: l.qtyHundredths }, rates);
+    return want !== null && l.what === want.what && l.ratePaise === want.ratePaise && l.amountPaise === want.amountPaise
+      && l.taxablePaise === want.taxablePaise && l.gstPercent === want.gstPercent && l.gstPaise === want.gstPaise;
   });
 }
 
@@ -107,13 +194,15 @@ export function agreedRates(events) {
 /**
  * The signed delivery of the order, or null.
  * @param {LedgerEvent[]} events
- * @returns {{items: Item[], sha256: string, number: string | null, at: string, msgId: string} | null}
+ * `grandTotalPaise` is the tax invoice's grand total as read and carried on the DELIVERY, else null.
+ * @returns {{items: Item[], sha256: string, number: string | null, at: string, msgId: string, grandTotalPaise: number | null} | null}
  */
 export function delivery(events) {
   const d = ofType(events, 'DELIVERY').at(-1);
   if (!d) return null;
   const b = d.body.body;
-  return { items: b.items, sha256: b.challan.sha256, number: b.challan.number ?? null, at: d.body.created_at, msgId: /** @type {string} */ (d.msgId) };
+  return { items: b.items, sha256: b.challan.sha256, number: b.challan.number ?? null, at: d.body.created_at, msgId: /** @type {string} */ (d.msgId),
+    grandTotalPaise: posInt(b.grandTotalPaise) ? b.grandTotalPaise : null };
 }
 
 /** The site's own count in force (the latest), or null. @param {LedgerEvent[]} events @returns {Item[] | null} */
@@ -185,11 +274,41 @@ export function sameItems(a, b) {
  * @returns {(number | null)[]}
  */
 export function challanQuantities(orderItems, seen) {
+  return challanMatches(orderItems, seen).map((s) => (s && posInt(s.qtyHundredths) ? s.qtyHundredths : null));
+}
+
+/**
+ * The challan line read for each of the order's items (undefined where none): by name, or by position
+ * when the challan lists exactly as many items as the order.
+ * @template {{name: string}} T
+ * @param {{name: string}[]} orderItems
+ * @param {T[]} seen
+ * @returns {(T | undefined)[]}
+ */
+export function challanMatches(orderItems, seen) {
   return orderItems.map((it, i) => {
     const byName = seen.find((s) => typeof s.name === 'string' && norm(s.name) === norm(it.name));
-    const s = byName ?? (seen.length === orderItems.length ? seen[i] : undefined);
-    return s && posInt(s.qtyHundredths) ? s.qtyHundredths : null;
+    return byName ?? (seen.length === orderItems.length ? seen[i] : undefined);
   });
+}
+
+/**
+ * What a tax invoice printed for the order's items (GST rate, rate, taxable value per item, in the
+ * order's order) and its grand total, from a challan reading; null when it printed none of these.
+ * Carried on the DELIVERY as read; the bill is still computed by code and compared with the total.
+ * @param {{name: string}[]} orderItems
+ * @param {{items: {name: string, ratePaise?: number | null, taxablePaise?: number | null, gstPercent?: number | null}[], grandTotalPaise?: number | null}} read
+ * @returns {{lines: {gstPercent: number | null, ratePaise: number | null, taxablePaise: number | null}[], grandTotalPaise: number | null} | null}
+ */
+export function invoiceFromReading(orderItems, read) {
+  const lines = challanMatches(orderItems, read.items).map((s) => ({
+    gstPercent: isGstPercent(s?.gstPercent) ? s.gstPercent : null,
+    ratePaise: posInt(s?.ratePaise) ? s.ratePaise : null,
+    taxablePaise: posInt(s?.taxablePaise) ? s.taxablePaise : null,
+  }));
+  const grandTotalPaise = posInt(read.grandTotalPaise) ? read.grandTotalPaise : null;
+  if (grandTotalPaise === null && lines.every((l) => l.gstPercent === null && l.ratePaise === null && l.taxablePaise === null)) return null;
+  return { lines, grandTotalPaise };
 }
 
 /** "सीमेंट 50 बोरी, रेत 2 ट्रॉली" @param {Item[]} items */
@@ -197,18 +316,25 @@ export function itemsText(items) {
   return items.map((i) => `${i.name} ${qty(i.qtyHundredths, i.unit)}`).join(', ');
 }
 
-/** "सीमेंट ₹350/बोरी, रेत ₹4,000/ट्रॉली" @param {Rate[]} rates */
+/** "सीमेंट ₹350/बोरी + GST 28%, रेत ₹4,000/ट्रॉली" @param {Rate[]} rates */
 export function ratesText(rates) {
-  return rates.map((r) => `${r.name} ${rupees(r.ratePaise)}/${r.unit}`).join(', ');
+  return rates.map((r) => `${r.name} ${rupees(r.ratePaise)}/${r.unit}${isGstPercent(r.gstPercent) ? ` ${t('bill.rate_gst', { percent: r.gstPercent })}` : ''}`).join(', ');
 }
 
 /**
- * "सीमेंट 50 बोरी × ₹350 = ₹17,500" per line; the unit comes from the delivered item in the same place.
- * @param {{what: string, qtyHundredths?: number, ratePaise: number, amountPaise: number}[]} lines
+ * "सीमेंट 50 बोरी × ₹350 = ₹17,500" per line, and with GST "… = ₹19,000 + GST 28% ₹5,320 = ₹24,320";
+ * the unit comes from the delivered item in the same place.
+ * @param {{what: string, qtyHundredths?: number, ratePaise: number, amountPaise: number, taxablePaise?: number, gstPercent?: number, gstPaise?: number}[]} lines
  * @param {{unit: string}[]} units
  */
 export function linesText(lines, units) {
-  return lines.map((l, i) => `${l.what} ${posInt(l.qtyHundredths) ? qty(l.qtyHundredths, units[i]?.unit ?? '').trim() : '—'} × ${rupees(l.ratePaise)} = ${rupees(l.amountPaise)}`).join(', ');
+  return lines.map((l, i) => {
+    const head = `${l.what} ${posInt(l.qtyHundredths) ? qty(l.qtyHundredths, units[i]?.unit ?? '').trim() : '—'} × ${rupees(l.ratePaise)}`;
+    if (isGstPercent(l.gstPercent) && Number.isSafeInteger(l.taxablePaise) && Number.isSafeInteger(l.gstPaise)) {
+      return `${head} = ${rupees(/** @type {number} */ (l.taxablePaise))} ${t('bill.line_gst', { percent: l.gstPercent, gst: rupees(/** @type {number} */ (l.gstPaise)), amount: rupees(l.amountPaise) })}`;
+    }
+    return `${head} = ${rupees(l.amountPaise)}`;
+  }).join(', ');
 }
 
 /**

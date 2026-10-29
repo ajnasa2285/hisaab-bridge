@@ -69,7 +69,7 @@ test('challan scoring: unsupported claims and unlabeled rows are kept apart', ()
 });
 
 test('challan dataset kind is registered for evaluation and the answer tool', () => {
-  assert.equal(evaluationReader('challan').version, 'challan-v1');
+  assert.equal(evaluationReader('challan').version, 'challan-v2');
   assert.equal(parseEvaluationArgs(['challan', '--check']).kind, 'challan');
   assert.equal(parseAnswerKeyArgs(['challan']).kind, 'challan');
   assert.throws(() => parseAnswerKeyArgs(['invoice']));

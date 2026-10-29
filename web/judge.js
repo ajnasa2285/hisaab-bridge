@@ -256,6 +256,10 @@ function row(grid, k, v, cls = '') {
 function billLines(grid, t, lines) {
   row(grid, t.lines, lines.map((/** @type {any} */ l) => {
     const qty = l.hoursTenths !== undefined ? `${tenths(l.hoursTenths)} ${t.hours}` : hundredths(l.qtyHundredths);
+    // A material line with GST (30 Oct): taxable value + GST at its rate = the line's amount.
+    if (typeof l.gstPercent === 'number' && Number.isSafeInteger(l.taxablePaise) && Number.isSafeInteger(l.gstPaise)) {
+      return `${l.what}: ${qty} × ${rupees(l.ratePaise)} = ${rupees(l.taxablePaise)} + GST ${l.gstPercent}% ${rupees(l.gstPaise)} = ${rupees(l.amountPaise)}`;
+    }
     return `${l.what}: ${qty} × ${rupees(l.ratePaise)} = ${rupees(l.amountPaise)}`;
   }).join('\n'));
 }
@@ -290,7 +294,7 @@ function bodyOf(e, t, ctx) {
       if (b.day) row(grid, t.day, String(b.day));
       if (b.time) row(grid, t.time, String(b.time));
       if (b.ratePaise !== undefined) row(grid, t.rate, `${rupees(b.ratePaise)} / ${t.hours}`);
-      if (Array.isArray(b.rates)) row(grid, t.rates, b.rates.map((/** @type {any} */ r) => `${r.name}: ${rupees(r.ratePaise)} / ${r.unit}`).join('\n'));
+      if (Array.isArray(b.rates)) row(grid, t.rates, b.rates.map((/** @type {any} */ r) => `${r.name}: ${rupees(r.ratePaise)} / ${r.unit}${typeof r.gstPercent === 'number' ? ` + GST ${r.gstPercent}%` : ''}`).join('\n'));
       break;
     case 'EVIDENCE':
       row(grid, t.meter, `${b.which === 'start' ? t.start : b.which === 'end' ? t.end : '—'} ${tenths(b.valueTenths)}`);
@@ -302,6 +306,7 @@ function bodyOf(e, t, ctx) {
       row(grid, t.challan_no, String(b.challan?.number ?? '—'));
       row(grid, t.challan_hash, short(b.challan?.sha256, 12), 'mono');
       if (b.deliveredAt) row(grid, t.delivered_at, when(b.deliveredAt));
+      if (Number.isSafeInteger(b.grandTotalPaise)) row(grid, t.invoice_total, rupees(b.grandTotalPaise));
       break;
     case 'NOTE': {
       if (b.kind !== 'site_count') { row(grid, '', JSON.stringify(b), 'mono'); break; }

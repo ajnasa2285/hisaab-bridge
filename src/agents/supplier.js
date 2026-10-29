@@ -6,7 +6,7 @@
 
 import { rupees, day as dayName, qty } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, ofType, posInt } from './common.js';
-import { agreedRates, countDifferences, delivery, itemsText, linesText, materialBillBody, rateFor, ratesText, requestedItems, sameChallanNo, signedWord, validItems } from './material.js';
+import { agreedRates, countDifferences, delivery, invoiceCheck, isGstPercent, itemsText, linesText, materialBillBody, rateFor, ratesText, requestedItems, sameChallanNo, signedWord, validItems } from './material.js';
 import { t } from '../i18n/index.js';
 import { openRefs } from '../ledger/refs.js';
 import { variant } from '../i18n/index.js';
@@ -45,12 +45,15 @@ export function createSupplierAgent(o) {
 
   /**
    * One rate per requested item, in the request's order, from the rates the supplier wrote.
-   * @param {string} orderId @param {unknown} ratesPaise
+   * @param {string} orderId @param {unknown} ratesPaise @param {unknown} [gstPercents]
    */
-  const ratesFromArgs = (orderId, ratesPaise) => {
+  const ratesFromArgs = (orderId, ratesPaise, gstPercents) => {
     const items = requestedItems(eventsOf(orderId));
     if (!Array.isArray(ratesPaise) || items.length === 0 || ratesPaise.length !== items.length || !ratesPaise.every(posInt)) return null;
-    return items.map((it, i) => ({ name: it.name, unit: it.unit, ratePaise: /** @type {number} */ (ratesPaise[i]) }));
+    // GST per rate is optional: one entry per rate, a GST slab or null where the supplier gave none.
+    if (gstPercents !== undefined && (!Array.isArray(gstPercents) || gstPercents.length !== items.length || !gstPercents.every((g) => g === null || isGstPercent(g)))) return null;
+    return items.map((it, i) => ({ name: it.name, unit: it.unit, ratePaise: /** @type {number} */ (ratesPaise[i]),
+      ...(Array.isArray(gstPercents) && isGstPercent(gstPercents[i]) ? { gstPercent: gstPercents[i] } : {}) }));
   };
 
   /**
@@ -70,7 +73,7 @@ export function createSupplierAgent(o) {
       roles: ['supplier'],
       commits: true,
       describe: (a) => {
-        const rates = isUuid(a.orderId) ? ratesFromArgs(a.orderId, a.ratesPaise) : null;
+        const rates = isUuid(a.orderId) ? ratesFromArgs(a.orderId, a.ratesPaise, a.gstPercents) : null;
         // The day the answer is about: another day when offered, else the day asked for.
         const day = isDay(a.day) ? a.day : ofType(eventsOf(a.orderId), 'BOOKING_REQUEST', 'in').at(-1)?.body.body.day;
         const time = a.answer === 'other_time' && isTime(a.time) ? a.time : null;
@@ -82,7 +85,7 @@ export function createSupplierAgent(o) {
       async run(_p, a) {
         if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
         if (!['yes', 'no', 'other_time'].includes(a.answer)) return no('common.bad_args');
-        const rates = a.answer === 'yes' ? ratesFromArgs(a.orderId, a.ratesPaise) : null;
+        const rates = a.answer === 'yes' ? ratesFromArgs(a.orderId, a.ratesPaise, a.gstPercents) : null;
         if (a.answer === 'yes' && rates === null) return no('supplier.rates_needed', { items: itemsText(requestedItems(ledger.events(a.orderId))) || '—' });
         if (a.answer === 'other_time' && !isDay(a.day)) return no('jcb.day_needed');
         if ((a.time !== undefined && !isTime(a.time)) || (a.day !== undefined && !isDay(a.day))) return no('common.bad_args');
@@ -125,8 +128,18 @@ export function createSupplierAgent(o) {
         /** @type {Record<string, any>} */
         const challan = { sha256: a.sha256 };
         if (typeof a.challanNo === 'string') challan.number = a.challanNo.trim();
-        const items = /** @type {Item[]} */ (a.items).map((it) => ({ name: it.name, qtyHundredths: it.qtyHundredths, unit: it.unit }));
-        const body = { items, challan, deliveredAt: new Date(agent.now()).toISOString() };
+        // What a tax invoice printed for each item (GST rate, rate, taxable value) and its grand total,
+        // as read by the challan reader; a figure that is not usable is left out, never guessed.
+        const printed = Array.isArray(a.invoice?.lines) ? a.invoice.lines : [];
+        const items = /** @type {Item[]} */ (a.items).map((it, i) => {
+          const p = printed[i] ?? {};
+          return { name: it.name, qtyHundredths: it.qtyHundredths, unit: it.unit,
+            ...(isGstPercent(p.gstPercent) ? { gstPercent: p.gstPercent } : {}),
+            ...(posInt(p.ratePaise) ? { invoiceRatePaise: p.ratePaise } : {}),
+            ...(posInt(p.taxablePaise) ? { taxablePaise: p.taxablePaise } : {}) };
+        });
+        const grand = a.invoice?.grandTotalPaise;
+        const body = { items, challan, deliveredAt: new Date(agent.now()).toISOString(), ...(posInt(grand) ? { grandTotalPaise: grand } : {}) };
         const d = await link.send({ type: 'DELIVERY', to: /** @type {string} */ (counterparty(a.orderId)), orderId: a.orderId, body });
         return deliveryResult(d, 'supplier.delivery_sent', { ref: refOf(a.orderId), site: siteOf(a.orderId), items: itemsText(items) });
       },
@@ -141,7 +154,13 @@ export function createSupplierAgent(o) {
         const d = delivery(events);
         const rates = agreedRates(events);
         const body = d && rates ? materialBillBody(d.items, rates, { sha256: d.sha256, number: d.number, sentAt: d.at }) : null;
-        return { key: 'step.send_material_bill', params: { site: siteOf(a.orderId), lines: body && d ? linesText(body.lines, d.items) : '—', total: body ? rupees(body.totalPaise) : '—' } };
+        // A tax invoice's grand total is compared by code; a different one is shown beside the bill's.
+        const check = body && d ? invoiceCheck(d.grandTotalPaise, body.totalPaise) : null;
+        return {
+          key: variant('step.send_material_bill', { invoice_match: check === 'match', invoice_differs: check === 'differs' }),
+          params: { site: siteOf(a.orderId), lines: body && d ? linesText(body.lines, d.items) : '—', total: body ? rupees(body.totalPaise) : '—',
+            ...(check === 'differs' && d ? { invoiceTotal: rupees(/** @type {number} */ (d.grandTotalPaise)) } : {}) },
+        };
       },
       async run(_p, a) {
         if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
@@ -151,8 +170,14 @@ export function createSupplierAgent(o) {
         const rates = agreedRates(events);
         const body = rates ? materialBillBody(d.items, rates, { sha256: d.sha256, number: d.number, sentAt: d.at }) : null;
         if (body === null) return no('common.wrong_state');
+        const check = invoiceCheck(d.grandTotalPaise, body.totalPaise);
+        if (check !== null) {
+          traceCheck(`bill total ${check === 'match' ? '✓ =' : '✗ ≠'} invoice grand total: ${rupees(body.totalPaise)} / ${rupees(/** @type {number} */ (d.grandTotalPaise))}`,
+            check === 'match', { name: 'invoice_total', billPaise: body.totalPaise, invoicePaise: d.grandTotalPaise }, a.orderId);
+        }
         const sent = await link.send({ type: 'BILL', to: /** @type {string} */ (counterparty(a.orderId)), orderId: a.orderId, body });
-        return deliveryResult(sent, 'supplier.bill_sent', { lines: linesText(body.lines, d.items), total: rupees(body.totalPaise) });
+        return deliveryResult(sent, variant('supplier.bill_sent', { invoice_match: check === 'match', invoice_differs: check === 'differs' }),
+          { lines: linesText(body.lines, d.items), total: rupees(body.totalPaise), ...(check === 'differs' ? { invoiceTotal: rupees(/** @type {number} */ (d.grandTotalPaise)) } : {}) });
       },
     },
 
@@ -231,15 +256,54 @@ export function createSupplierAgent(o) {
     await tell('supplier', key, params);
   }
 
+  /** @typedef {{key: string, params: Record<string, string | number>}} Notice */
+
+  /**
+   * The notice for a contractor's message that asks something of the supplier (an order, an objection
+   * to the bill, a reported payment). The same text when first told and when told again after a
+   * missed 24-hour window (waiting()).
+   * @param {Message} m @returns {Notice | null}
+   */
+  function supplierNotice(m) {
+    const b = m.body;
+    switch (m.type) {
+      case 'BOOKING_REQUEST':
+        return { key: variant('supplier.order_request', { time: b.time }), params: { ref: refOf(m.order_id), site: b.site, day: dayName(b.day), ...(b.time ? { time: b.time } : {}), items: itemsText(b.items ?? []) || '—' } };
+      case 'DISPUTE': {
+        // A quantity is shown in the unit of the delivered item when the bill has one line.
+        const d = delivery(ledger.events(m.order_id));
+        const unit = d && d.items.length === 1 ? d.items[0].unit : '';
+        const f = b.theirFigure ?? {};
+        // How to answer with a correction ("सुधार 48 बोरी"): the quantity the contractor named on a
+        // one-line bill, else the delivered quantities in order.
+        const example = d && d.items.length === 1
+          ? qty(posInt(f.qtyHundredths) ? f.qtyHundredths : d.items[0].qtyHundredths, unit).trim()
+          : d ? d.items.map((it) => qty(it.qtyHundredths, '').trim()).join(' ') : '48';
+        return { key: 'supplier.bill_disputed', params: {
+          ref: refOf(m.order_id),
+          site: siteOf(m.order_id),
+          their: posInt(f.qtyHundredths) ? qty(f.qtyHundredths, unit).trim() : posInt(f.totalPaise) ? rupees(f.totalPaise) : '—',
+          reason: b.reason,
+          example,
+        } };
+      }
+      case 'PAYMENT_CLAIM':
+        // With the receipt's clock when it was visible; an old claim without `paidAt` reads as before.
+        return { key: typeof b.paidAt === 'string' ? 'supplier.payment_claimed_at' : 'supplier.payment_claimed', params: { ref: refOf(m.order_id), site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn), ...(typeof b.paidAt === 'string' ? { time: b.paidAt } : {}) } };
+      default:
+        return null;
+    }
+  }
+
   /**
    * Called once when the contractor's agent's message has been written to our ledger.
    * @param {Message} m
    */
   async function onApplied(m) {
-    const b = m.body;
+    const n = supplierNotice(m);
     switch (m.type) {
       case 'BOOKING_REQUEST':
-        await tell('supplier', variant('supplier.order_request', { time: b.time }), { ref: refOf(m.order_id), site: b.site, day: dayName(b.day), ...(b.time ? { time: b.time } : {}), items: itemsText(b.items ?? []) || '—' });
+        if (n) await tell('supplier', n.key, n.params);
         break;
       case 'SITE_RECEIPT':
         await onSiteReceipt(m);
@@ -248,28 +312,40 @@ export function createSupplierAgent(o) {
         await tell('supplier', 'supplier.bill_accepted', { ref: refOf(m.order_id), site: siteOf(m.order_id) });
         break;
       case 'DISPUTE': {
-        // A quantity is shown in the unit of the delivered item when the bill has one line.
-        const d = delivery(ledger.events(m.order_id));
-        const unit = d && d.items.length === 1 ? d.items[0].unit : '';
-        const f = b.theirFigure ?? {};
-        await tell('supplier', 'supplier.bill_disputed', {
-          ref: refOf(m.order_id),
-          site: siteOf(m.order_id),
-          their: posInt(f.qtyHundredths) ? qty(f.qtyHundredths, unit).trim() : posInt(f.totalPaise) ? rupees(f.totalPaise) : '—',
-          reason: b.reason,
-        });
+        if (n) await tell('supplier', n.key, n.params);
         const explanation = await explainDifference({ spark: o.spark, audience: 'seller', facts: differenceFacts(ledger, m.order_id, refOf(m.order_id)) });
         await tell('supplier', explanation.key, explanation.params);
         break;
       }
       case 'PAYMENT_CLAIM':
-        // With the receipt's clock when it was visible; an old claim without `paidAt` reads as before.
-        await tell('supplier', typeof b.paidAt === 'string' ? 'supplier.payment_claimed_at' : 'supplier.payment_claimed', { ref: refOf(m.order_id), site: siteOf(m.order_id), amount: rupees(b.amountPaise), utr: b.utr, day: dayName(b.paidOn), ...(typeof b.paidAt === 'string' ? { time: b.paidAt } : {}) }, { tool: 'confirm_payment', args: { orderId: m.order_id } });
+        if (n) await tell('supplier', n.key, n.params, { tool: 'confirm_payment', args: { orderId: m.order_id } });
         break;
       default:
         break;
     }
   }
 
-  return { tools, onApplied };
+  // What still waits for the supplier, by the order's state, and the message that asked for it.
+  /** @type {Record<string, string>} */
+  const WAITS = { requested: 'BOOKING_REQUEST', disputed: 'DISPUTE', payment_claimed: 'PAYMENT_CLAIM' };
+
+  /**
+   * What is still waiting for the supplier, rebuilt from the ledger: open orders, objections and
+   * reported payments, each as its notice would be told now.
+   * @param {string} role @returns {Notice[]}
+   */
+  function waiting(role) {
+    if (role !== 'supplier') return [];
+    /** @type {Notice[]} */
+    const out = [];
+    for (const order of /** @type {{order_id: string}[]} */ (ledger.orders())) {
+      const type = WAITS[ledger.view(order.order_id).state];
+      const e = type ? ofType(ledger.events(order.order_id), type, 'in').at(-1) : undefined;
+      const n = e ? supplierNotice(/** @type {Message} */ (e.body)) : null;
+      if (n) out.push(n);
+    }
+    return out;
+  }
+
+  return { tools, onApplied, waiting };
 }

@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { tenths as hours, rupees, day as dayName, qty } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, paymentText, posInt } from './common.js';
-import { agreedRates, billFollows, countDifferences, delivery, itemsText, lineAmountPaise, linesText, materialBillBody, rateFor, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, validItems } from './material.js';
+import { agreedRates, billFollows, countDifferences, delivery, invoiceCheck, itemsText, itemsTotalPaise, lineAmountPaise, linesText, materialBillBody, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, validItems } from './material.js';
 import { openRefs } from '../ledger/refs.js';
 import { t, variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
@@ -332,11 +332,8 @@ export function createContractorAgent(o) {
         // for it. Include it only when this objection actually cites that count's quantity/total.
         const count = ofType(ledger.events(a.orderId), 'NOTE', 'local').filter((e) => e.body.kind === 'site_count').at(-1);
         const rates = agreedRates(ledger.events(a.orderId));
-        const countTotal = count && rates ? count.body.items.reduce((/** @type {number|null} */ sum, /** @type {import('./material.js').Item} */ it) => {
-          const rate = rateFor(rates, it);
-          const amount = rate === null ? null : it.qtyHundredths === 0 ? 0 : lineAmountPaise(it.qtyHundredths, rate);
-          return sum === null || amount === null ? null : sum + amount;
-        }, 0) : null;
+        // What the count comes to at the agreed rates, GST included where its rate is known.
+        const countTotal = count && rates ? itemsTotalPaise(count.body.items, rates, delivery(ledger.events(a.orderId))?.items ?? []) : null;
         const citesCount = count && ((given[0] === 'qtyHundredths' && count.body.items.length === 1 && count.body.items[0].qtyHundredths === a.qtyHundredths)
           || (given[0] === 'totalPaise' && countTotal === a.totalPaise));
         const siteCountEvidence = citesCount && count?.msgId && count.body.challan ? {
@@ -456,17 +453,21 @@ export function createContractorAgent(o) {
     if (count !== null && !sameItems(count, billed)) {
       // What the site's count comes to at the agreed rates (an item counted as 0 adds nothing). A count
       // from the site's own challan may list other items than the delivery, so each is priced by name.
-      const siteTotal = count.reduce((s, it) => {
-        const rate = rateFor(rates, it);
-        return s + (it.qtyHundredths === 0 || rate === null ? 0 : lineAmountPaise(it.qtyHundredths, rate) ?? 0);
-      }, 0);
+      const siteTotal = itemsTotalPaise(count, rates, d.items);
       await tell('contractor', 'site.material_bill_count_differs', { ref, site, lines, total, count: itemsText(count), siteTotal: rupees(siteTotal) });
       const explanation = await explainDifference({ spark: o.spark, audience: 'buyer', facts: differenceFacts(ledger, m.order_id, ref) });
       await tell('contractor', explanation.key, explanation.params);
       return;
     }
-    const params = { ref, site, lines, total, photos: Array.isArray(b.evidence) ? b.evidence.length : 0 };
-    const key = m.type === 'BILL' ? 'site.material_bill_received' : 'site.material_correction_received';
+    // The tax invoice's grand total (carried on the delivery) against the bill: both figures when they differ.
+    const check = invoiceCheck(d.grandTotalPaise, b.totalPaise);
+    if (check !== null) {
+      traceCheck(`bill total ${check === 'match' ? '✓ =' : '✗ ≠'} invoice grand total: ${total} / ${rupees(/** @type {number} */ (d.grandTotalPaise))}`,
+        check === 'match', { name: 'invoice_total', billPaise: b.totalPaise, invoicePaise: d.grandTotalPaise }, m.order_id);
+    }
+    const params = { ref, site, lines, total, photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
+      ...(check === 'differs' ? { invoiceTotal: rupees(/** @type {number} */ (d.grandTotalPaise)) } : {}) };
+    const key = variant(m.type === 'BILL' ? 'site.material_bill_received' : 'site.material_correction_received', { invoice_match: check === 'match', invoice_differs: check === 'differs' });
     await tell('contractor', key, params, { tool: 'accept_bill', args: { orderId: m.order_id } });
     await tell('supervisor', key, params);
   }

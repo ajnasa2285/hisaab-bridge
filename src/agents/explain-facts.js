@@ -4,7 +4,7 @@ import { t } from '../i18n/index.js';
 import { qty, rupees, tenths } from '../i18n/format.js';
 import { parseTenths } from '../orchestrator/units.js';
 import { ofType } from './common.js';
-import { agreedRates, billLines, delivery, lineAmountPaise, rateFor, requestedItems, siteChallan, siteCount } from './material.js';
+import { agreedRates, billLine, billLines, delivery, requestedItems, siteChallan, siteCount } from './material.js';
 import { cleanEvidenceReading, hasReceivedEvidence } from './evidence-readings.js';
 
 /** @typedef {import('./explain.js').Facts} Facts */
@@ -56,6 +56,10 @@ export function differenceFacts(ledger, orderId, ref) {
       // Material line order is part of the contract. A name alone need not identify the unit.
       unit: l.hoursTenths !== undefined ? t('explain.unit.hours') : knownItems[i]?.name === l.what ? knownItems[i].unit : '—',
       rate: money(l.ratePaise), amount: money(l.amountPaise),
+      // GST as its own figures (taxable value and GST in rupees), never as a percent: the number
+      // check allows no percent sign in an explanation.
+      ...(Number.isSafeInteger(l.taxablePaise) && Number.isSafeInteger(l.gstPaise)
+        ? { taxable: money(l.taxablePaise), gst: money(l.gstPaise) } : {}),
     })),
     total: money(body.totalPaise),
   });
@@ -114,8 +118,8 @@ export function differenceFacts(ledger, orderId, ref) {
       if (!rates) return null;
       let sum = 0;
       for (const it of count) {
-        const rate = rateFor(rates, it);
-        const amount = rate === null ? null : it.qtyHundredths === 0 ? 0 : lineAmountPaise(it.qtyHundredths, rate);
+        // GST included where its rate is known, as on the bill.
+        const amount = it.qtyHundredths === 0 ? 0 : billLine(it, rates, d?.items ?? [])?.amountPaise ?? null;
         if (amount === null || !Number.isSafeInteger(sum + amount)) return null;
         sum += amount;
       }
@@ -165,7 +169,7 @@ export function differenceFacts(ledger, orderId, ref) {
   const showItems = (rows) => rows.map((it) => `${it.item} ${it.quantity} ${it.unit}`).join(', ');
   /** @param {ReturnType<typeof bill>} b */
   const showBill = (b) => t('explain.figures.bill', {
-    lines: b.lines.map((/** @type {any} */ l) => t('explain.figures.line', l)).join(', '), total: b.total,
+    lines: b.lines.map((/** @type {any} */ l) => t(l.gst !== undefined ? 'explain.figures.line_gst' : 'explain.figures.line', l)).join(', '), total: b.total,
   });
   /** @param {ReturnType<typeof time>} when */
   const showTime = (when) => when ? `${when.date} ${when.time} ${t('explain.time.ist')}` : '—';

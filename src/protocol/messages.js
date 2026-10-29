@@ -70,8 +70,15 @@ const isIso = (s) => typeof s === 'string' && s.length <= 40 && !Number.isNaN(Da
 const item = (it) => it && typeof it === 'object' && text(it.name) && pos(it.qtyHundredths) && text(it.unit);
 /** @param {any} items */
 const items = (items) => Array.isArray(items) && items.length > 0 && items.length <= 20 && items.every(item);
+/** A GST rate in whole percent: one of the slabs, or 0 (added 30 Oct). @param {unknown} n */
+const gstPercent = (n) => typeof n === 'number' && [0, 5, 12, 18, 28, 40].includes(n);
+/** @param {unknown} n */
+const optGst = (n) => n === undefined || gstPercent(n);
+/** A delivered item may carry what the tax invoice printed for it (all optional). @param {any} it */
+const deliveredItem = (it) => item(it) && optGst(it.gstPercent)
+  && (it.invoiceRatePaise === undefined || pos(it.invoiceRatePaise)) && (it.taxablePaise === undefined || pos(it.taxablePaise));
 /** @param {any} r */
-const rate = (r) => r && typeof r === 'object' && text(r.name) && text(r.unit) && pos(r.ratePaise);
+const rate = (r) => r && typeof r === 'object' && text(r.name) && text(r.unit) && pos(r.ratePaise) && optGst(r.gstPercent);
 /** A material "yes": one rate per item and unit, never two for the same pair. @param {any} rates */
 const rates = (rates) => Array.isArray(rates) && rates.length > 0 && rates.length <= 20 && rates.every(rate)
   && new Set(rates.map((/** @type {any} */ r) => JSON.stringify([r.name, r.unit]))).size === rates.length;
@@ -88,7 +95,11 @@ const only = (b, keys) => Object.keys(b).every((k) => keys.includes(k));
 /** @param {any} l */
 const billLine = (l) => l && typeof l === 'object' && text(l.what) && nat(l.ratePaise) && nat(l.amountPaise)
   && (l.qtyHundredths === undefined || pos(l.qtyHundredths)) && (l.hoursTenths === undefined || nat(l.hoursTenths))
-  && (l.qtyHundredths !== undefined) !== (l.hoursTenths !== undefined);
+  && (l.qtyHundredths !== undefined) !== (l.hoursTenths !== undefined)
+  // GST (optional): taxable, rate and GST together, and the line's amount is taxable + GST.
+  && (l.gstPercent === undefined
+    ? l.taxablePaise === undefined && l.gstPaise === undefined
+    : gstPercent(l.gstPercent) && nat(l.taxablePaise) && nat(l.gstPaise) && l.amountPaise === l.taxablePaise + l.gstPaise);
 /** @param {any} b */
 const billBody = (b) => Array.isArray(b.lines) && b.lines.length > 0 && b.lines.length <= 50 && b.lines.every(billLine)
   && nat(b.totalPaise) && b.totalPaise === b.lines.reduce((/** @type {number} */ s, /** @type {any} */ l) => s + l.amountPaise, 0)
@@ -104,8 +115,8 @@ const BODY_OK = {
     && (b.time === undefined || TIME_RE.test(b.time)) && (b.ratePaise === undefined || nat(b.ratePaise)) && optText(b.note)
     && (b.rates === undefined || (b.answer === 'yes' && rates(b.rates)))
     && (b.answer !== 'other_time' || isDay(b.day)),
-  DELIVERY: (b) => items(b.items) && b.challan && typeof b.challan.sha256 === 'string' && SHA256_RE.test(b.challan.sha256)
-    && isIso(b.deliveredAt),
+  DELIVERY: (b) => items(b.items) && b.items.every(deliveredItem) && b.challan && typeof b.challan.sha256 === 'string' && SHA256_RE.test(b.challan.sha256)
+    && isIso(b.deliveredAt) && (b.grandTotalPaise === undefined || pos(b.grandTotalPaise)),
   BILL: (b) => billBody(b) && b.replaces === undefined,
   RECEIPT: (b) => isUuid(b.receipt_for) && typeof b.entry_hash === 'string' && SHA256_RE.test(b.entry_hash)
     && typeof b.chain_head === 'string' && SHA256_RE.test(b.chain_head),

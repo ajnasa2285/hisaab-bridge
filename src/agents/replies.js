@@ -7,11 +7,13 @@
 import { orderRefs, pickOrder } from '../orchestrator/orchestrator.js';
 import { dayWord, parsePaise, parseTenths, parseHundredths, parseTime, resolveDay } from '../orchestrator/units.js';
 import { parseRef } from '../ledger/refs.js';
-import { itemsText, requestedItems } from './material.js';
+import { agreedRates, delivery, invoiceCheck, isGstPercent, itemsText, materialBillBody, requestedItems } from './material.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /**
- * @typedef {{kind: 'step', tool: string, args: Record<string, any>} |
+ * `confirm` on a step: read it back once before it runs (a correction, or a bill that differs from
+ * the tax invoice), instead of running at once.
+ * @typedef {{kind: 'step', tool: string, args: Record<string, any>, confirm?: boolean} |
  *   {kind: 'ask', key: string, params?: Record<string, string | number>}} Exact
  */
 
@@ -30,6 +32,8 @@ const BILL_WORDS = words(['बिल', 'bill']);
 // Words that may follow a rate ("हाँ 1200 घंटा", "हाँ ₹380 रुपये").
 const RATE_FILLER = words(['रुपये', 'रुपए', 'रु', 'rs', 'rupaye', 'rupees', 'rupay', '₹', 'घंटा', 'घंटे', 'ghanta', 'ghante', 'प्रति', 'per', 'बोरी', 'bori']);
 const TIME_FILLER = words(['बजे', 'baje', 'बजे से', 'से', 'se', 'तक', 'tak']);
+const CORRECTION_WORDS = words(['सुधार', 'sudhar', 'सुधारा']);
+const QTY_FILLER = words(['बोरी', 'bori', 'bag', 'bags']);
 const HOURS_UNIT = words(['घंटे', 'घंटा', 'ghante', 'ghanta', 'h', 'hr', 'hrs', 'hours']);
 const RUPEE_UNIT = words(['रुपये', 'रुपए', 'रु', 'rs', 'rupaye', 'rupees', '₹']);
 
@@ -62,6 +66,36 @@ const rateOf = (w) => {
   const s = w.replace(/^₹/u, '').replace(/\/-$/u, '');
   return s && /^[\d,]+(?:\.\d{1,2})?$/.test(s) ? parsePaise(s) : null;
 };
+
+const GST_WORDS = words(['gst', 'जीएसटी', 'प्लस', 'plus', '+']);
+
+/**
+ * The rates after a yes, each with the GST percent written after it (null where none): "380 + 28%",
+ * "380 28% gst", "350 18% 4000 5%". A percent before any rate, two percents for one rate, a percent
+ * that is not a GST slab (GST_PERCENTS) or anything else that is not a rate gives null.
+ * @param {string[]} after @returns {{paise: number[], gst: (number | null)[]} | null}
+ */
+export function ratesWithGst(after) {
+  // "380+28%" and "28 %" written together or apart read the same.
+  const w = after.join(' ').replace(/\+/gu, ' + ').replace(/(\d)\s+%/gu, '$1%').split(/\s+/).filter(Boolean);
+  /** @type {number[]} */ const paise = [];
+  /** @type {(number | null)[]} */ const gst = [];
+  for (const x of w) {
+    if (RATE_FILLER.has(x) || GST_WORDS.has(x)) continue;
+    const pct = /^(\d{1,2})%$/u.exec(x);
+    if (pct) {
+      const n = Number(pct[1]);
+      if (paise.length === 0 || gst[gst.length - 1] !== null || !isGstPercent(n)) return null;
+      gst[gst.length - 1] = n;
+      continue;
+    }
+    const r = rateOf(x);
+    if (r === null) return null;
+    paise.push(r);
+    gst.push(null);
+  }
+  return paise.length === 0 ? null : { paise, gst };
+}
 
 /**
  * A reference written first or last ("P-2 हाँ 380", "हाँ 380 P-2"), taken out of the words.
@@ -112,13 +146,32 @@ function sellerReply(o) {
   /** @param {string[]} states @returns {Exact} */
   const which = (states) => whichOrder(orders.filter((r) => states.includes(r.state)).map((r) => r.ref));
 
-  // "बिल" / "बिल भेजो": the bill of the one order that is ready for it.
+  // "बिल" / "बिल भेजो": the bill of the one order that is ready for it. A material bill whose total
+  // differs from the tax invoice's grand total is read back once, with both figures.
   if (rest.some((x) => BILL_WORDS.has(x)) && rest.every((x) => BILL_WORDS.has(x) || FILLER.has(x)) && rest.length <= 3) {
     const states = supplier ? ['delivered'] : ['booked', 'working'];
     const p = pick(states);
     if (p === 'orchestrator.which_job') return which(states);
     if (p === null || typeof p === 'string') return null;
-    return { kind: 'step', tool: 'send_bill', args: { orderId: p.orderId } };
+    return { kind: 'step', tool: 'send_bill', args: { orderId: p.orderId }, ...(supplier && invoiceDiffers(o.ledger, p.orderId) ? { confirm: true } : {}) };
+  }
+
+  // "सुधार 6 घंटे" (JCB) / "सुधार 48 बोरी" (supplier, one quantity per billed item in order): a
+  // corrected bill after a dispute, read back once before it goes.
+  if (CORRECTION_WORDS.has(rest[0]) && rest.length >= 2) {
+    const states = ['billed', 'disputed'];
+    const p = pick(states);
+    if (p === 'orchestrator.which_job') return which(states);
+    if (p === null || typeof p === 'string') return null;
+    const figures = rest.slice(1).filter((x) => !HOURS_UNIT.has(x) && !QTY_FILLER.has(x) && !unitsOf(o.ledger, p.orderId).has(x));
+    if (figures.length === 0) return null;
+    if (!supplier) {
+      const h = figures.length === 1 ? parseTenths(figures[0]) : null;
+      return h === null || h === 0 ? null : { kind: 'step', tool: 'send_correction', args: { orderId: p.orderId, hoursTenths: h }, confirm: true };
+    }
+    const q = figures.map(parseHundredths);
+    if (q.some((n) => n === null || n === 0)) return null;
+    return { kind: 'step', tool: 'send_correction', args: { orderId: p.orderId, qtysHundredths: q }, confirm: true };
   }
 
   // A plain yes or no.
@@ -139,18 +192,20 @@ function sellerReply(o) {
     return null;
   }
 
-  // "हाँ 380" / "हाँ 350, 4000" / "हाँ 1200 घंटा": yes with the rates.
+  // "हाँ 380" / "हाँ 350, 4000" / "हाँ 1200 घंटा": yes with the rates; a supplier's rate may carry its
+  // GST: "हाँ 380 + 28%", "हाँ 380 28% gst", "हाँ 350 18%, 4000 5%".
   const after = afterYes(rest);
   if (after !== null) {
-    const rates = after.filter((x) => !RATE_FILLER.has(x));
-    const paise = rates.map(rateOf);
-    if (rates.length === 0 || paise.some((p) => p === null)) return null;
+    const parsed = ratesWithGst(after);
+    if (parsed === null) return null;
+    const { paise, gst } = parsed;
+    if (!supplier && gst.some((g) => g !== null)) return null;
     const p = pick(['requested']);
     if (p === 'orchestrator.which_job') return which(['requested']);
     if (p === null || typeof p === 'string') return null;
     if (!supplier) return paise.length === 1 ? { kind: 'step', tool: answerTool, args: { orderId: p.orderId, answer: 'yes', ratePaise: paise[0] } } : { kind: 'ask', key: 'jcb.rate_needed' };
     if (paise.length !== requestedItems(o.ledger.events(p.orderId)).length) return ratesNeeded(o, p.orderId, true);
-    return { kind: 'step', tool: answerTool, args: { orderId: p.orderId, answer: 'yes', ratesPaise: paise } };
+    return { kind: 'step', tool: answerTool, args: { orderId: p.orderId, answer: 'yes', ratesPaise: paise, ...(gst.some((g) => g !== null) ? { gstPercents: gst } : {}) } };
   }
 
   // Another day: "30-10", "कल", "30-10 8 बजे".
@@ -176,6 +231,21 @@ const whichOrder = (refs) => {
   const sorted = [...refs].sort((x, y) => (x[0] === y[0] ? Number(x.slice(2)) - Number(y.slice(2)) : x.localeCompare(y)));
   return { kind: 'ask', key: 'reply.which_order', params: { refs: sorted.join(', '), ref: sorted[0] } };
 };
+
+/** The delivered items' units, as typed after a quantity ("48 बोरी"). @param {any} ledger @param {string} orderId */
+function unitsOf(ledger, orderId) {
+  const d = delivery(ledger.events(orderId));
+  return new Set((d?.items ?? requestedItems(ledger.events(orderId))).map((it) => it.unit.normalize('NFC').toLowerCase()));
+}
+
+/** Would the bill differ from the tax invoice's grand total carried on the delivery? @param {any} ledger @param {string} orderId */
+function invoiceDiffers(ledger, orderId) {
+  const events = ledger.events(orderId);
+  const d = delivery(events);
+  const rates = agreedRates(events);
+  const body = d && rates ? materialBillBody(d.items, rates, { sha256: d.sha256, number: d.number, sentAt: d.at }) : null;
+  return body !== null && invoiceCheck(d?.grandTotalPaise, body.totalPaise) === 'differs';
+}
 
 /** @param {{ledger: any}} o @param {string} orderId @param {boolean} supplier @returns {Exact} */
 function ratesNeeded(o, orderId, supplier) {
