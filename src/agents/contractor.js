@@ -5,6 +5,7 @@
 // delivery and the agreed rates before anyone is asked to accept it.
 
 import { randomUUID } from 'node:crypto';
+import { billUsualNotes, requestUsualNotes, withUsual } from './usual.js';
 import { tenths as hours, rupees, day as dayName, qty } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
 import { agreedRates, billFollows, countDifferences, delivery, invoiceCheck, itemsText, itemsTotalPaise, lineAmountPaise, linesText, materialBillBody, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, validItems } from './material.js';
@@ -134,6 +135,27 @@ export function createContractorAgent(o) {
     return null;
   };
 
+  /** Only context for the contractor; these comparisons never take part in the approval gate.
+   * @param {Record<string, any>} a @param {'jcb_hours'|'material'} kind @param {boolean} estimate
+   */
+  const requestNotes = (a, kind, estimate) => {
+    const peer = a.orderId !== undefined && known(a.orderId) ? counterparty(a.orderId)
+      : kind === 'jcb_hours' ? o.jcbAgentId : o.supplierAgentId;
+    if (kind === 'jcb_hours') return posInt(a.hoursTenths)
+      ? requestUsualNotes(ledger, peer, [{ name: 'JCB', unit: 'घंटे', quantity: a.hoursTenths, rate: lastJcbRate() }], 'hours', a.orderId, estimate) : '';
+    return validItems(a.items) ? requestUsualNotes(ledger, peer, a.items.map((it) => ({ name: it.name, unit: it.unit,
+      quantity: it.qtyHundredths, rate: lastMaterialRate(peer, it) })), 'quantity', a.orderId, estimate) : '';
+  };
+
+  /** Append the usual context to the contractor's existing bill notice, preserving its decision.
+   * @param {string} orderId @param {Record<string, any>} body @param {string} key
+   * @param {Record<string, string | number>} params @param {Parameters<Tell>[3]} [expect]
+   */
+  const tellBill = (orderId, body, key, params, expect) => {
+    const notice = withUsual({ key, params }, billUsualNotes(ledger, orderId, body));
+    return tell('contractor', notice.key, notice.params, expect);
+  };
+
   /** The total of the bill in force, as the read-back shows it. @param {string} orderId */
   const billTotal = (orderId) => {
     if (!known(orderId)) return '—';
@@ -214,6 +236,7 @@ export function createContractorAgent(o) {
       // The value an approval limit compares: hours × the last agreed JCB rate; unknown → null.
       hold: {
         limit: 'procurement',
+        usualNote: (a, estimate = true) => requestNotes(a, 'jcb_hours', estimate),
         estimatePaise: (a) => {
           const rate = lastJcbRate();
           return posInt(a.hoursTenths) && rate !== null ? Math.round((a.hoursTenths * rate) / 10) : null;
@@ -243,6 +266,7 @@ export function createContractorAgent(o) {
       // that item and unit; any item without a known rate → null.
       hold: {
         limit: 'procurement',
+        usualNote: (a, estimate = true) => requestNotes(a, 'material', estimate),
         estimatePaise: (a) => {
           if (!validItems(a.items)) return null;
           const seller = a.orderId !== undefined && known(a.orderId) ? counterparty(a.orderId) : o.supplierAgentId;
@@ -522,7 +546,7 @@ export function createContractorAgent(o) {
     traceCheck(`bill = delivered × agreed rate ${follows ? '✓' : '✗'} ${total}`, follows, { name: 'bill_follows', totalPaise: b.totalPaise, delivered: d?.items ?? null }, m.order_id);
     if (!follows || !d || !rates) {
       const want = d && rates ? materialBillBody(d.items, rates, { sha256: d.sha256, number: d.number, sentAt: d.at }) : null;
-      await tell('contractor', 'site.material_bill_mismatch', { ref, site, lines, total, expected: want && d ? linesText(want.lines, d.items) : '—', expectedTotal: want ? rupees(want.totalPaise) : '—' });
+      await tellBill(m.order_id, b, 'site.material_bill_mismatch', { ref, site, lines, total, expected: want && d ? linesText(want.lines, d.items) : '—', expectedTotal: want ? rupees(want.totalPaise) : '—' });
       const explanation = await explainDifference({ spark: o.spark, audience: 'buyer', facts: differenceFacts(ledger, m.order_id, ref) });
       await tell('contractor', explanation.key, explanation.params);
       return;
@@ -534,7 +558,7 @@ export function createContractorAgent(o) {
       // What the site's count comes to at the agreed rates (an item counted as 0 adds nothing). A count
       // from the site's own challan may list other items than the delivery, so each is priced by name.
       const siteTotal = itemsTotalPaise(count, rates, d.items);
-      await tell('contractor', 'site.material_bill_count_differs', { ref, site, lines, total, count: itemsText(count), siteTotal: rupees(siteTotal) });
+      await tellBill(m.order_id, b, 'site.material_bill_count_differs', { ref, site, lines, total, count: itemsText(count), siteTotal: rupees(siteTotal) });
       const explanation = await explainDifference({ spark: o.spark, audience: 'buyer', facts: differenceFacts(ledger, m.order_id, ref) });
       await tell('contractor', explanation.key, explanation.params);
       return;
@@ -548,7 +572,7 @@ export function createContractorAgent(o) {
     const params = { ref, site, lines, total, photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
       ...(check === 'differs' ? { invoiceTotal: rupees(/** @type {number} */ (d.grandTotalPaise)) } : {}) };
     const key = variant(m.type === 'BILL' ? 'site.material_bill_received' : 'site.material_correction_received', { invoice_match: check === 'match', invoice_differs: check === 'differs' });
-    await tell('contractor', key, params, { tool: 'accept_bill', args: { orderId: m.order_id } });
+    await tellBill(m.order_id, b, key, params, { tool: 'accept_bill', args: { orderId: m.order_id } });
     await tell('supervisor', key, params);
   }
 
@@ -639,7 +663,7 @@ export function createContractorAgent(o) {
           photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
         };
         const key = m.type === 'BILL' ? 'site.bill_received' : 'site.correction_received';
-        await tell('contractor', key, params, { tool: 'accept_bill', args: { orderId: m.order_id } });
+        await tellBill(m.order_id, b, key, params, { tool: 'accept_bill', args: { orderId: m.order_id } });
         await tell('supervisor', key, params);
         break;
       }
