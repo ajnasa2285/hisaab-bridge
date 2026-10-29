@@ -306,6 +306,7 @@ export function createJcbAgent(o) {
 
   // What still waits for each role, by the order's state, and the message that asked for it.
   /** @type {Record<string, [string, string]>} */
+  /** @type {Record<string, [string, 'in' | 'out' | 'local']>} */
   const OWNER_WAITS = { requested: ['BOOKING_REQUEST', 'in'], disputed: ['DISPUTE', 'in'], payment_claimed: ['PAYMENT_CLAIM', 'in'] };
 
   /**

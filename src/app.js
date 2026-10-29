@@ -205,9 +205,9 @@ export function createApp(cfg) {
         ? createSupplierAgent({ agent: core, link, tell, spark })
         : createContractorAgent({ agent: core, link, tell, spark, jcbAgentId: /** @type {string} */ (a.jcbAgentId), supplierAgentId: a.supplierAgentId, evidence: automaticEvidence });
     /** @type {import('./agents/conversation.js').Reply} */
-    const reply = (p, key, params) => {
+    const reply = async (p, key, params) => {
       traceReply(key, p.role, 1);
-      return sendTo(p, t(key, params));
+      await sendTo(p, t(key, params));
     };
     // The owner's yes/no to sharing a photo (evidence.tools) is a step like the agent's own.
     const tools = traceTools({ ...agent.tools, ...evidence.tools }, trace);
@@ -262,16 +262,16 @@ export function createApp(cfg) {
           const wav = await (cfg.toWav ?? toWav)(new Uint8Array(media.bytes));
           if (!wav.ok) {
             log(`voice from ${person.role} ${maskPhone(person.phone)} not converted: ${wav.reason}`);
-            return sendTo(person, t('voice.not_understood'));
+            { await sendTo(person, t('voice.not_understood')); return; }
           }
           const said = await entry.transcribe({ audio: wav.wav, mime: 'audio/wav', language: 'hi' });
-          if (!said.ok || !said.text.trim()) return sendTo(person, t('voice.not_understood'));
+          if (!said.ok || !said.text.trim()) { await sendTo(person, t('voice.not_understood')); return; }
           const c = currentTrace();
           if (c) c.text = said.text;
           return entry.talk.onText(person, said.text);
         }
         // Documents are not handled yet.
-        return sendTo(person, t('common.unknown_step'));
+        { await sendTo(person, t('common.unknown_step')); return; }
       });
     },
   });
