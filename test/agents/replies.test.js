@@ -48,10 +48,13 @@ async function supplierDesk() {
   const talk = createConversation({ ledger: s.supCore.ledger, tools: s.sup.tools, spark, reply, now: s.supCore.now });
   /** @param {any[]} items @param {string} [time] */
   const order = async (items, time) => {
+    const ids = () => /** @type {{order_id: string}[]} */ (s.siteCore.ledger.orders()).map((o) => o.order_id);
+    const before = new Set(ids());
     const r = await runTool(s.site.tools, contractor, { tool: 'request_material', args: { site: 'Site A', day: '2026-10-30', items, ...(time ? { time } : {}) } });
     assert.equal(r.ok, true);
     await settle();
-    return /** @type {{order_id: string}[]} */ (s.siteCore.ledger.orders()).at(-1)?.order_id ?? '';
+    // The new order: the test clock is fixed, so creation times tie and the list order is by id.
+    return ids().find((id) => !before.has(id)) ?? '';
   };
   return { s, talk, said, order, calls: () => calls, last: () => said.at(-1) ?? ['', '', ''] };
 }
