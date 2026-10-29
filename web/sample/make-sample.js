@@ -211,7 +211,7 @@ function paymentExample(x, s) {
       (side.refs ??= {})[ids[i]] = `P-${i + 2}`;
     }
   }
-  /** @param {string} orderId @param {string} type @param {Record<string, any>} body @param {boolean} seller */
+  /** @param {any} orderId @param {string} type @param {Record<string, any>} body @param {boolean} seller */
   const send = (orderId, type, body, seller) => {
     const at = now();
     const core = seller ? s.supCore : s.siteCore;
@@ -403,7 +403,7 @@ export async function buildSample() {
       });
       return { agentId: core.self.id, publicKey: publicKeyText(core.self.privateKey), orders, events, chain: core.ledger.verifyChain(), refs: refByOrder, trace };
     };
-    const exported = { v: 'hb-export/0.1', exportedAt: new Date(s.jcbCore.now()).toISOString(), jcb: dump(s.jcbCore, s.traces.jcb), contractor: dump(s.siteCore, s.traces.site), supplier: dump(s.supCore, s.traces.sup) };
+    const exported = { v: /** @type {const} */ ('hb-export/0.1'), exportedAt: new Date(s.jcbCore.now()).toISOString(), jcb: dump(s.jcbCore, s.traces.jcb), contractor: dump(s.siteCore, s.traces.site), supplier: dump(s.supCore, s.traces.sup) };
     paymentExample(exported, s);
     return exported;
   } finally {

@@ -10,7 +10,7 @@ import { bodyIsValid, buildMessage } from '../../src/protocol/messages.js';
 import { generateKeys } from '../../src/protocol/keys.js';
 
 const SHA = 'c'.repeat(64);
-/** @param {string} type @param {Record<string, any>} body @param {string} [id] */
+/** @param {string} type @param {Record<string, any>} body @param {string | null} [id] */
 const ev = (type, body, id = randomUUID()) => ({ type, msg_id: id, body });
 
 /** Request → yes → (start) → bill of `total` paise; returns the events and the bill's id. @param {number} total */
@@ -102,7 +102,7 @@ test('advances: a correction changes the bill total, never the payments; covered
   const bill = randomUUID();
   v = step(v, ev('BILL', { totalPaise: 2065000 }, bill));
   const fix = randomUUID();
-  v = step(step(v, ev('DISPUTE', { bill })), ev('CORRECTION', { totalPaise: 1950000, replaces: bill }, fix));
+  v = /** @type {any} */ (step(/** @type {any} */ (step(v, ev('DISPUTE', { bill }))), ev('CORRECTION', { totalPaise: 1950000, replaces: bill }, fix)));
   assert.deepEqual([v.billTotalPaise, v.confirmedPaise, v.state], [1950000, 2000000, 'billed']);
   v = step(v, ev('ACCEPT', { bill: fix }));
   assert.equal(v.state, 'part_paid');

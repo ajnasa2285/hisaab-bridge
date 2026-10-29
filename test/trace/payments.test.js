@@ -50,7 +50,7 @@ test('cash receipt trace keeps safe figures, never names, references, raw text o
   const rec = openTrace({ agent: 'site' });
   const result = { ok: true, kind: 'cash_receipt', amountPaise: 25000, date: '2026-10-29', receiverMark: true,
     clear: true, receiverName: 'invented private name', reference: 'private serial', amountRaw: 'raw private text', model: 'muse-spark-1.3', latencyMs: 100 };
-  const read = traceReader('cash_receipt', async () => result, rec);
+  const read = traceReader('cash_receipt', async (/** @type {any} */ _image) => result, rec);
   try {
     assert.equal(await read?.({ bytes: new Uint8Array([1, 2]) }), result);
     const rows = rec.list();

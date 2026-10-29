@@ -346,7 +346,7 @@ test('payments are refused before the booking and after the order is settled', a
   const d = await desk();
   try {
     await runTool(d.s.site.tools, contractor, { tool: 'request_material', args: { site: 'Site K', day: '2026-10-30', items: [CEMENT] } });
-    const p1 = d.s.siteCore.ledger.orders()[0].order_id;
+    const p1 = /** @type {string} */ (d.s.siteCore.ledger.orders()[0].order_id);
     const cash = { orderId: p1, method: 'cash', amountPaise: 500000, paidOn: '2026-10-30' };
     assert.equal((await runTool(d.s.site.tools, contractor, { tool: 'claim_payment', args: cash })).key, 'common.wrong_state');
     assert.equal((await runTool(d.s.sup.tools, supplier, { tool: 'record_received', args: { orderId: p1, method: 'cash', amountPaise: 500000 } })).key, 'common.wrong_state');

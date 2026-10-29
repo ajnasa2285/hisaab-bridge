@@ -37,7 +37,7 @@ const SAMPLE = {
   quantity: '50', unit: 'बोरी', number: '412', figure: '48 बोरी', before: '₹17,500', after: '₹16,800',
   answer: 'शिवपुरी पर सीमेंट 50 बोरी आया।', refs: 'P-1, P-2', orders: 2, asked: '50 बोरी', delivered: '50 बोरी',
   counted: '48 बोरी', open: '₹7,320', accepted: '₹7,320', claimed: '₹7,320', settled: '₹0', confirmed: 'अभी नहीं',
-  now: '₹10,000, 30 अक्टूबर 2026, UTR 412300000009', balance: 'बाक़ी ₹10,650', due: '₹10,650', waiting: '₹10,000', credit: '₹350', typed: '₹5,000',
+  now: '₹10,000, 30 अक्टूबर 2026, UTR 412300000009', typed: '₹5,000',
 };
 
 test('every key has a non-empty Hindi text and fills with its parameters', () => {
