@@ -23,6 +23,8 @@ import { createContractorAgent } from './agents/contractor.js';
 import { createSupplierAgent } from './agents/supplier.js';
 import { createConversation } from './agents/conversation.js';
 import { createOffice } from './agents/office.js';
+import { createEvidenceService, forwardEvidence } from './agents/evidence.js';
+import { openMediaStore } from './media/store.js';
 import { createDirectory } from './wa/directory.js';
 import { openWaStore } from './wa/store.js';
 import { createWa } from './wa/wa.js';
@@ -70,6 +72,7 @@ const JUDGE_HEADERS = {
 /**
  * @param {{
  *   baseUrl: string,
+ *   dataDir?: string,
  *   agents: AgentConfig[],
  *   lines: LineConfig[],
  *   people: Person[],
@@ -109,8 +112,10 @@ export function createApp(cfg) {
       peers: new Map(a.peers.map((p) => [p.id, p])),
       ledger: openLedger(a.ledgerFile),
       now,
+      mediaStore: cfg.dataDir ? openMediaStore({ dataDir: cfg.dataDir, agentId: a.id }) : undefined,
     };
-    const link = createLink(core, { peerUrls: new Map(Object.entries(a.peerUrls)), transport: cfg.transport });
+    const link = createLink(core, { peerUrls: new Map(Object.entries(a.peerUrls)), transport: cfg.transport,
+      onEvidence: (m) => evidence.onEvidence(m) });
     /** @type {import('./agents/common.js').Tell} */
     const tell = async (role, key, params, expect) => {
       for (const p of directory.people(a.id, role)) {
@@ -118,15 +123,38 @@ export function createApp(cfg) {
         if (expect) entry.talk.expect(p, expect.tool, expect.args);
       }
     };
+    const evidence = createEvidenceService({ agent: core, link, kind: a.kind, tell, spark: cfg.spark,
+      readMeter: cfg.readMeter, readChallan: cfg.readChallan, readUpi: cfg.readUpi,
+      show: async (image, caption) => {
+        const roles = a.kind === 'contractor' ? ['contractor', 'supervisor'] : a.kind === 'jcb' ? ['jcb_owner'] : ['supplier'];
+        for (const role of roles) for (const p of directory.people(a.id, /** @type {import('./wa/directory.js').Role} */ (role))) {
+          await forwardEvidence({ image, caption,
+            sendImage: (photo, text) => wa.sendImage(p.line, p.phone, { ...photo, caption: text }),
+            sendText: (text) => sendTo(p, text) });
+        }
+      },
+    });
+    // The person's count/dispute acknowledgement goes first; photo readers run afterwards.
+    // These requests are observations and cannot change a bill or a person's decision.
+    const automaticEvidence = {
+      /** @param {string} orderId */
+      async countDifference(orderId) {
+        setImmediate(() => { evidence.countDifference(orderId).catch(() => log(`${a.name}: count evidence unavailable`)); });
+      },
+      /** @param {string} orderId */
+      async disputedBill(orderId) {
+        setImmediate(() => { evidence.disputedBill(orderId).catch(() => log(`${a.name}: bill evidence unavailable`)); });
+      },
+    };
     const agent = a.kind === 'jcb'
       ? createJcbAgent({ agent: core, link, tell, spark: cfg.spark })
       : a.kind === 'supplier'
         ? createSupplierAgent({ agent: core, link, tell, spark: cfg.spark })
-        : createContractorAgent({ agent: core, link, tell, spark: cfg.spark, jcbAgentId: /** @type {string} */ (a.jcbAgentId), supplierAgentId: a.supplierAgentId });
+        : createContractorAgent({ agent: core, link, tell, spark: cfg.spark, jcbAgentId: /** @type {string} */ (a.jcbAgentId), supplierAgentId: a.supplierAgentId, evidence: automaticEvidence });
     /** @type {import('./agents/conversation.js').Reply} */
     const reply = (p, key, params) => sendTo(p, t(key, params));
     // References, exact commands, and (contractor) approvals with this agent's limits.
-    const office = createOffice({ ledger: core.ledger, tools: agent.tools, kind: a.kind, limits: a.limits, tell, reply, now });
+    const office = createOffice({ ledger: core.ledger, tools: agent.tools, kind: a.kind, limits: a.limits, tell, reply, now, evidence });
     // Every agent asks Muse Spark what a photo is; each then reads only its own kinds: meters (JCB),
     // UPI screenshots and the site's copy of a challan (contractor), challans (supplier).
     const talk = createConversation({
@@ -134,11 +162,12 @@ export function createApp(cfg) {
       readUpi: a.kind === 'contractor' ? cfg.readUpi : undefined,
       readChallan: a.kind === 'supplier' || a.kind === 'contractor' ? cfg.readChallan : undefined,
       classifyPhoto: cfg.classifyPhoto, reply, now, office,
+      mediaStore: core.mediaStore,
     });
     const card = agentCardJson({ id: a.id, name: a.title, description: a.title, baseUrl: `${cfg.baseUrl}/agents/${a.name}`, publicKeyText: publicKeyText(a.privateKey) });
     const a2a = createA2AHandler(core, card, {
       onApplied: (m) => {
-        agent.onApplied(m).catch((e) => log(`${a.name}: notice after ${m.type} failed: ${e instanceof Error ? e.message : 'error'}`));
+        agent.onApplied(m).then(() => evidence.onApplied(m)).catch((e) => log(`${a.name}: notice after ${m.type} failed: ${e instanceof Error ? e.message : 'error'}`));
       },
     });
     const entry = { cfg: a, core, agent, link, talk, a2a };

@@ -27,6 +27,7 @@ const UTR_RE = /^[A-Za-z0-9]{6,35}$/;
  *   spark?: import('./explain.js').Spark,
  *   jcbAgentId: string,
  *   supplierAgentId?: string,
+ *   evidence?: {countDifference: (orderId: string) => Promise<void>, disputedBill: (orderId: string) => Promise<void>},
  * }} o
  */
 export function createContractorAgent(o) {
@@ -231,6 +232,7 @@ export function createContractorAgent(o) {
           body: { kind: 'site_count', items }, at: new Date(agent.now()).toISOString(),
         });
         if (stored === null) return no('common.wrong_state');
+        if (!sameItems(items, d.items)) await o.evidence?.countDifference(a.orderId);
         const site = siteOf(a.orderId);
         const ref = refOf(a.orderId);
         if (before !== null) {
@@ -287,7 +289,24 @@ export function createContractorAgent(o) {
         const lines = ledger.eventOfMessage(view.currentBill)?.body.body.lines;
         if (given[0] === 'qtyHundredths' && (!Array.isArray(lines) || lines.length !== 1)) return no('site.material_total_only');
         const theirFigure = { [given[0]]: a[given[0]] };
-        const d = await link.send({ type: 'DISPUTE', to: counterparty(a.orderId), orderId: a.orderId, body: { bill: view.currentBill, theirFigure, reason: a.reason.trim() } });
+        // A site's local photo record is committed in the signed dispute before the seller can ask
+        // for it. Include it only when this objection actually cites that count's quantity/total.
+        const count = ofType(ledger.events(a.orderId), 'NOTE', 'local').filter((e) => e.body.kind === 'site_count').at(-1);
+        const rates = agreedRates(ledger.events(a.orderId));
+        const countTotal = count && rates ? count.body.items.reduce((/** @type {number|null} */ sum, /** @type {import('./material.js').Item} */ it) => {
+          const rate = rateFor(rates, it);
+          const amount = rate === null ? null : it.qtyHundredths === 0 ? 0 : lineAmountPaise(it.qtyHundredths, rate);
+          return sum === null || amount === null ? null : sum + amount;
+        }, 0) : null;
+        const citesCount = count && ((given[0] === 'qtyHundredths' && count.body.items.length === 1 && count.body.items[0].qtyHundredths === a.qtyHundredths)
+          || (given[0] === 'totalPaise' && countTotal === a.totalPaise));
+        const siteCountEvidence = citesCount && count?.msgId && count.body.challan ? {
+          siteCount: { record: count.msgId, sha256: count.body.challan.sha256, number: count.body.challan.number,
+            items: count.body.items, at: count.at },
+        } : {};
+        const d = await link.send({ type: 'DISPUTE', to: counterparty(a.orderId), orderId: a.orderId,
+          body: { bill: view.currentBill, theirFigure, reason: a.reason.trim(), ...siteCountEvidence } });
+        if (d.ok) await o.evidence?.disputedBill(a.orderId);
         return deliveryResult(d, keyFor(a.orderId, 'site.bill_disputed'), { ref: refOf(a.orderId), site: siteOf(a.orderId) });
       },
     },
@@ -338,6 +357,7 @@ export function createContractorAgent(o) {
     if (d === null) return ok('site.challan_count_saved', { ref, site, items: itemsText(items), challan: challan.number ?? '—' });
     const c = compareCount(a.orderId, items, challan.number, d);
     if (c.same) return ok('site.challan_count_matches', { ref, site, items: itemsText(items), challan: d.number ?? challan.number ?? '—' });
+    await o.evidence?.countDifference(a.orderId);
     // Code compares; the contractor is told both figures (in the reply, when the contractor counted).
     if (person.role !== 'contractor') await tell('contractor', 'site.challan_count_differs', c.params);
     return ok('site.challan_count_differs', c.params);
@@ -414,6 +434,7 @@ export function createContractorAgent(o) {
           const key = c.same ? 'site.delivery_matches_count' : 'site.challan_count_differs';
           await tell('contractor', key, c.params);
           await tell('supervisor', key, c.params);
+          if (!c.same) await o.evidence?.countDifference(m.order_id);
           break;
         }
         // The site is asked for its own count; a plain "हाँ" means "the same as the challan".

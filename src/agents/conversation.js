@@ -81,13 +81,39 @@ const norm = (text) => text.trim().toLowerCase().replace(/[।.!]+$/u, '').repla
  *   reply: Reply,
  *   now: () => number,
  *   office?: ReturnType<typeof import('./office.js').createOffice>,
+ *   mediaStore?: ReturnType<typeof import('../media/store.js').openMediaStore>,
  * }} o
  */
 export function createConversation(o) {
   /** @type {Map<string, Pending>} */
   const pending = new Map();
+  /** Bytes stay in memory until the person confirms the exact photo-based step. @type {Map<string, {image: Photo, sha256: string, at: number}>} */
+  const photos = new Map();
   /** @param {Person} p */
   const keyOf = (p) => `${p.agent}|${p.line}|${p.phone}`;
+
+  /** @param {Person} person @param {Photo} image */
+  function rememberPhoto(person, image) {
+    for (const [key, photo] of photos) if (o.now() - photo.at > PENDING_MS) photos.delete(key);
+    photos.set(keyOf(person), { image, sha256: createHash('sha256').update(image.bytes).digest('hex'), at: o.now() });
+  }
+
+  /** Persist before a signed record leaves, without putting any bytes in step arguments or ledgers.
+   * @param {Person} person @param {Record<string, any>} args */
+  function keepConfirmedPhoto(person, args) {
+    if (!o.mediaStore) return true;
+    const sha256 = args.sha256 ?? args.screenshotSha256 ?? args.challan?.sha256;
+    if (!sha256) return true;
+    const photo = photos.get(keyOf(person));
+    try {
+      if (photo && photo.sha256 === sha256 && o.now() - photo.at <= PENDING_MS) {
+        o.mediaStore.put({ bytes: photo.image.bytes, mime: photo.image.mime, sha256 });
+        photos.delete(keyOf(person));
+        return true;
+      }
+      return o.mediaStore.get(sha256) !== null;
+    } catch { return false; }
+  }
 
   /** @param {Person} person @returns {Pending | null} */
   function current(person) {
@@ -146,6 +172,7 @@ export function createConversation(o) {
     if (p && p.kind === 'confirm') {
       if (YES.has(said)) {
         pending.delete(keyOf(person));
+        if (!keepConfirmedPhoto(person, p.args)) return o.reply(person, 'evidence.store_failed');
         const r = o.office ? await o.office.commit(person, p.tool, p.args) : await runTool(o.tools, person, { tool: p.tool, args: p.args });
         // Once the site's count is recorded, nobody else's count question on that order stays open.
         if (r.ok && p.tool === 'confirm_count') {
@@ -309,9 +336,11 @@ export function createConversation(o) {
    */
   async function onImage(person, image) {
     pending.delete(keyOf(person));
+    photos.delete(keyOf(person));
     const kinds = photoKinds(person);
     if (kinds.length === 0) return o.reply(person, 'photo.none');
     if (!isImageMime(image.mime)) return o.reply(person, 'photo.other', { kinds: kindNames(kinds) });
+    if (image.bytes.byteLength > 5 * 1024 * 1024) return o.reply(person, 'evidence.too_large');
     if (!o.classifyPhoto) return o.reply(person, 'orchestrator.try_again');
     const c = await o.classifyPhoto({ mime: /** @type {'image/jpeg'} */ (image.mime), bytes: image.bytes });
     if (!c.ok) return o.reply(person, 'orchestrator.try_again');
@@ -352,6 +381,7 @@ export function createConversation(o) {
     const read = await o.readMeter({ mime: image.mime, bytes: image.bytes });
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
     if (read.kind === 'not_meter') return o.reply(person, 'meter.not_meter');
+    rememberPhoto(person, image);
     if (!read.clear || read.valueTenths === null) {
       pending.set(keyOf(person), { kind: 'meter_digits', orderId: picked.orderId, which, sha256, takenAt, at: o.now() });
       return o.reply(person, 'meter.ask_person', { raw: read.raw || '—' });
@@ -376,6 +406,7 @@ export function createConversation(o) {
     const read = await o.readChallan({ mime: image.mime, bytes: image.bytes });
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
     if (read.kind === 'not_challan') return o.reply(person, 'challan.not_challan');
+    rememberPhoto(person, image);
     const challanNo = typeof read.challanNo === 'string' && read.challanNo.trim() ? read.challanNo.trim().slice(0, 40) : null;
     const qtys = challanQuantities(items, read.items);
     if (!read.clear || qtys.some((q) => q === null)) {
@@ -440,6 +471,7 @@ export function createConversation(o) {
     const read = await o.readChallan({ mime: image.mime, bytes: image.bytes });
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
     if (read.kind === 'not_challan') return o.reply(person, 'challan.not_challan');
+    rememberPhoto(person, image);
     const challanNo = typeof read.challanNo === 'string' && read.challanNo.trim() ? read.challanNo.trim().slice(0, 40) : null;
     /** @type {SiteReading} */
     const reading = { challanNo, items: read.items, clear: read.clear };
@@ -517,6 +549,7 @@ export function createConversation(o) {
       });
     }
     const args = { orderId: picked.orderId, amountPaise: read.amountPaise, utr: read.utr, paidOn: day, screenshotSha256: createHash('sha256').update(image.bytes).digest('hex') };
+    rememberPhoto(person, image);
     const bill = o.ledger.view(picked.orderId).currentBill;
     const total = bill ? o.ledger.eventOfMessage(bill)?.body.body.totalPaise : undefined;
     // A different amount is not refused (part payments happen); the contractor sees both figures first.

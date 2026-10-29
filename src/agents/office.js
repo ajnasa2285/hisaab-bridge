@@ -19,7 +19,7 @@ import { t } from '../i18n/index.js';
 /** @typedef {import('../ledger/store.js').LedgerEvent} LedgerEvent */
 /** @typedef {{procurementPaise?: number, paymentPaise?: number}} Limits */
 /**
- * @typedef {{cmd: 'status', ref: string} | {cmd: 'pending'} | {cmd: 'stock', item: string | null} |
+ * @typedef {{cmd: 'status' | 'evidence', ref: string} | {cmd: 'pending'} | {cmd: 'stock', item: string | null} |
  *   {cmd: 'ok', ref: string, note: string | null} | {cmd: 'no', ref: string, reason: string | null}} Command
  */
 /**
@@ -69,6 +69,7 @@ const MAX_NOTE = 300;
 /** @param {string[]} words */
 const wordSet = (words) => new Set(words.map((w) => w.normalize('NFC')));
 const STATUS = wordSet(['status', 'स्टेटस', 'स्थिति', 'हालत']);
+const EVIDENCE = wordSet(['सबूत', 'सबुत', 'saboot', 'sabut']);
 const PENDING = wordSet(['pending', 'पेंडिंग', 'बाकी', 'बाक़ी', 'लंबित']);
 const STOCK = wordSet(['stock', 'स्टॉक', 'स्टाक']);
 const OK = wordSet(['ok', 'okay', 'ओके', 'हाँ', 'हां', 'मंज़ूर', 'मंजूर']);
@@ -88,9 +89,9 @@ export function parseCommand(text) {
   const rest = m[2] ?? '';
   if (PENDING.has(word) && rest === '') return { cmd: 'pending' };
   if (STOCK.has(word)) return rest.length > 40 ? null : { cmd: 'stock', item: rest || null };
-  if (STATUS.has(word)) {
+  if (STATUS.has(word) || EVIDENCE.has(word)) {
     const ref = parseRef(rest);
-    return ref === null ? null : { cmd: 'status', ref };
+    return ref === null ? null : { cmd: EVIDENCE.has(word) ? 'evidence' : 'status', ref };
   }
   if (OK.has(word) || NO.has(word)) {
     const r = /^((?:j|p|जे|पी) ?-? ?\d{1,6})(?: (.+))?$/u.exec(rest);
@@ -145,6 +146,7 @@ export function stockOf(orders) {
  *   tell: Tell,
  *   reply: Reply,
  *   now: () => number,
+ *   evidence?: {requestLatest: (orderId: string) => Promise<Said>},
  * }} o
  */
 export function createOffice(o) {
@@ -347,6 +349,12 @@ export function createOffice(o) {
    */
   async function command(person, c) {
     switch (c.cmd) {
+      case 'evidence': {
+        if (!['contractor', 'supervisor', 'jcb_owner', 'supplier'].includes(person.role)) return no('common.not_allowed');
+        const orderId = refs.orderOfRef(c.ref);
+        if (!orderId) return no('office.no_such_ref', { ref: c.ref });
+        return o.evidence ? o.evidence.requestLatest(orderId) : no('evidence.unavailable', { ref: c.ref });
+      }
       case 'status': return status(c.ref);
       case 'pending': return pending(person);
       case 'stock': return stock(c.item);

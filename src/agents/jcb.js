@@ -14,7 +14,7 @@ import { differenceFacts } from './explain-facts.js';
 /** @typedef {import('./common.js').Tell} Tell */
 /** @typedef {import('../protocol/messages.js').Message} Message */
 /** @typedef {import('../ledger/store.js').LedgerEvent} LedgerEvent */
-/** @typedef {{which: 'start' | 'end', valueTenths: number, sha256: string, takenAt: string | null, at: string}} MeterReading */
+/** @typedef {{which: 'start' | 'end', valueTenths: number, sha256: string, takenAt: string | null, at: string, record?: string}} MeterReading */
 
 /**
  * The meter readings in force for an order: the latest confirmed start and end.
@@ -27,7 +27,7 @@ export function meterReadings(events) {
   for (const e of ofType(events, 'EVIDENCE', 'local')) {
     if (e.body.kind !== 'meter') continue;
     const which = /** @type {'start' | 'end'} */ (e.body.which);
-    r[which] = { which, valueTenths: e.body.valueTenths, sha256: e.body.sha256, takenAt: e.body.takenAt ?? null, at: e.at };
+    r[which] = { which, valueTenths: e.body.valueTenths, sha256: e.body.sha256, takenAt: e.body.takenAt ?? null, at: e.at, record: e.msgId ?? undefined };
   }
   return r;
 }
@@ -44,7 +44,7 @@ export function jcbBillBody(hoursTenths, ratePaise, readings) {
   return {
     lines: [{ what: 'JCB', hoursTenths, ratePaise, amountPaise }],
     totalPaise: amountPaise,
-    evidence: readings.map((m) => ({ sha256: m.sha256, kind: 'meter', readValue: hours(m.valueTenths), takenAt: m.takenAt, sentAt: m.at })),
+    evidence: readings.map((m) => ({ sha256: m.sha256, kind: 'meter', readValue: hours(m.valueTenths), takenAt: m.takenAt, sentAt: m.at, ...(m.record ? { record: m.record } : {}) })),
   };
 }
 

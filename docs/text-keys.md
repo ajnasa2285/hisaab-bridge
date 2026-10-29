@@ -189,6 +189,25 @@ The model writes only `{explanation}`. All `{figures}` fragments below come from
 | `explain.figures.dispute` / `explain.figures.previousDispute` | figure | attributed objection to the current / previous bill |
 | `explain.figures.correction` | before, after | previous and replacement bill figures |
 
+## Evidence on request (Astra drafted, Fable to polish)
+
+Exact commands: `सबूत <ref>`, `saboot <ref>` (also `सबुत` / `sabut`), parsed before the model;
+contractor, supervisor, JCB owner and supplier only. Captions identify the original record's owner
+and recorded time in IST, not an inferred photo capture time. No bytes are included in texts.
+
+| Key | Params | When |
+|---|---|---|
+| `evidence.caption` | ref, who, recordKind, when | hash-checked photo caption; also the text fallback if the image cannot be sent |
+| `evidence.kind.challan` / `.site_count` / `.meter` / `.upi` | — | original record kind in that caption |
+| `evidence.figures.challan` | who, number, items | sanitized reading of a received challan, attributed to the record owner |
+| `evidence.figures.meter` | who, reading | sanitized reading of a received meter photo |
+| `evidence.figures.upi` | who, amount | amount read from a received screenshot; never confirms payment |
+| `evidence.none` | ref | no known photo record from the order's other party |
+| `evidence.received` | ref | the manual request obtained evidence |
+| `evidence.unavailable` | ref | no requested evidence could be obtained |
+| `evidence.store_failed` | — | original photo could not be retained before confirming a record |
+| `evidence.too_large` | — | inbound photo exceeds the 5 MiB limit |
+
 ## Asking for what is missing (docs/BUILD2.md section 6; Claude drafted, Fable to polish)
 
 | Key | Params | When |
