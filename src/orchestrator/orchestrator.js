@@ -10,7 +10,7 @@ import { openRefs, parseRef } from '../ledger/refs.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('../wa/directory.js').Role} Role */
-/** @typedef {(req: {system?: string, text: string, tools?: object[], timeoutMs?: number, reasoningEffort?: 'low'}) =>
+/** @typedef {(req: {system?: string, text: string, tools?: object[], timeoutMs?: number, reasoningEffort?: 'minimal' | 'low'}) =>
  *   Promise<{ok: true, toolCalls: {name: string, args: any}[]} | {ok: false, transient: boolean, reason: string}>} Spark */
 /** @typedef {{ref: string, orderId: string, site: string, day: string, state: string, what?: string}} OrderRef */
 /**
