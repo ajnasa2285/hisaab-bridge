@@ -54,7 +54,7 @@ import { t } from '../i18n/index.js';
  */
 /** `forwarded`: WhatsApp marked the message as forwarded (src/wa/webhook.js).
  * @typedef {{mime: string, bytes: Uint8Array, takenAt?: string | null, forwarded?: boolean}} Photo */
-/** @typedef {'meter' | 'upi' | 'challan'} PhotoKind */
+/** @typedef {'meter' | 'upi' | 'challan' | 'cash_receipt'} PhotoKind */
 /** @typedef {NonNullable<ReturnType<typeof invoiceFromReading>>} Invoice */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) =>
  *   Promise<import('../readers/photo.js').PhotoClassification>} PhotoClassifier */
@@ -72,6 +72,7 @@ import { t } from '../i18n/index.js';
  *   {ok: true, kind: 'upi_payment', amountPaise: number | null, date: string | null, utr: string | null,
  *     clock?: string | null, status: 'success' | 'pending' | 'failed' | null, clear: boolean} | {ok: true, kind: 'not_upi'} |
  *   {ok: false, transient: boolean, reason: string}>} UpiReader */
+/** @typedef {typeof import('../readers/cash-receipt.js').readCashReceipt} CashReceiptReader */
 
 const PENDING_MS = 30 * 60 * 1000;
 /** A JCB day longer than this (12 h) is read back once before it counts. */
@@ -85,6 +86,7 @@ const KIND_WORDS = {
   meter: ['मीटर', 'meter', 'mitar'],
   upi: ['upi', 'यूपीआई', 'भुगतान', 'payment', 'bhugtan'],
   challan: ['चालान', 'चलान', 'challan', 'chalan'],
+  cash_receipt: ['नकद पर्ची', 'नकद रसीद', 'नकद पर्चा', 'cash receipt', 'parchi', 'nakad parchi'],
 };
 /** @param {string} said @returns {PhotoKind | null} */
 const kindOfWord = (said) => /** @type {PhotoKind | null} */ (Object.entries(KIND_WORDS).find(([, w]) => w.includes(said))?.[0] ?? null);
@@ -102,6 +104,7 @@ const norm = (text) => text.trim().toLowerCase().replace(/[।.!?,]+$/u, '').rep
  *   readMeter?: MeterReader,
  *   sameMeter?: SameMeterCheck,
  *   readUpi?: UpiReader,
+ *   readCashReceipt?: CashReceiptReader,
  *   readChallan?: ChallanReader,
  *   classifyPhoto?: PhotoClassifier,
  *   reply: Reply,
@@ -401,6 +404,7 @@ export function createConversation(o) {
     if (o.readMeter && may(person, 'record_meter')) kinds.push('meter');
     if (o.readUpi && may(person, 'claim_payment')) kinds.push('upi');
     if (o.readChallan && (may(person, 'record_delivery') || may(person, 'confirm_count'))) kinds.push('challan');
+    if (o.readCashReceipt && person.role === 'contractor' && may(person, 'claim_payment')) kinds.push('cash_receipt');
     return kinds;
   }
 
@@ -423,7 +427,9 @@ export function createConversation(o) {
     if (!o.classifyPhoto) return o.reply(person, 'orchestrator.try_again');
     const c = await o.classifyPhoto({ mime: /** @type {'image/jpeg'} */ (image.mime), bytes: image.bytes });
     if (!c.ok) return o.reply(person, 'orchestrator.try_again');
-    if (!c.clear) {
+    // The classifier's evaluated kinds are unchanged. A possible cash receipt comes through an
+    // explicit answer, including when that classifier correctly calls it "other".
+    if (!c.clear || (c.kind === 'other' && kinds.includes('cash_receipt'))) {
       pending.set(keyOf(person), { kind: 'photo_kind', image, at: o.now() });
       return o.reply(person, 'photo.ask_kind', { forms: kinds.map((k) => `"${KIND_WORDS[k][0].toUpperCase()}"`).join(' / ') });
     }
@@ -441,7 +447,33 @@ export function createConversation(o) {
     if (!kinds.includes(kind)) return o.reply(person, `photo.sent_by_${kind}`, { kinds: kindNames(kinds) });
     if (kind === 'meter') return onMeterImage(person, image);
     if (kind === 'upi') return onPaymentImage(person, image);
+    if (kind === 'cash_receipt') return onCashReceiptImage(person, image);
     return may(person, 'record_delivery') ? onChallanImage(person, image) : onSiteChallanImage(person, image);
+  }
+
+  /** A cash receipt is a read-only preview until the recording branch binds it to a cash claim.
+   * No photo is retained, no confirmation is opened and no payment tool is invoked here.
+   * @param {Person} person @param {Photo} image */
+  async function onCashReceiptImage(person, image) {
+    if (!o.readCashReceipt) return o.reply(person, 'cash_receipt.unavailable');
+    let read;
+    try {
+      read = await o.readCashReceipt({ mime: /** @type {'image/jpeg'} */ (image.mime), bytes: image.bytes });
+    } catch {
+      return o.reply(person, 'cash_receipt.unavailable');
+    }
+    if (!read.ok) return o.reply(person, 'cash_receipt.unavailable');
+    if (read.kind === 'not_cash_receipt') return o.reply(person, 'cash_receipt.not_receipt');
+    /** @type {string[]} */
+    const lines = [];
+    if (read.amountRaw !== null) lines.push(t('cash_receipt.fig.amount_raw', { raw: read.amountRaw }));
+    if (read.amountPaise !== null) lines.push(t('cash_receipt.fig.amount', { amount: rupees(read.amountPaise) }));
+    if (read.dateRaw !== null) lines.push(t('cash_receipt.fig.date_raw', { raw: read.dateRaw }));
+    if (read.date !== null) lines.push(t('cash_receipt.fig.date', { day: dayName(read.date) }));
+    if (read.receiverName !== null) lines.push(t('cash_receipt.fig.receiver', { name: read.receiverName }));
+    lines.push(t(`cash_receipt.mark.${read.receiverMark === true ? 'visible' : read.receiverMark === false ? 'absent' : 'unclear'}`));
+    if (read.reference !== null) lines.push(t('cash_receipt.fig.reference', { number: read.reference }));
+    return o.reply(person, read.clear ? 'cash_receipt.preview' : 'cash_receipt.preview_unclear', { figures: lines.join('\n') });
   }
 
   /**

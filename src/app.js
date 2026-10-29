@@ -23,7 +23,9 @@ import { createJcbAgent } from './agents/jcb.js';
 import { createContractorAgent } from './agents/contractor.js';
 import { createSupplierAgent } from './agents/supplier.js';
 import { createConversation } from './agents/conversation.js';
+import { readCashReceipt } from './readers/cash-receipt.js';
 import { createOffice, parseCommand } from './agents/office.js';
+import { missedWaiting } from './agents/payment-view.js';
 import { currentTrace, openTrace, withTrace } from './trace/trace.js';
 import { traceLedger, traceLink, traceReader, traceReceived, traceSpark, traceTools, traceTranscribe, traceTransport } from './trace/hooks.js';
 import { join } from 'node:path';
@@ -54,6 +56,8 @@ const JUDGE_FILES = {
   'judge.js': 'text/javascript; charset=utf-8',
   'texts.js': 'text/javascript; charset=utf-8',
   'trace-view.js': 'text/javascript; charset=utf-8',
+  'payments-view.js': 'text/javascript; charset=utf-8',
+  'order-state.js': 'text/javascript; charset=utf-8',
   'sample/export.json': 'application/json; charset=utf-8',
 };
 const RESULT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.json$/;
@@ -88,6 +92,7 @@ const JUDGE_HEADERS = {
  *   readMeter?: import('./agents/conversation.js').MeterReader,
  *   sameMeter?: import('./agents/conversation.js').SameMeterCheck,
  *   readUpi?: import('./agents/conversation.js').UpiReader,
+ *   readCashReceipt?: import('./agents/conversation.js').CashReceiptReader,
  *   readChallan?: import('./agents/conversation.js').ChallanReader,
  *   classifyPhoto?: import('./agents/conversation.js').PhotoClassifier,
  *   transcribe?: (req: {audio: Uint8Array, mime: string, language?: 'hi'}) => Promise<{ok: true, text: string} | {ok: false, transient: boolean, reason: string}>,
@@ -132,10 +137,7 @@ export function createApp(cfg) {
     const missed = store.takeMissed(person.line, person.phone);
     if (!missed.length || !entry.agent.waiting) return;
     const open = entry.agent.waiting(person.role);
-    for (const m of missed) {
-      const n = open.find((x) => x.params.ref === m.ref && x.key === m.key);
-      if (n) await sendTo(person, t(n.key, n.params));
-    }
+    for (const n of missedWaiting(missed, open)) await sendTo(person, t(n.key, n.params));
   }
 
   /** @type {Map<string, {cfg: AgentConfig, core: any, agent: {tools: any, onApplied: (m: any) => Promise<void>, waiting?: (role: string) => {key: string, params: Record<string, string | number>}[]}, link: ReturnType<typeof createLink>, talk: ReturnType<typeof createConversation>, a2a: ReturnType<typeof createA2AHandler>,
@@ -161,6 +163,7 @@ export function createApp(cfg) {
       readMeter: traceReader('meter', cfg.readMeter, trace), readUpi: traceReader('upi', cfg.readUpi, trace),
       readChallan: traceReader('challan', cfg.readChallan, trace), classifyPhoto: traceReader('photo_kind', cfg.classifyPhoto, trace),
       sameMeter: traceReader('same_meter', cfg.sameMeter, trace),
+      readCashReceipt: traceReader('cash_receipt', cfg.readCashReceipt ?? readCashReceipt, trace),
     };
     const trips = new Map();
     const link = traceLink(createLink(core, { peerUrls: new Map(Object.entries(a.peerUrls)), transport: traceTransport(cfg.transport ?? sendToAgent, trips),
@@ -220,6 +223,7 @@ export function createApp(cfg) {
       ledger: core.ledger, tools, spark, readMeter: a.kind === 'jcb' ? readers.readMeter : undefined,
       sameMeter: a.kind === 'jcb' ? readers.sameMeter : undefined, log,
       readUpi: a.kind === 'contractor' ? readers.readUpi : undefined,
+      readCashReceipt: a.kind === 'contractor' ? readers.readCashReceipt : undefined,
       readChallan: a.kind === 'supplier' || a.kind === 'contractor' ? readers.readChallan : undefined,
       classifyPhoto: readers.classifyPhoto, reply, now, office,
       mediaStore: core.mediaStore,
@@ -297,7 +301,7 @@ export function createApp(cfg) {
       return;
     }
     if (await wa.handle(req, res)) return;
-    if (path === '/judge' || path.startsWith('/judge/')) {
+    if (path === '/judge' || path.startsWith('/judge/') || path === '/src/ledger/payments.js') {
       await serveJudge(path, req, res);
       return;
     }
@@ -349,6 +353,12 @@ export function createApp(cfg) {
       res.writeHead(status, { ...JUDGE_HEADERS, 'content-type': type });
       res.end(req.method === 'HEAD' ? undefined : body);
     };
+    // The one pure ledger module used by the browser. No general source-directory serving.
+    if (path === '/src/ledger/payments.js') {
+      try { send(200, 'text/javascript; charset=utf-8', await readFile(new URL('./ledger/payments.js', import.meta.url))); }
+      catch { send(404, 'text/plain; charset=utf-8', 'not found'); }
+      return;
+    }
     // The path is matched as sent, after decoding, against the allow-list only: there is no file
     // system lookup for anything else, so "..", encoded slashes and the like can reach nothing.
     let rel;

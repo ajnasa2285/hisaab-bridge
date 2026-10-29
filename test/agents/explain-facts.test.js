@@ -48,7 +48,7 @@ test('meter facts use the current bill evidence, compute hours, and separate cap
     assert.ok(!facts.allowedNumbers.some((n) => ['732000', '61', '999', '1300.0', shaA, orderId].includes(n.value)));
     assert.doesNotMatch(JSON.stringify(c), /sha256|00000000-0000/);
     assert.match(facts.figures, /1240\.6.*1246\.7.*6\.1/);
-    assert.match(facts.figures, /अंत —/);
+    assert.match(facts.figures, /अंत दर्ज नहीं/);
   } finally { ledger.db.close(); }
 });
 

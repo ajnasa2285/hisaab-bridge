@@ -33,6 +33,10 @@ Each builder adds a dated entry (IST) at the end of every work session: **done, 
 
 ## Astra
 
+- 2026-10-29 IST — Done: `astra/payments-view` in its own `hb-astra-payview` worktree, from `claude/wa` `0c32d2c`. Shared-summary payments and balances in ask-anything, explanation facts, status/pending, seller missed-window lists and judge panels; clubbed refs and payment trace checks; signed invented sample. Strict cash-receipt reader and explicit read-only photo preview; classifier unchanged. CONTRACTS 3.7 and Hindi keys documented (Astra drafted, Fable to polish). Final focused run: **100/100 passed**, including Meta-only rules; photo-route regression also **6/6**. Six live payment questions obtained accepted code-checked answers; four invented receipts read/abstained as expected. Full report, answers, changed files and cash wiring: `docs/payments-view-report.md`.
+  - Next: Claude combines the recording branch, wires receipt previews to its confirmed cash-claim flow and aligns new seller-notice keys with `missedWaiting`; runs the full suite/typecheck on AWS, reviews and merges. Fable polishes marked texts.
+  - Blocked: none on this branch. Questions/limits: recording states/tools remain the other session's; tests supply contract histories without that branch. Existing explanation payment-word guard remains conservative, with complete code-figure fallback. No new paymentSummary/allocate fields or signature changes, no new dependencies, no full laptop suite/typecheck, no merge/deploy/server/settings changes.
+
 - 2026-10-29 14:45 IST — Done: `astra/evidence` in own `hb-astra-evidence` worktree from `claude/wa`.
   Private per-agent photo stores, signed request/evidence with prior-ledger hash checks and signed
   hash-only metadata, automatic count/dispute requests (one per record), exact `सबूत` command with

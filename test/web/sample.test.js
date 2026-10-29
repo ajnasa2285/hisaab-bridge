@@ -8,6 +8,8 @@ import { createHash } from 'node:crypto';
 import { publicKeyFromText, verifyMessage } from '../../src/protocol/keys.js';
 import { canonicalize } from '../../src/protocol/canonical.js';
 import { buildSample } from '../../web/sample/make-sample.js';
+import { paymentSummary } from '../../src/ledger/payments.js';
+import { stateOf } from '../../web/order-state.js';
 
 /** @typedef {import('../../web/sample/make-sample.js').Export} Export */
 
@@ -43,11 +45,13 @@ function checkExport(x) {
   assert.ok(jcbOrder && matOrder);
   assert.deepEqual([jcbOrder.counterparty, matOrder.counterparty], [x.jcb.agentId, x.supplier.agentId]);
   assert.deepEqual(x.jcb.orders.map((o) => o.order_id), [jcbOrder.order_id]);
-  assert.deepEqual(x.supplier.orders.map((o) => o.order_id), [matOrder.order_id]);
+  assert.equal(x.supplier.orders.length, 3);
+  assert.equal(x.supplier.orders[0].order_id, matOrder.order_id);
   // References: the contractor's J-1 and P-1, each seller's own.
-  assert.deepEqual(x.contractor.refs, { [jcbOrder.order_id]: 'J-1', [matOrder.order_id]: 'P-1' });
+  assert.equal(x.contractor.refs?.[jcbOrder.order_id], 'J-1');
+  assert.equal(x.contractor.refs?.[matOrder.order_id], 'P-1');
   assert.deepEqual(x.jcb.refs, { [jcbOrder.order_id]: 'J-1' });
-  assert.deepEqual(x.supplier.refs, { [matOrder.order_id]: 'P-1' });
+  assert.equal(x.supplier.refs?.[matOrder.order_id], 'P-1');
 
   // The JCB story: dispute, correction naming the first bill, payment claim, settled.
   const jcbEvents = x.contractor.events.filter((e) => e.orderId === jcbOrder.order_id);
@@ -82,8 +86,28 @@ function checkExport(x) {
   assert.equal(mat.find((e) => e.type === 'SETTLED')?.body.body.amountPaise, 1680000);
   // The same signed messages on both sides of each order.
   const signedIds = (/** @type {any[]} */ evs) => evs.filter((e) => e.direction !== 'local' && e.type !== 'RECEIPT').map((e) => e.msgId).sort();
-  assert.deepEqual(signedIds(x.supplier.events), signedIds(mat));
+  assert.deepEqual(signedIds(x.supplier.events.filter((e) => e.orderId === matOrder.order_id)), signedIds(mat));
   assert.deepEqual(signedIds(x.jcb.events), signedIds(jcbEvents));
+
+  // The new signed contract example: cash advance and partial payment, two UPI shares, waiting,
+  // denied and credited money. Both sides must compute exactly the same per-order summary.
+  const p2 = x.supplier.orders[1].order_id, p3 = x.supplier.orders[2].order_id;
+  for (const id of [p2, p3]) assert.deepEqual(paymentSummary(x.contractor.events.filter((e) => e.orderId === id)), paymentSummary(x.supplier.events.filter((e) => e.orderId === id)));
+  const second = paymentSummary(x.contractor.events.filter((e) => e.orderId === p2));
+  const third = paymentSummary(x.contractor.events.filter((e) => e.orderId === p3));
+  assert.equal(second.payments[0].advance, true);
+  assert.equal(second.payments[0].method, 'cash');
+  assert.deepEqual([second.confirmedPaise, second.duePaise, second.settled], [100000, 0, true]);
+  assert.deepEqual([third.confirmedPaise, third.waitingPaise, third.duePaise, third.creditPaise], [85000, 5000, 0, 5000]);
+  assert.ok(third.payments.some((p) => p.status === 'denied'));
+  const shares = [...second.payments, ...third.payments].filter((p) => p.group);
+  assert.equal(shares.length, 2);
+  assert.equal(shares[0].group?.id, shares[1].group?.id);
+  assert.equal(shares.reduce((sum, p) => sum + p.amountPaise, 0), shares[0].group?.totalPaise);
+  for (const name of ['payment_balance', 'payment_shares', 'payment_utr']) assert.ok(x.supplier.trace?.some((e) => e.detail.name === name && e.detail.pass === true), name);
+  for (const side of sides) for (const order of side.orders) assert.equal(stateOf(side.events.filter((e) => e.orderId === order.order_id)).fits, true, `${side.agentId}: ${side.refs?.[order.order_id]} display replay`);
+  assert.equal(stateOf(x.contractor.events.filter((e) => e.orderId === p2)).state, 'settled');
+  assert.equal(stateOf(x.contractor.events.filter((e) => e.orderId === p3)).state, 'payment_claimed');
 }
 
 test('the committed sample export verifies: signatures and all three chains', () => {

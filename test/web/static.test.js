@@ -81,6 +81,15 @@ test('the page and its own files are served at /judge/ with the headers and the 
     }
     const sample = await (await fetch(`${s.base}/judge/sample/export.json`)).json();
     assert.equal(sample.v, 'hb-export/0.1');
+    for (const path of ['/judge/payments-view.js', '/judge/order-state.js', '/src/ledger/payments.js']) {
+      const shared = await fetch(`${s.base}${path}`);
+      assert.equal(shared.status, 200);
+      assert.equal(shared.headers.get('content-type'), 'text/javascript; charset=utf-8');
+      checkHeaders(shared);
+      assert.match(await shared.text(), /paymentSummary/);
+    }
+    assert.equal((await fetch(`${s.base}/src/ledger/store.js`)).status, 404);
+    assert.equal((await fetch(`${s.base}/src/ledger/payments.js`, { method: 'POST' })).status, 405);
 
     const head = await fetch(`${s.base}/judge/judge.js`, { method: 'HEAD' });
     assert.equal(head.status, 200);

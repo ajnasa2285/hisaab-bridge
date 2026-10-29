@@ -99,6 +99,11 @@ export const TEXTS = {
     paid_on: 'भुगतान का दिन',
     screenshot: 'UPI फ़ोटो की छाप',
     payment: 'भुगतान',
+    payments: 'भुगतान और बाक़ी', payment_cash: 'नकद', payment_advance: 'अग्रिम', payment_against_bill: 'बिल के लिए',
+    payment_confirmed: 'पक्का', payment_waiting: 'हाँ का इंतज़ार', payment_denied: 'मिलने से इनकार',
+    payment_due: 'बाक़ी', payment_credit: 'ज़्यादा जमा', payment_no_bill: 'बिल अभी नहीं आया',
+    payment_group: 'एक साथ कुल', payment_none: 'कोई भुगतान दर्ज नहीं', payment_method: 'तरीक़ा',
+    payment_checks: { payment_balance: 'भुगतान और बाक़ी का मिलान', payment_shares: 'सभी हिस्सों का जोड़ कुल भुगतान के बराबर', payment_utr: 'UTR पहले इस्तेमाल नहीं हुआ' },
     code: 'कोड',
     results: 'पढ़ने वालों के नतीजे (eval/results)',
     results_none: '—',
@@ -119,6 +124,7 @@ export const TEXTS = {
     trace_jobs: {
       understand: 'संदेश समझा', photo_kind: 'फ़ोटो किस चीज़ की', meter: 'मीटर पढ़ा', upi: 'UPI रसीद पढ़ी', challan: 'चालान पढ़ा',
       transcribe: 'आवाज़ से शब्द', explain: 'फ़र्क समझाया', ask_plan: 'सवाल: क्या देखें', ask_answer: 'सवाल: जवाब लिखा',
+      cash_receipt: 'नकद की पर्ची पढ़ी',
     },
     result: {
       planned: 'जाँचे / तय', labeled: 'उत्तर-कुंजी वाले', unlabeled: 'बिना कुंजी', confident: 'पक्के पढ़े', unclear: 'अस्पष्ट',
@@ -128,11 +134,11 @@ export const TEXTS = {
     },
     states: {
       none: '—', requested: 'पूछा है', offered: 'दूसरा दिन सुझाया', declined: 'मना', booked: 'तय', working: 'काम चालू',
-      delivered: 'पहुँचा', billed: 'बिल आया', disputed: 'आपत्ति', accepted: 'मंज़ूर', payment_claimed: 'भुगतान बताया', settled: 'हिसाब पूरा',
+      delivered: 'पहुँचा', billed: 'बिल आया', disputed: 'आपत्ति', accepted: 'मंज़ूर', part_paid: 'कुछ भुगतान मिला', payment_claimed: 'भुगतान बताया', settled: 'हिसाब पूरा',
     },
     types: {
       BOOKING_REQUEST: 'JCB की माँग', MATERIAL_REQUEST: 'सामान की माँग', BOOKING_REPLY: 'जवाब', EVIDENCE: 'मीटर की फ़ोटो', BILL: 'बिल', RECEIPT: 'रसीद', ACCEPT: 'मंज़ूरी',
-      DISPUTE: 'आपत्ति', CORRECTION: 'सुधरा बिल', PAYMENT_CLAIM: 'भुगतान बताया', SETTLED: 'हिसाब पूरा', REFUSE: 'इनकार', NOTE: 'टिप्पणी', DELIVERY: 'सामान पहुँचा', SITE_COUNT: 'साइट की गिनती',
+      DISPUTE: 'आपत्ति', CORRECTION: 'सुधरा बिल', PAYMENT_CLAIM: 'भुगतान बताया', PAYMENT_ACK: 'भुगतान का जवाब', PAYMENT_RECEIVED: 'भुगतान मिला', SETTLED: 'हिसाब पूरा', REFUSE: 'इनकार', NOTE: 'टिप्पणी', DELIVERY: 'सामान पहुँचा', SITE_COUNT: 'साइट की गिनती',
     },
   },
   en: {
@@ -232,6 +238,11 @@ export const TEXTS = {
     paid_on: 'Paid on',
     screenshot: 'UPI screenshot fingerprint',
     payment: 'Payment',
+    payments: 'Payments and balance', payment_cash: 'Cash', payment_advance: 'Advance', payment_against_bill: 'Against bill',
+    payment_confirmed: 'Confirmed', payment_waiting: 'Waiting for confirmation', payment_denied: 'Denied',
+    payment_due: 'Due', payment_credit: 'Credit', payment_no_bill: 'No bill yet',
+    payment_group: 'Combined total', payment_none: 'No payment recorded', payment_method: 'Method',
+    payment_checks: { payment_balance: 'Balance', payment_shares: 'Shares add up to the total', payment_utr: 'UTR not used before' },
     code: 'Code',
     results: 'Reader evaluation (eval/results)',
     results_none: '—',
@@ -252,6 +263,7 @@ export const TEXTS = {
     trace_jobs: {
       understand: 'understood the message', photo_kind: 'what the photo is', meter: 'read the hour meter', upi: 'read the UPI receipt', challan: 'read the challan',
       transcribe: 'voice to text', explain: 'explained the difference', ask_plan: 'question: chose lookups', ask_answer: 'question: wrote the answer',
+      cash_receipt: 'read the cash receipt',
     },
     result: {
       planned: 'Evaluated / planned', labeled: 'With answer key', unlabeled: 'without', confident: 'Read confidently', unclear: 'Unclear',
@@ -261,11 +273,11 @@ export const TEXTS = {
     },
     states: {
       none: '—', requested: 'requested', offered: 'another day offered', declined: 'declined', booked: 'booked', working: 'working',
-      delivered: 'delivered', billed: 'billed', disputed: 'disputed', accepted: 'accepted', payment_claimed: 'payment claimed', settled: 'settled',
+      delivered: 'delivered', billed: 'billed', disputed: 'disputed', accepted: 'accepted', part_paid: 'part paid', payment_claimed: 'payment claimed', settled: 'settled',
     },
     types: {
       BOOKING_REQUEST: 'JCB request', MATERIAL_REQUEST: 'material request', BOOKING_REPLY: 'booking reply', EVIDENCE: 'meter photo', BILL: 'bill', RECEIPT: 'receipt', ACCEPT: 'accept',
-      DISPUTE: 'dispute', CORRECTION: 'correction', PAYMENT_CLAIM: 'payment claim', SETTLED: 'settled', REFUSE: 'refusal', NOTE: 'note', DELIVERY: 'delivery', SITE_COUNT: 'site count',
+      DISPUTE: 'dispute', CORRECTION: 'correction', PAYMENT_CLAIM: 'payment claim', PAYMENT_ACK: 'payment answer', PAYMENT_RECEIVED: 'money received', SETTLED: 'settled', REFUSE: 'refusal', NOTE: 'note', DELIVERY: 'delivery', SITE_COUNT: 'site count',
     },
   },
 };

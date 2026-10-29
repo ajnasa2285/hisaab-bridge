@@ -100,3 +100,12 @@ h2 { font-size: 1.05rem; margin: 0 0 8px; color: var(--accent); }
 .tr.signed_out, .tr.signed_in { background: var(--in); }
 .tr.ledger { background: var(--out); }
 .live-toggle { display: inline-flex; gap: 6px; align-items: center; }
+/* Each side reads its own payments; group links connect the same payment across orders. */
+.payments-panel { border: 1px solid var(--line, #d8d6cc); border-radius: 8px; padding: 12px; margin: 12px 0; }
+.payments-panel h3 { margin: 0 0 8px; }
+.payment-balance { font-weight: 600; line-height: 1.6; }
+.payments { margin: 0; padding-left: 20px; }
+.payment-row { margin: 10px 0; line-height: 1.6; overflow-wrap: anywhere; }
+.payment-row.waiting { border-left: 3px solid #a87914; padding-left: 8px; }
+.payment-row.denied { border-left: 3px solid #a73e35; padding-left: 8px; }
+.payment-group a { margin-right: 8px; }

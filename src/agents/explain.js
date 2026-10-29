@@ -76,6 +76,9 @@ export function brief(c, audience) {
     out.push(`${who} (लागू बिल पर): ${d.figure ? `${d.figure.value} ${d.figure.unit}`.trim() : '—'}${str(d.reason) ? `; लिखा कारण ${quoted(d.reason)}` : ''}`);
   }
   for (const k of c?.corrections ?? []) out.push(`सुधार: पहले ${k.previousBill ? billLine(k.previousBill) : '—'} → अब ${billLine(k)}`);
+  for (const p of c?.payments ?? []) out.push(`दर्ज रक़म: ${p.amount}; ${p.method}; ${p.purpose}; ${p.status}${p.group ? `; ${p.group.refs.join(', ')} एक साथ, कुल ${p.group.total}` : ''}`);
+  const b = c?.paymentBalance;
+  if (c?.payments?.length && b) out.push(`रक़म का हिसाब: ${b.billed ? `बिल ${b.billed}; ` : 'अभी बिल नहीं; '}मिला ${b.confirmed}; पुष्टि बाक़ी ${b.waiting}${b.due ? `; देना बाक़ी ${b.due}` : ''}; ज़्यादा ${b.credit}`);
   return out.join('\n');
 }
 

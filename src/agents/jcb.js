@@ -12,6 +12,7 @@ import { explainDifference } from './explain.js';
 import { differenceFacts } from './explain-facts.js';
 import { traceCheck } from '../trace/trace.js';
 import { createSellerPayments } from './pay.js';
+import { paymentWaiting } from './payment-view.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -294,7 +295,7 @@ export function createJcbAgent(o) {
   // What still waits for each role, by the order's state, and the message that asked for it.
   /** @type {Record<string, [string, string]>} */
   /** @type {Record<string, [string, 'in' | 'out' | 'local']>} */
-  const OWNER_WAITS = { requested: ['BOOKING_REQUEST', 'in'], disputed: ['DISPUTE', 'in'], payment_claimed: ['PAYMENT_CLAIM', 'in'] };
+  const OWNER_WAITS = { requested: ['BOOKING_REQUEST', 'in'], disputed: ['DISPUTE', 'in'] };
 
   /**
    * What is still waiting for a person of this role, rebuilt from the ledger (docs/BUILD2.md "GST on
@@ -304,7 +305,7 @@ export function createJcbAgent(o) {
    */
   function waiting(role) {
     /** @type {Notice[]} */
-    const out = [];
+    const out = role === 'jcb_owner' ? paymentWaiting(ledger) : [];
     for (const order of /** @type {{order_id: string}[]} */ (ledger.orders())) {
       const id = order.order_id;
       const state = ledger.view(id).state;

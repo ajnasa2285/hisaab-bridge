@@ -4,6 +4,7 @@
 // function returns (or throws what it throws); the recording beside it is caught and dropped.
 
 import { currentTrace } from './trace.js';
+import { paymentChecks } from './payments.js';
 
 /** @typedef {import('./trace.js').Recorder} Recorder */
 
@@ -81,6 +82,9 @@ function readerOutput(job, r) {
       : { ok: true, kind: r.kind };
   }
   if (job === 'same_meter') return { ok: true, same: r.same };
+  if (job === 'cash_receipt') return r.kind === 'cash_receipt'
+    ? { ok: true, kind: r.kind, amountPaise: r.amountPaise, date: r.date, receiverMark: r.receiverMark, clear: r.clear }
+    : { ok: true, kind: r.kind };
   return { ok: true };
 }
 
@@ -92,13 +96,14 @@ function readerTitle(job, out) {
   if (job === 'upi' && out.kind === 'upi_payment') return `UPI receipt: ${out.amountPaise === null ? '?' : `₹${out.amountPaise / 100}`} ${out.status ?? ''}`.trim();
   if (job === 'challan' && out.kind === 'challan') return `challan ${out.challanNo ?? '?'}: ${out.items.length} item(s)`;
   if (job === 'same_meter') return `same machine as the other meter photo: ${out.same}`;
+  if (job === 'cash_receipt' && out.kind === 'cash_receipt') return `cash receipt: ${out.amountPaise === null ? '?' : `₹${out.amountPaise / 100}`}${out.clear ? '' : ' (unclear)'}`;
   return `${job}: ${out.kind ?? 'read'}`;
 }
 
 /**
  * A photo reader (meter, UPI, challan, photo kind), traced. The image never reaches the trace.
  * @template {(image: any) => Promise<any>} F
- * @param {'photo_kind' | 'meter' | 'upi' | 'challan' | 'same_meter'} job @param {F | undefined} reader @param {Recorder} rec
+ * @param {'photo_kind' | 'meter' | 'upi' | 'challan' | 'same_meter' | 'cash_receipt'} job @param {F | undefined} reader @param {Recorder} rec
  * @returns {F | undefined}
  */
 export function traceReader(job, reader, rec) {
@@ -194,6 +199,10 @@ export function traceLedger(ledger, rec) {
         rec.add('ledger', `#${r.seq} ${r.type}${kind ? ` (${kind})` : ''} ${r.direction} · ${short(r.hash, 7)}`,
           { seq: r.seq, type: r.type, direction: r.direction, msg: short(r.msgId), hash: short(r.hash, 12), prev: short(r.prevHash, 12) },
           { orderId: r.orderId });
+        const counterparty = ledger.order(r.orderId)?.counterparty;
+        const orders = ledger.orders().filter((o) => o.counterparty === counterparty)
+          .map((o) => ({ orderId: String(o.order_id), events: ledger.events(String(o.order_id)) }));
+        for (const check of paymentChecks(r, orders)) rec.add('check', check.title, check.detail, { orderId: check.orderId });
       }
     } catch { /* dropped */ }
     return r;

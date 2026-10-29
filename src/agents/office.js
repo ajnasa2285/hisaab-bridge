@@ -11,6 +11,7 @@ import { openRefs, parseRef } from '../ledger/refs.js';
 import { day as dayName, qty, rupees, tenths } from '../i18n/format.js';
 import { t, variant } from '../i18n/index.js';
 import { itemsText, signedWord, siteReceipt } from './material.js';
+import { orderBalanceText, orderPaymentText, paymentWaiting } from './payment-view.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('./common.js').Tool} Tool */
@@ -187,7 +188,7 @@ export function createOffice(o) {
     const what = step?.summary?.(args);
     if (what) return t(what.key, what.params);
     const d = step?.describe?.(args);
-    return d ? t(d.key, d.params).replace(/\s*हाँ \/ नहीं\s*$/u, '') : '—';
+    return d ? t(d.key, d.params).replace(/\s*हाँ \/ नहीं\s*$/u, '') : t('office.step_unknown');
   };
   /** @param {string} orderId */
   const knownOrder = (orderId) => typeof orderId === 'string' && ledger.order(orderId) !== null;
@@ -282,13 +283,13 @@ export function createOffice(o) {
     const req = ledger.events(orderId).filter((e) => e.type === 'BOOKING_REQUEST').at(-1)?.body.body;
     if (kind === 'material') {
       const items = Array.isArray(req?.items) ? req.items.filter((/** @type {any} */ i) => typeof i?.name === 'string' && nonNegInt(i.qtyHundredths) && typeof i.unit === 'string') : [];
-      return t('office.what_material', { items: items.length ? items.map((/** @type {any} */ i) => t('account.material', { name: i.name, qty: qty(i.qtyHundredths, i.unit) })).join(', ') : '—' });
+      return items.length ? t('office.what_material', { items: items.map((/** @type {any} */ i) => t('account.material', { name: i.name, qty: qty(i.qtyHundredths, i.unit) })).join(', ') }) : t('kind.material');
     }
     return posInt(req?.hoursTenths) ? t('office.what_jcb', { hours: tenths(req.hoursTenths) }) : t('kind.jcb');
   }
 
   /** @param {string} state */
-  const awaited = (state) => (state === 'none' ? '—' : t(`office.await.${side}.${state}`));
+  const awaited = (state) => (state === 'none' ? t('office.pending_none') : t(`office.await.${side}.${state}`));
 
   /** @param {string} ref @returns {Said} */
   function status(ref) {
@@ -297,7 +298,7 @@ export function createOffice(o) {
       const h = o.kind === 'contractor' ? heldByRef(ref) : null;
       if (!h) return no('office.no_such_ref', { ref });
       const d = h.decision;
-      const decision = !d ? t('office.held_waiting') : d.decision === 'ok' ? t('office.held_ok', { by: nameOf(d.by) }) : t('office.held_no', { by: nameOf(d.by), reason: d.note ?? '—' });
+      const decision = !d ? t('office.held_waiting') : d.decision === 'ok' ? t('office.held_ok', { by: nameOf(d.by) }) : t('office.held_no', { by: nameOf(d.by), reason: d.note ?? '' });
       return ok(variant('office.status_held', { estimate: h.estimatePaise !== null }), { ref, step: stepText(h.tool, h.args), ...(h.estimatePaise !== null ? { estimate: money(h.estimatePaise) } : {}), decision });
     }
     const order = /** @type {{kind: string, site: string}} */ (ledger.order(orderId));
@@ -305,22 +306,20 @@ export function createOffice(o) {
     const events = ledger.events(orderId);
     const req = events.filter((e) => e.type === 'BOOKING_REQUEST').at(-1)?.body.body;
     const yes = ofType(events, 'BOOKING_REPLY').filter((e) => e.body.body.answer === 'yes').at(-1)?.body.body;
-    let rate = '—';
+    let rate = '';
     if (posInt(yes?.ratePaise)) rate = rupees(yes.ratePaise);
-    else if (Array.isArray(yes?.rates)) rate = yes.rates.filter((/** @type {any} */ r) => posInt(r?.ratePaise)).map((/** @type {any} */ r) => t('account.material', { name: r.name, qty: rupees(r.ratePaise) })).join(', ') || '—';
-    const bill = view.currentBill ? ledger.eventOfMessage(view.currentBill)?.body.body.totalPaise : undefined;
-    const paid = view.payment ? ledger.eventOfMessage(view.payment)?.body.body.amountPaise : undefined;
+    else if (Array.isArray(yes?.rates)) rate = yes.rates.filter((/** @type {any} */ r) => posInt(r?.ratePaise)).map((/** @type {any} */ r) => t('account.material', { name: r.name, qty: rupees(r.ratePaise) })).join(', ');
     const params = {
-      ref, what: whatOf(orderId, order.kind), site: order.site, day: typeof req?.day === 'string' ? dayName(req.day) : '—',
-      state: view.state === 'none' ? '—' : t(`state.${view.state}`), rate, bill: posInt(bill) ? rupees(bill) : '—',
-      paid: posInt(paid) ? rupees(paid) : '—', awaited: awaited(view.state),
+      ref, what: whatOf(orderId, order.kind), site: order.site, day: typeof req?.day === 'string' ? `, ${dayName(req.day)}` : '',
+      state: view.state === 'none' ? t('office.state_unknown') : t(`state.${view.state}`), rate: rate ? `\n${t('office.rate', { rate })}` : '',
+      payments: orderPaymentText(ledger, orderId), awaited: awaited(view.state),
     };
     // The supplier also sees what the site wrote on its signed copy of the challan, when it came.
     const receipt = o.kind === 'supplier' && order.kind === 'material' ? siteReceipt(events) : null;
     if (receipt === null) return ok('office.status', params);
     return ok('office.status_with_receipt', {
       ...params,
-      receipt: t('office.site_receipt', { challanNo: receipt.number ?? '—', count: itemsText(receipt.items), signed: t(`office.signed_${signedWord(receipt.signed)}`) }),
+      receipt: t(receipt.number ? 'office.site_receipt' : 'office.site_receipt_no_number', { challanNo: receipt.number ?? '', count: itemsText(receipt.items), signed: t(`office.signed_${signedWord(receipt.signed)}`) }),
     });
   }
 
@@ -328,6 +327,9 @@ export function createOffice(o) {
   function pending(person) {
     /** @type {string[]} */
     const lines = [];
+    const sellerClaims = o.kind !== 'contractor' && ['jcb_owner', 'supplier'].includes(person.role) ? paymentWaiting(ledger) : [];
+    lines.push(...sellerClaims.map((n) => t(n.key, n.params)));
+    const claimedRefs = new Set(sellerClaims.flatMap((n) => String(n.params.refs).split(', ')));
     if (o.kind === 'contractor') {
       for (const h of q.all.all().map(toHeld)) {
         if (h.decision !== null || (person.role !== 'contractor' && !same(h.person, person))) continue;
@@ -336,10 +338,13 @@ export function createOffice(o) {
     }
     for (const order of /** @type {{order_id: string, kind: string, site: string}[]} */ (ledger.orders())) {
       const state = ledger.view(order.order_id).state;
+      const ref = refs.refOf(order.order_id) ?? '';
+      // The claim/group above already says what the seller needs to answer. Other work remains visible.
+      if (state === 'payment_claimed' && claimedRefs.has(ref)) continue;
       const uncounted = state === 'delivered' && !ofType(ledger.events(order.order_id), 'NOTE', 'local').some((e) => e.body.kind === 'site_count');
       const wanted = person.role === 'contractor' ? AWAITING_CONTRACTOR.includes(state) || uncounted : !CLOSED.includes(state);
       if (!wanted) continue;
-      lines.push(t('office.pending_order', { ref: refs.refOf(order.order_id) ?? '—', what: whatOf(order.order_id, order.kind), site: order.site, awaited: awaited(state) }));
+      lines.push(t('office.pending_order', { ref, what: whatOf(order.order_id, order.kind), site: order.site, awaited: awaited(state), balance: orderBalanceText(ledger, order.order_id) }));
     }
     return lines.length ? ok('office.pending', { lines: lines.join('\n') }) : ok('office.pending_none');
   }

@@ -33,6 +33,16 @@ test('a code check shows ✓, ✗, or ⏸ for a step held for approval', () => {
   assert.deepEqual([held.mark, held.icon], ['held', '⏸']);
 });
 
+test('payment audit checks show bilingual labels and their code figures', () => {
+  const balance = entry('check', 'ignored title', { name: 'payment_balance', pass: true, billTotalPaise: null, confirmedPaise: 20000, waitingPaise: 0, duePaise: null, creditPaise: 0 });
+  const shown = traceRow(balance, en);
+  assert.equal(shown.text, 'Balance');
+  assert.match(shown.extra, /confirmedPaise: 20000/);
+  assert.doesNotMatch(shown.extra, /null|—|duePaise/);
+  assert.equal(traceRow(entry('check', '', { name: 'payment_shares', pass: true, sharesPaise: 130000, totalPaise: 130000 }), en).text, 'Shares add up to the total');
+  assert.equal(traceRow(entry('check', '', { name: 'payment_utr', pass: false, utr: '000000000003' }), TEXTS.hi).text, 'UTR पहले इस्तेमाल नहीं हुआ');
+});
+
 test('decisions, messages in, replies: who, the words when kept, the text key', () => {
   const d = traceRow(entry('decision', 'contractor "OK J-1" → request_jcb (for the supervisor)', { role: 'contractor', onBehalfOf: 'supervisor', reply: 'OK J-1', tool: 'request_jcb' }), en);
   assert.deepEqual([d.label, d.extra, d.icon], ['person decided', 'contractor (supervisor)', '🙋']);

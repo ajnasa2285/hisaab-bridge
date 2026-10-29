@@ -86,8 +86,7 @@ test('paidAt absent: the old text for the owner, no time phrase and no "—" any
     const facts = orderFacts(j.s.siteCore.ledger);
     const p = runLookup('payments', { site: null, kind: null, period: 'all', from: null, to: null }, { ledger: j.s.siteCore.ledger, side: 'buyer', nowMs: Date.parse('2026-10-29T06:00:00Z'), facts });
     assert.equal('paid_at' in p.data.list[0], false);
-    // The line's own dash separates the confirmation; no time stands in for a missing one.
-    assert.ok(!p.lines[0].includes('बजे') && p.lines[0].includes('23 अक्टूबर 2026 — पुष्टि'), p.lines[0]);
+    assert.ok(!p.lines[0].includes('बजे') && !p.lines[0].includes('—') && p.lines[0].includes('पुष्टि बाक़ी · 23 अक्टूबर 2026'), p.lines[0]);
     // A bad time is refused before anything is sent.
     const bad = await runTool(j.s.site.tools, contractor, { tool: 'claim_payment', args: { orderId: j.orderId, amountPaise: 732000, utr: '412300000003', paidOn: '2026-10-23', paidAt: '2 बजे', screenshotSha256: SHA_C } });
     assert.equal(bad.key, 'common.bad_args');
