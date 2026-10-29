@@ -91,7 +91,7 @@ test('a count from the site\'s challan photo, after the DELIVERY: a signed SITE_
     assert.equal(c.s.siteCore.ledger.events(c.orderId).filter((e) => e.type === 'SITE_RECEIPT' && e.direction === 'out').length, 1);
     const [told] = c.toSupplier();
     assert.equal(told[1], 'supplier.site_receipt_matches');
-    assert.equal(told[2], 'P-1: साइट ने चालान 96 पर सीमेंट 50 बोरी प्राप्त लिखी, मिलान ठीक। साइट की प्रति पर दस्तख़त दिख रहे हैं।');
+    assert.equal(told[2], 'P-1: साइट की कॉपी (चालान 96) में लिखा है: सीमेंट 50 बोरी। आपके चालान से मिलान ठीक। साइट की कॉपी पर दस्तख़त दिख रहे हैं।');
     // The order's state does not move.
     assert.equal(c.s.supCore.ledger.view(c.orderId).state, 'delivered');
   } finally {
@@ -107,7 +107,7 @@ test('the site wrote fewer bags: the supplier sees both figures, no verdict; an 
     await c.photograph();
     const [told] = c.toSupplier();
     assert.equal(told[1], 'supplier.site_receipt_differs', 'leading zeros name the same challan');
-    assert.equal(told[2], 'P-1: साइट ने चालान 96 पर सीमेंट 48 बोरी प्राप्त लिखी (आपके चालान पर सीमेंट 50 बोरी)। साइट की प्रति पर दस्तख़त नहीं दिखे।');
+    assert.equal(told[2], 'P-1: साइट की कॉपी (चालान 96) में लिखा है: सीमेंट 48 बोरी। आपके चालान पर: सीमेंट 50 बोरी। साइट की कॉपी पर दस्तख़त नहीं दिखे।');
     assert.equal(c.receipts()[0].body.body.signed, false);
   } finally {
     await c.s.close();
@@ -177,7 +177,7 @@ test('the supplier\'s status and ask-anything facts include the receipt', async 
     const st = /** @type {any} */ (await office.command(supplier, { cmd: 'status', ref: 'P-1' }));
     assert.equal(st.key, 'office.status_with_receipt');
     const text = t(st.key, st.params);
-    assert.ok(text.includes('साइट की प्रति: चालान 96 पर सीमेंट 48 बोरी प्राप्त लिखी, दस्तख़त हैं'), text);
+    assert.ok(text.includes('साइट की कॉपी: चालान 96 पर सीमेंट 48 बोरी, दस्तख़त हैं'), text);
 
     // The contractor's own status stays as it was.
     const siteOffice = createOffice({ ledger: c.s.siteCore.ledger, tools: c.s.site.tools, kind: 'contractor', tell: () => {}, reply: () => {}, now: c.s.siteCore.now });

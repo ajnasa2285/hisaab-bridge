@@ -98,7 +98,7 @@ test('part by UPI, the rest in cash: each confirmed by the supplier; settled by 
     // ₹10,000 of ₹17,500: no longer a mismatch, sent at once with the balance.
     await d.shot(1000000, '412300000101');
     assert.equal(d.last()[1], 'pay.site.claimed');
-    assert.equal(d.last()[2], 'P-1: विक्रेता को भुगतान बताया: ₹10,000, 30 अक्टूबर 2026, UTR 412300000101। बाक़ी ₹17,500; इसमें ₹10,000 पुष्टि के इंतज़ार में।');
+    assert.equal(d.last()[2], 'P-1: सप्लायर को भुगतान बताया: ₹10,000, 30 अक्टूबर 2026, UTR 412300000101। बाक़ी ₹17,500; इसमें ₹10,000 पक्का होना बाक़ी।');
     await until(() => d.toldCount('supplier:supplier', 'pay.seller.claimed') === 1);
     assert.ok(d.told('supplier:supplier', 'pay.seller.claimed')?.includes('बाक़ी ₹17,500'));
     assert.deepEqual(d.states(p1), ['payment_claimed', 'payment_claimed']);
@@ -107,7 +107,7 @@ test('part by UPI, the rest in cash: each confirmed by the supplier; settled by 
     assert.equal(d.last()[1], 'pay.seller.confirmed');
     assert.equal(d.last()[2], 'P-1: ₹10,000 मिलना पक्का किया, ठेकेदार को बताया। बाक़ी ₹7,500।');
     await until(() => d.toldCount('site:contractor', 'pay.site.acked') === 1);
-    assert.equal(d.told('site:contractor', 'pay.site.acked'), 'P-1: विक्रेता ने ₹10,000, 30 अक्टूबर 2026, UTR 412300000101 मिलना पक्का किया। बाक़ी ₹7,500।');
+    assert.equal(d.told('site:contractor', 'pay.site.acked'), 'P-1: सप्लायर ने ₹10,000, 30 अक्टूबर 2026, UTR 412300000101 मिलना पक्का किया। बाक़ी ₹7,500।');
     assert.deepEqual(d.states(p1), ['part_paid', 'part_paid']);
 
     // The rest in cash, typed: acts at once (an exact single-order payment).
@@ -155,11 +155,11 @@ test('an advance before the delivery that covers the bill: settled at ACCEPT by 
     const p1 = await d.order(50, 'booked');
     await d.siteTalk.onText(contractor, 'P-1 अग्रिम ₹17,500 नकद');
     assert.equal(d.last()[1], 'pay.site.claimed_advance');
-    assert.equal(d.last()[2], 'P-1: विक्रेता को अग्रिम बताया: ₹17,500 नकद, 29 अक्टूबर 2026। अभी बिल नहीं बना; अग्रिम ₹17,500 पुष्टि के इंतज़ार में।');
+    assert.equal(d.last()[2], 'P-1: सप्लायर को एडवांस बताया: ₹17,500 नकद, 29 अक्टूबर 2026। अभी बिल नहीं बना; एडवांस ₹17,500 पक्का होना बाक़ी।');
     await until(() => d.toldCount('supplier:supplier', 'pay.seller.claimed_advance') === 1);
     await d.supTalk.onText(supplier, 'हाँ');
     assert.equal(d.last()[1], 'pay.seller.confirmed');
-    assert.ok(d.last()[2].includes('अभी बिल नहीं बना; अग्रिम ₹17,500 पक्का'), d.last()[2]);
+    assert.ok(d.last()[2].includes('अभी बिल नहीं बना; एडवांस ₹17,500 पक्का'), d.last()[2]);
     // Payments never move the state before ACCEPT.
     assert.deepEqual(d.states(p1), ['booked', 'booked']);
     await d.bill(p1, 50);
@@ -204,7 +204,7 @@ test('the supplier records cash he received himself: counts at once, and settles
     assert.equal(d.last()[1], 'pay.seller.received');
     assert.equal(d.last()[2], 'P-1: ₹5,000 नकद, 29 अक्टूबर 2026 मिलना दर्ज किया, ठेकेदार को बताया। बाक़ी ₹12,500।');
     await until(() => d.toldCount('site:contractor', 'pay.site.received') === 1);
-    assert.equal(d.told('site:contractor', 'pay.site.received'), 'P-1: विक्रेता ने ₹5,000 नकद, 29 अक्टूबर 2026 मिलना दर्ज किया। बाक़ी ₹12,500।');
+    assert.equal(d.told('site:contractor', 'pay.site.received'), 'P-1: सप्लायर ने ₹5,000 नकद, 29 अक्टूबर 2026 मिलना दर्ज किया। बाक़ी ₹12,500।');
     assert.deepEqual(d.states(p1), ['part_paid', 'part_paid']);
     await d.supTalk.onText(supplier, 'P-1 ₹12,500 नकद मिले');
     assert.equal(d.last()[1], 'supplier.settled_sent');
@@ -222,7 +222,7 @@ test('one payment for P-1 and P-2, exact: the split read back once; one हा�
     const p2 = await d.order(30, 'accepted');
     await d.siteTalk.onText(contractor, 'P-1 और P-2 एक साथ ₹28,000 नकद');
     assert.equal(d.last()[1], 'step.claim_group_cash');
-    assert.equal(d.last()[2], '₹28,000 नकद, एक साथ विक्रेता को, ऐसे बँटेगा:\nP-1 में ₹17,500\nP-2 में ₹10,500\nभेजें? हाँ / नहीं');
+    assert.equal(d.last()[2], '₹28,000 नकद, एक साथ सप्लायर को, ऐसे बँटेगा:\nP-1 में ₹17,500\nP-2 में ₹10,500\nभेजें? हाँ / नहीं');
     await d.siteTalk.onText(contractor, 'हाँ');
     assert.equal(d.last()[1], 'pay.site.group_claimed');
     const claims = [p1, p2].map((id) => d.s.supCore.ledger.events(id).find((e) => e.type === 'PAYMENT_CLAIM')?.body.body);
@@ -277,7 +277,7 @@ test('one payment for two orders, over: a credit on the last billed order, or an
     await d.supTalk.onText(supplier, 'हाँ');
     await until(() => d.states(p2)[0] === 'settled');
     assert.equal(d.summary(p2).creditPaise, 200000);
-    assert.equal(d.told('site:contractor', 'site.material_settled_credit'), 'P-2: विक्रेता ने ₹12,500 मिलना पक्का किया। Site K का यह हिसाब पूरा; ₹2,000 ज़्यादा गया है।');
+    assert.equal(d.told('site:contractor', 'site.material_settled_credit'), 'P-2: सप्लायर ने ₹12,500 मिलना पक्का किया। Site K का यह हिसाब पूरा; ₹2,000 ज़्यादा दिया गया है।');
   } finally {
     await d.s.close();
   }
@@ -286,7 +286,7 @@ test('one payment for two orders, over: a credit on the last billed order, or an
     const p1 = await e.order(50, 'accepted');
     const p2 = await e.order(30, 'booked');
     await e.siteTalk.onText(contractor, 'P-1 P-2 ₹20,000 नकद');
-    assert.ok(e.last()[2].includes('P-1 में ₹17,500\nP-2 में ₹2,500 (अग्रिम)'), e.last()[2]);
+    assert.ok(e.last()[2].includes('P-1 में ₹17,500\nP-2 में ₹2,500 (एडवांस)'), e.last()[2]);
     await e.siteTalk.onText(contractor, 'हाँ');
     const share = e.s.siteCore.ledger.events(p2).find((x) => x.type === 'PAYMENT_CLAIM')?.body.body;
     assert.deepEqual([share.bill, share.amountPaise], [null, 250000]);

@@ -204,11 +204,11 @@ test('after the bill: the UPI amount, ask-anything totals and explanation figure
     d.upi({ ok: true, kind: 'upi_payment', amountPaise: 1900000, date: '2026-10-30', time: null, clock: null, utr: '412300000041', status: 'success', clear: true });
     await d.siteTalk.onImage(contractor, { mime: 'image/jpeg', bytes: new Uint8Array([9, 1]) });
     assert.equal(d.last('contractor')[1], 'pay.site.claimed');
-    assert.ok(d.last('contractor')[2].includes('बाक़ी ₹24,320; इसमें ₹19,000 पुष्टि के इंतज़ार में'), d.last('contractor')[2]);
+    assert.ok(d.last('contractor')[2].includes('बाक़ी ₹24,320; इसमें ₹19,000 पक्का होना बाक़ी'), d.last('contractor')[2]);
     d.upi({ ok: true, kind: 'upi_payment', amountPaise: 532000, date: '2026-10-30', time: null, clock: null, utr: '412300000042', status: 'success', clear: true });
     await d.siteTalk.onImage(contractor, { mime: 'image/jpeg', bytes: new Uint8Array([9, 2]) });
     assert.equal(d.last('contractor')[1], 'pay.site.claimed');
-    assert.ok(d.last('contractor')[2].includes('इसमें ₹24,320 पुष्टि के इंतज़ार में'), d.last('contractor')[2]);
+    assert.ok(d.last('contractor')[2].includes('इसमें ₹24,320 पक्का होना बाक़ी'), d.last('contractor')[2]);
   } finally {
     await d.s.close();
   }
