@@ -5,6 +5,12 @@
 //
 // Each run makes fresh keys, so the file changes every time; the signatures inside it verify with
 // the public keys it carries (test/web/sample.test.js checks that).
+//
+// Each side also carries its trace ("inside the agent", src/trace/), recorded by the same hooks the
+// service uses: the code checks, decisions, signed messages and ledger rows are the real agents'
+// own. The sample has no Meta model, so the Muse steps (understanding a message, reading a photo)
+// are invented entries in the trace, with invented latencies, where the service would call Muse;
+// the explanations go through the real explanation code with a stand-in that returns fixed words.
 
 import { createServer } from 'node:http';
 import { writeFileSync } from 'node:fs';
@@ -18,10 +24,14 @@ import { runTool } from '../../src/agents/common.js';
 import { createJcbAgent } from '../../src/agents/jcb.js';
 import { createContractorAgent } from '../../src/agents/contractor.js';
 import { createSupplierAgent } from '../../src/agents/supplier.js';
+import { openTrace, withTrace } from '../../src/trace/trace.js';
+import { traceLedger, traceLink, traceReceived, traceSpark, traceTools, traceTransport } from '../../src/trace/hooks.js';
 
 /** @typedef {import('../../src/protocol/messages.js').MessageType} MessageType */
 /** @typedef {import('../../src/wa/directory.js').Person} Person */
 /** @typedef {import('../../src/ledger/store.js').LedgerEvent} LedgerEvent */
+/** @typedef {import('../../src/trace/trace.js').TraceEntry} TraceEntry */
+/** @typedef {import('../../src/trace/trace.js').Recorder} Recorder */
 
 /**
  * @typedef {object} LedgerExport
@@ -31,6 +41,7 @@ import { createSupplierAgent } from '../../src/agents/supplier.js';
  * @property {LedgerEvent[]} events             every event of every order, in seq order
  * @property {{ok: true, events: number} | {ok: false, brokenAt: number}} chain  verifyChain() at export time
  * @property {Record<string, string>} [refs]    this side's reference (J-n / P-n) per order_id
+ * @property {TraceEntry[]} [trace]             this agent's trace (inside the agent), oldest first
  */
 /** @typedef {{v: 'hb-export/0.1', exportedAt: string, jcb: LedgerExport, contractor: LedgerExport, supplier: LedgerExport}} Export */
 
@@ -40,6 +51,7 @@ const SHA_END = '2b'.repeat(32);
 const SHA_UPI = '3c'.repeat(32);
 const SHA_CHALLAN = '4d'.repeat(32);
 const SHA_UPI_2 = '5e'.repeat(32);
+const MODEL = 'muse-spark-1.2';
 
 /** @param {string} role @param {string} agent @param {string} phone @returns {Person} */
 const person = (role, agent, phone) => ({ line: 'line', phone, agent, role: /** @type {any} */ (role), name: role });
@@ -53,8 +65,21 @@ const supplier = person('supplier', 'agent:supplier-1', '919000000005');
 const CEMENT = { name: 'सीमेंट', qtyHundredths: 5000, unit: 'बोरी' };
 
 /**
- * Three agents on local HTTP, each with its own keys and ledger, a clock the flow can move forward.
- * The contractor's agent has two peers; the sellers never talk to each other.
+ * A stand-in for Muse Spark's explanation of a difference: fixed, neutral words citing only figures
+ * in the ledger. It runs through the real explanation code and its checks.
+ * @param {any} req
+ */
+async function explainStandIn(req) {
+  const material = typeof req.text === 'string' && req.text.includes('बोरी');
+  const explanation = material
+    ? 'चालान और बिल में सीमेंट 50 बोरी लिखा है; साइट की गिनती में 48 बोरी दर्ज है।'
+    : 'बिल के 6.1 घंटे मीटर की फ़ोटो से निकले हैं; ठेकेदार का आँकड़ा 5.5 घंटे है।';
+  return { ok: true, json: { explanation }, text: '', toolCalls: [], model: MODEL, latencyMs: material ? 3410 : 3780, usage: { input_tokens: 900, output_tokens: 60 } };
+}
+
+/**
+ * Three agents on local HTTP, each with its own keys, ledger and trace, a clock the flow can move
+ * forward. The contractor's agent has two peers; the sellers never talk to each other.
  */
 async function setup() {
   const jk = generateKeys();
@@ -88,31 +113,48 @@ async function setup() {
     ledger: openLedger(':memory:'),
     now,
   };
+  const traces = {
+    jcb: openTrace({ agent: 'jcb', now, text: true, secret: 'sample' }),
+    site: openTrace({ agent: 'site', now, text: true, secret: 'sample' }),
+    sup: openTrace({ agent: 'supplier', now, text: true, secret: 'sample' }),
+  };
+  traceLedger(jcbCore.ledger, traces.jcb);
+  traceLedger(siteCore.ledger, traces.site);
+  traceLedger(supCore.ledger, traces.sup);
   const peerUrls = new Map();
-  const jcbLink = createLink(jcbCore, { peerUrls, transport: sendToAgent });
-  const siteLink = createLink(siteCore, { peerUrls, transport: sendToAgent });
-  const supLink = createLink(supCore, { peerUrls, transport: sendToAgent });
+  /** @param {any} core @param {Recorder} rec */
+  const link = (core, rec) => {
+    const trips = new Map();
+    return traceLink(createLink(core, { peerUrls, transport: traceTransport(sendToAgent, trips) }), rec, trips);
+  };
+  const jcbLink = link(jcbCore, traces.jcb);
+  const siteLink = link(siteCore, traces.site);
+  const supLink = link(supCore, traces.sup);
   const silent = () => {};
-  const jcb = createJcbAgent({ agent: jcbCore, link: jcbLink, tell: silent });
-  const site = createContractorAgent({ agent: siteCore, link: siteLink, tell: silent, jcbAgentId: 'agent:jcb-1', supplierAgentId: 'agent:supplier-1' });
-  const sup = createSupplierAgent({ agent: supCore, link: supLink, tell: silent });
+  const jcb = createJcbAgent({ agent: jcbCore, link: jcbLink, tell: silent, spark: traceSpark(explainStandIn, traces.jcb) });
+  const site = createContractorAgent({ agent: siteCore, link: siteLink, tell: silent, jcbAgentId: 'agent:jcb-1', supplierAgentId: 'agent:supplier-1', spark: traceSpark(explainStandIn, traces.site) });
+  const sup = createSupplierAgent({ agent: supCore, link: supLink, tell: silent, spark: traceSpark(explainStandIn, traces.sup) });
 
   /** @type {import('node:http').Server[]} */
   const servers = [];
-  for (const [core, a, name] of /** @type {const} */ ([[jcbCore, jcb, 'jcb'], [siteCore, site, 'site'], [supCore, sup, 'supplier']])) {
+  for (const [core, a, name, rec] of /** @type {const} */ ([[jcbCore, jcb, 'jcb', traces.jcb], [siteCore, site, 'site', traces.site], [supCore, sup, 'supplier', traces.sup]])) {
     /** @type {any} */
     let handle = null;
     const server = createServer(async (req, res) => {
-      if (!(await handle(req, res))) res.writeHead(404).end();
+      if (!(await withTrace(rec, {}, () => handle(req, res)))) res.writeHead(404).end();
     });
     await new Promise((r) => server.listen(0, '127.0.0.1', () => r(undefined)));
     const baseUrl = `http://127.0.0.1:${/** @type {import('node:net').AddressInfo} */ (server.address()).port}`;
-    handle = createA2AHandler(core, agentCardJson({ id: core.self.id, name, description: name, baseUrl, publicKeyText: publicKeyText(core.self.privateKey) }), { onApplied: (m) => { void a.onApplied(m); } });
+    handle = createA2AHandler(core, agentCardJson({ id: core.self.id, name, description: name, baseUrl, publicKeyText: publicKeyText(core.self.privateKey) }),
+      { onApplied: (m) => { void a.onApplied(m); }, onReceived: traceReceived(rec) });
     peerUrls.set(core.self.id, baseUrl);
     servers.push(server);
   }
   return {
-    jcb, site, sup, jcbCore, siteCore, supCore,
+    jcb: { ...jcb, tools: traceTools(jcb.tools, traces.jcb) },
+    site: { ...site, tools: traceTools(site.tools, traces.site) },
+    sup: { ...sup, tools: traceTools(sup.tools, traces.sup) },
+    jcbCore, siteCore, supCore, traces,
     advance: (/** @type {number} */ minutes) => { nowMs += minutes * 60_000; },
     close: () => Promise.all(servers.map((s) => new Promise((r) => s.close(() => r(undefined))))),
   };
@@ -127,69 +169,137 @@ function must(r, step) {
 const settle = () => new Promise((res) => setImmediate(res));
 
 /**
- * The JCB job: request → yes (₹1,200/h) → start and end meter → bill 6.1 h → dispute 5.5 h →
- * correction → accept → payment claim → settled.
+ * One message from a person, handled as the service handles it: received, the (invented) Muse
+ * steps the service would take, then the real step, then the reply's key.
+ * @param {Recorder} rec @param {Person} who @param {string | null} text null: a photo
+ * @param {(rec: Recorder) => void} muse the invented model steps (and their checks) before the step
+ * @param {() => Promise<import('../../src/agents/common.js').Said>} step
+ * @param {string} name
+ */
+async function said(rec, who, text, muse, step, name) {
+  return withTrace(rec, { convo: rec.convoOf(who), role: who.role, text }, async () => {
+    const channel = text === null ? 'photo' : /^(ok|no|नहीं) [JP]-\d+/i.test(text) ? 'command' : 'text';
+    rec.add('received', `${channel} from ${who.role}`, { channel, role: who.role, text: rec.words(text) });
+    muse(rec);
+    const r = must(await step(), name);
+    rec.add('reply', `${r.key} → ${who.role}`, { key: r.key, to: who.role, people: 1 }, { ms: 40 });
+    return r;
+  });
+}
+
+/** An invented Muse Spark step, as the service's wrapper records it. @param {Recorder} rec @param {string} title @param {Record<string, any>} detail @param {number} ms */
+const muse = (rec, title, detail, ms) => rec.add('model', title, { model: MODEL, reasoningEffort: 'default', ok: true, ...detail }, { ms });
+const none = () => {};
+
+/**
+ * The JCB job: request (held for the contractor's OK) → yes (₹1,200/h) → start and end meter →
+ * bill 6.1 h → dispute 5.5 h → correction → accept → payment claim → settled.
  * @param {Awaited<ReturnType<typeof setup>>} s
  */
 async function jcbJob(s) {
-  must(await runTool(s.site.tools, supervisor, { tool: 'request_jcb', args: { site: 'Shivpuri', day: '2026-10-29', time: '08:00', hoursTenths: 60 } }), 'request_jcb');
+  const { site: rs, jcb: rj } = s.traces;
+  await withTrace(rs, { convo: rs.convoOf(supervisor), role: 'supervisor', text: 'कल सुबह 8 बजे शिवपुरी साइट पर JCB चाहिए, 6 घंटे' }, async () => {
+    rs.add('received', 'text from supervisor', { channel: 'text', role: 'supervisor', text: rs.words('कल सुबह 8 बजे शिवपुरी साइट पर JCB चाहिए, 6 घंटे') });
+    muse(rs, 'understand → request_jcb', { job: 'understand', tools: 9, calls: [{ tool: 'request_jcb', args: { site: 'Shivpuri', day: 'tomorrow', time: '8', hours: '6' } }] }, 1840);
+    rs.add('check', 'approval needed: value cannot be estimated → held for the contractor', { pass: false, name: 'approval', limit: 'procurement', limitPaise: 1000000, estimatePaise: null, held: true });
+    rs.tagRef('J-1');
+    rs.add('reply', 'office.approval_needed → contractor', { key: 'office.approval_needed', to: 'contractor', people: 1 }, { ms: 1890 });
+    rs.add('reply', 'office.held_step → supervisor', { key: 'office.held_step', to: 'supervisor', people: 1 }, { ms: 1910 });
+  });
+  s.advance(6);
+  await said(rs, contractor, 'OK J-1', none, () => runTool(s.site.tools, supervisor, { tool: 'request_jcb', args: { site: 'Shivpuri', day: '2026-10-29', time: '08:00', hoursTenths: 60 } }), 'request_jcb');
   const orderId = /** @type {{order_id: string}} */ (s.siteCore.ledger.orders()[0]).order_id;
   s.advance(25);
-  must(await runTool(s.jcb.tools, owner, { tool: 'reply_booking', args: { orderId, answer: 'yes', ratePaise: 120000 } }), 'reply_booking');
+  await settle();
+  await said(rj, owner, 'हाँ 1200', none, () => runTool(s.jcb.tools, owner, { tool: 'reply_booking', args: { orderId, answer: 'yes', ratePaise: 120000 } }), 'reply_booking');
   s.advance(23 * 60 + 10); // next morning, 08:05 IST
-  must(await runTool(s.jcb.tools, operator, { tool: 'record_meter', args: { orderId, which: 'start', valueTenths: 12345, sha256: SHA_START, takenAt: '2026-10-29T02:33:00Z' } }), 'meter start');
+  const meterPhoto = (/** @type {string} */ raw, /** @type {number} */ v, /** @type {number | null} */ start) => (/** @type {Recorder} */ rec) => {
+    muse(rec, 'photo kind: meter', { job: 'photo_kind', vision: true, kind: 'meter', clear: true }, 1380);
+    muse(rec, `meter reads ${raw}`, { job: 'meter', vision: true, kind: 'hour_meter', raw, valueTenths: v, clear: true, dashClock: null }, 2620);
+    rec.add('check', 'meter reading clear and consistent ✓ → recorded at once', { pass: true, name: 'meter_photo', which: start === null ? 'start' : 'end', valueTenths: v, startTenths: start, endTenths: null });
+  };
+  await said(rj, operator, null, meterPhoto('1234.5', 12345, null), () => runTool(s.jcb.tools, operator, { tool: 'record_meter', args: { orderId, which: 'start', valueTenths: 12345, sha256: SHA_START, takenAt: '2026-10-29T02:33:00Z' } }), 'meter start');
   s.advance(6 * 60 + 20);
-  must(await runTool(s.jcb.tools, operator, { tool: 'record_meter', args: { orderId, which: 'end', valueTenths: 12406, sha256: SHA_END, takenAt: '2026-10-29T08:52:00Z' } }), 'meter end');
+  await said(rj, operator, null, meterPhoto('1240.6', 12406, 12345), () => runTool(s.jcb.tools, operator, { tool: 'record_meter', args: { orderId, which: 'end', valueTenths: 12406, sha256: SHA_END, takenAt: '2026-10-29T08:52:00Z' } }), 'meter end');
   s.advance(40);
-  must(await runTool(s.jcb.tools, owner, { tool: 'send_bill', args: { orderId } }), 'send_bill');
+  await said(rj, owner, 'बिल', none, () => runTool(s.jcb.tools, owner, { tool: 'send_bill', args: { orderId } }), 'send_bill');
+  await settle();
   s.advance(95);
-  must(await runTool(s.site.tools, contractor, { tool: 'dispute_bill', args: { orderId, hoursTenths: 55, reason: 'machine stood 36 minutes for the lunch break' } }), 'dispute_bill');
+  await said(rs, contractor, 'नहीं 5.5 लंच में 36 मिनट मशीन खड़ी रही', none, () => runTool(s.site.tools, contractor, { tool: 'dispute_bill', args: { orderId, hoursTenths: 55, reason: 'machine stood 36 minutes for the lunch break' } }), 'dispute_bill');
+  await settle();
   s.advance(30);
-  must(await runTool(s.jcb.tools, owner, { tool: 'send_correction', args: { orderId, hoursTenths: 55 } }), 'send_correction');
+  await said(rj, owner, 'सुधार 5.5 घंटे', (rec) => muse(rec, 'understand → send_correction', { job: 'understand', tools: 7, calls: [{ tool: 'send_correction', args: { ref: 'J-1', hours: '5.5' } }] }, 1520),
+    () => runTool(s.jcb.tools, owner, { tool: 'send_correction', args: { orderId, hoursTenths: 55 } }), 'send_correction');
   s.advance(12);
-  must(await runTool(s.site.tools, contractor, { tool: 'accept_bill', args: { orderId } }), 'accept_bill');
+  await said(rs, contractor, 'हाँ', none, () => runTool(s.site.tools, contractor, { tool: 'accept_bill', args: { orderId } }), 'accept_bill');
   s.advance(20 * 60);
-  must(await runTool(s.site.tools, contractor, { tool: 'claim_payment', args: { orderId, amountPaise: 660000, utr: '000000000001', paidOn: '2026-10-30', screenshotSha256: SHA_UPI } }), 'claim_payment');
+  await said(rs, contractor, null, (rec) => {
+    muse(rec, 'photo kind: upi', { job: 'photo_kind', vision: true, kind: 'upi', clear: true }, 1290);
+    muse(rec, 'UPI receipt: ₹6600 success', { job: 'upi', vision: true, kind: 'upi_payment', amountPaise: 660000, utr: '000000000001', status: 'success', date: '2026-10-30', clock: null, clear: true }, 2950);
+    rec.add('check', 'UPI amount ✓ = bill: ₹6,600 / ₹6,600', { pass: true, name: 'upi_amount', paidPaise: 660000, billPaise: 660000, utr: '000000000001' });
+  }, () => runTool(s.site.tools, contractor, { tool: 'claim_payment', args: { orderId, amountPaise: 660000, utr: '000000000001', paidOn: '2026-10-30', screenshotSha256: SHA_UPI } }), 'claim_payment');
   s.advance(50);
-  must(await runTool(s.jcb.tools, owner, { tool: 'confirm_payment', args: { orderId } }), 'confirm_payment');
+  await said(rj, owner, 'हाँ', none, () => runTool(s.jcb.tools, owner, { tool: 'confirm_payment', args: { orderId } }), 'confirm_payment');
   await settle();
 }
 
 /**
- * The material job with the supplier: 50 bags of cement → yes at ₹350/बोरी → delivery with challan
- * 412 → the site counts 48 → bill 50 × ₹350 → dispute 48 → correction → accept → payment claim →
- * settled. The site's count is a local NOTE on the contractor's ledger only.
+ * The material job with the supplier: 50 bags of cement (held for the contractor's OK) → yes at
+ * ₹350/बोरी → delivery with challan 412 → the site counts 48 → bill 50 × ₹350 → dispute 48 →
+ * correction → accept → payment claim → settled. The site's count is a local NOTE on the
+ * contractor's ledger only.
  * @param {Awaited<ReturnType<typeof setup>>} s
  */
 async function materialJob(s) {
+  const { site: rs, sup: rp } = s.traces;
   s.advance(30);
-  must(await runTool(s.site.tools, supervisor, { tool: 'request_material', args: { site: 'Shivpuri', day: '2026-10-31', time: '09:00', items: [CEMENT] } }), 'request_material');
+  await withTrace(rs, { convo: rs.convoOf(supervisor), role: 'supervisor', text: 'परसों शिवपुरी में सीमेंट 50 बोरी सुबह 9 बजे' }, async () => {
+    rs.add('received', 'text from supervisor', { channel: 'text', role: 'supervisor', text: rs.words('परसों शिवपुरी में सीमेंट 50 बोरी सुबह 9 बजे') });
+    muse(rs, 'understand → request_material', { job: 'understand', tools: 9, calls: [{ tool: 'request_material', args: { site: 'Shivpuri', day: 'day_after', time: '9', items: [{ name: 'सीमेंट', quantity: '50', unit: 'बोरी' }] } }] }, 2110);
+    rs.add('check', 'approval needed: value cannot be estimated → held for the contractor', { pass: false, name: 'approval', limit: 'procurement', limitPaise: 1000000, estimatePaise: null, held: true });
+    rs.tagRef('P-1');
+    rs.add('reply', 'office.approval_needed → contractor', { key: 'office.approval_needed', to: 'contractor', people: 1 }, { ms: 2160 });
+    rs.add('reply', 'office.held_step → supervisor', { key: 'office.held_step', to: 'supervisor', people: 1 }, { ms: 2180 });
+  });
+  s.advance(4);
+  await said(rs, contractor, 'OK P-1', none, () => runTool(s.site.tools, supervisor, { tool: 'request_material', args: { site: 'Shivpuri', day: '2026-10-31', time: '09:00', items: [CEMENT] } }), 'request_material');
   const order = /** @type {{order_id: string}} */ (s.siteCore.ledger.orders().find((/** @type {any} */ o) => o.kind === 'material'));
   const orderId = order.order_id;
+  await settle();
   s.advance(40);
-  must(await runTool(s.sup.tools, supplier, { tool: 'reply_order', args: { orderId, answer: 'yes', ratesPaise: [35000] } }), 'reply_order');
+  await said(rp, supplier, 'हाँ 350', none, () => runTool(s.sup.tools, supplier, { tool: 'reply_order', args: { orderId, answer: 'yes', ratesPaise: [35000] } }), 'reply_order');
   s.advance(22 * 60 + 15); // 31 Oct, 09:10 IST
-  must(await runTool(s.sup.tools, supplier, { tool: 'record_delivery', args: { orderId, items: [CEMENT], sha256: SHA_CHALLAN, challanNo: '412' } }), 'record_delivery');
+  await said(rp, supplier, null, (rec) => {
+    muse(rec, 'photo kind: challan', { job: 'photo_kind', vision: true, kind: 'challan', clear: true }, 1410);
+    muse(rec, 'challan 412: 1 item(s)', { job: 'challan', vision: true, kind: 'challan', challanNo: '412', items: [CEMENT], clear: true, signed: null }, 3240);
+  }, () => runTool(s.sup.tools, supplier, { tool: 'record_delivery', args: { orderId, items: [CEMENT], sha256: SHA_CHALLAN, challanNo: '412' } }), 'record_delivery');
   await settle();
   s.advance(35);
-  must(await runTool(s.site.tools, supervisor, { tool: 'confirm_count', args: { orderId, qtysHundredths: [4800] } }), 'confirm_count');
+  await said(rs, supervisor, '48', none, () => runTool(s.site.tools, supervisor, { tool: 'confirm_count', args: { orderId, qtysHundredths: [4800] } }), 'confirm_count');
   s.advance(50);
-  must(await runTool(s.sup.tools, supplier, { tool: 'send_bill', args: { orderId } }), 'send_bill (material)');
+  await said(rp, supplier, 'बिल', none, () => runTool(s.sup.tools, supplier, { tool: 'send_bill', args: { orderId } }), 'send_bill (material)');
+  await settle();
   s.advance(70);
-  must(await runTool(s.site.tools, contractor, { tool: 'dispute_bill', args: { orderId, qtyHundredths: 4800, reason: 'साइट पर 48 बोरी गिनी' } }), 'dispute_bill (material)');
+  await said(rs, contractor, 'नहीं 48 साइट पर 48 बोरी गिनी', none, () => runTool(s.site.tools, contractor, { tool: 'dispute_bill', args: { orderId, qtyHundredths: 4800, reason: 'साइट पर 48 बोरी गिनी' } }), 'dispute_bill (material)');
+  await settle();
   s.advance(45);
-  must(await runTool(s.sup.tools, supplier, { tool: 'send_correction', args: { orderId, qtysHundredths: [4800] } }), 'send_correction (material)');
+  await said(rp, supplier, 'सुधार 48', (rec) => muse(rec, 'understand → send_correction', { job: 'understand', tools: 7, calls: [{ tool: 'send_correction', args: { ref: 'P-1', quantities: ['48'] } }] }, 1660),
+    () => runTool(s.sup.tools, supplier, { tool: 'send_correction', args: { orderId, qtysHundredths: [4800] } }), 'send_correction (material)');
   s.advance(15);
-  must(await runTool(s.site.tools, contractor, { tool: 'accept_bill', args: { orderId } }), 'accept_bill (material)');
+  await said(rs, contractor, 'हाँ', none, () => runTool(s.site.tools, contractor, { tool: 'accept_bill', args: { orderId } }), 'accept_bill (material)');
   s.advance(26 * 60);
-  must(await runTool(s.site.tools, contractor, { tool: 'claim_payment', args: { orderId, amountPaise: 1680000, utr: '000000000002', paidOn: '2026-11-01', screenshotSha256: SHA_UPI_2 } }), 'claim_payment (material)');
+  await said(rs, contractor, null, (rec) => {
+    muse(rec, 'photo kind: upi', { job: 'photo_kind', vision: true, kind: 'upi', clear: true }, 1240);
+    muse(rec, 'UPI receipt: ₹16800 success', { job: 'upi', vision: true, kind: 'upi_payment', amountPaise: 1680000, utr: '000000000002', status: 'success', date: '2026-11-01', clock: null, clear: true }, 3010);
+    rec.add('check', 'UPI amount ✓ = bill: ₹16,800 / ₹16,800', { pass: true, name: 'upi_amount', paidPaise: 1680000, billPaise: 1680000, utr: '000000000002' });
+  }, () => runTool(s.site.tools, contractor, { tool: 'claim_payment', args: { orderId, amountPaise: 1680000, utr: '000000000002', paidOn: '2026-11-01', screenshotSha256: SHA_UPI_2 } }), 'claim_payment (material)');
   s.advance(40);
-  must(await runTool(s.sup.tools, supplier, { tool: 'confirm_payment', args: { orderId } }), 'confirm_payment (material)');
+  await said(rp, supplier, 'हाँ', none, () => runTool(s.sup.tools, supplier, { tool: 'confirm_payment', args: { orderId } }), 'confirm_payment (material)');
   await settle();
 }
 
 /**
- * Runs both jobs and returns the three ledgers as the export.
+ * Runs both jobs and returns the three ledgers, each with its trace, as the export.
  * @returns {Promise<Export>}
  */
 export async function buildSample() {
@@ -197,9 +307,11 @@ export async function buildSample() {
   try {
     await jcbJob(s);
     await materialJob(s);
+    // The explanations run after the answer, on the receiving side; let them finish.
+    await new Promise((r) => setTimeout(r, 50));
 
-    /** @param {typeof s.jcbCore} core @returns {LedgerExport} */
-    const dump = (core) => {
+    /** @param {typeof s.jcbCore} core @param {Recorder} rec @returns {LedgerExport} */
+    const dump = (core, rec) => {
       const orders = /** @type {LedgerExport['orders']} */ (core.ledger.orders());
       const events = orders.flatMap((o) => core.ledger.events(o.order_id)).sort((a, b) => a.seq - b.seq);
       const refs = openRefs(core.ledger);
@@ -209,11 +321,17 @@ export async function buildSample() {
         const ref = refs.refOf(o.order_id);
         if (ref !== null) refByOrder[o.order_id] = ref;
       }
-      return { agentId: core.self.id, publicKey: publicKeyText(core.self.privateKey), orders, events, chain: core.ledger.verifyChain(), refs: refByOrder };
+      // As the service's /agents/<name>/trace serves it: each entry with its order and reference.
+      const trace = rec.list().map((e) => {
+        const orderId = e.orderId ?? (e.ref ? refs.orderOfRef(e.ref) ?? null : null);
+        return { ...e, orderId, ref: e.ref ?? (orderId ? refs.refOf(orderId) : null) };
+      });
+      return { agentId: core.self.id, publicKey: publicKeyText(core.self.privateKey), orders, events, chain: core.ledger.verifyChain(), refs: refByOrder, trace };
     };
-    return { v: 'hb-export/0.1', exportedAt: new Date(s.jcbCore.now()).toISOString(), jcb: dump(s.jcbCore), contractor: dump(s.siteCore), supplier: dump(s.supCore) };
+    return { v: 'hb-export/0.1', exportedAt: new Date(s.jcbCore.now()).toISOString(), jcb: dump(s.jcbCore, s.traces.jcb), contractor: dump(s.siteCore, s.traces.site), supplier: dump(s.supCore, s.traces.sup) };
   } finally {
     await s.close();
+    for (const rec of Object.values(s.traces)) rec.close();
   }
 }
 
@@ -221,5 +339,5 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const out = new URL('./export.json', import.meta.url);
   const sample = await buildSample();
   writeFileSync(out, `${JSON.stringify(sample, null, 2)}\n`);
-  console.log(`wrote ${fileURLToPath(out)}: ${sample.jcb.events.length} JCB events, ${sample.contractor.events.length} contractor events, ${sample.supplier.events.length} supplier events`);
+  console.log(`wrote ${fileURLToPath(out)}: ${sample.jcb.events.length} JCB events, ${sample.contractor.events.length} contractor events, ${sample.supplier.events.length} supplier events, ${sample.jcb.trace?.length} + ${sample.contractor.trace?.length} + ${sample.supplier.trace?.length} trace entries`);
 }

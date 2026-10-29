@@ -12,6 +12,7 @@ import { openRefs } from '../ledger/refs.js';
 import { variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
 import { differenceFacts } from './explain-facts.js';
+import { traceCheck } from '../trace/trace.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -225,6 +226,8 @@ export function createSupplierAgent(o) {
     else if (siteNo !== null && d.number !== null && !sameChallanNo(siteNo, d.number)) key = 'supplier.site_receipt_number_differs';
     else if (siteNo === null || d.number === null) key = 'supplier.site_receipt_number_unknown';
     else if (countDifferences(b.items, d.items).length > 0) key = 'supplier.site_receipt_differs';
+    traceCheck(`site's signed copy: ${key.replace('supplier.site_receipt_', '').replaceAll('_', ' ')} (challan ${siteNo ?? '?'} / ${d?.number ?? '?'})`,
+      key === 'supplier.site_receipt_matches', { name: 'site_receipt', site: siteNo, delivery: d?.number ?? null, signed: typeof b.signed === 'boolean' ? b.signed : null }, m.order_id);
     await tell('supplier', key, params);
   }
 

@@ -390,3 +390,32 @@ display/make/layout; same panel shape with another brand plate: no, make; blurre
 panel against a close-up of a plain LCD came back unsure (twice), so it is read back; in the live
 case the display date and the 24-hour rule refuse that photo too. p50 8 s, run alongside the meter
 reading. The prompt was not tuned on these images.
+
+## Inside the agent (29 Oct 2026)
+
+Judges see the WhatsApp chats and the signed ledgers; the trace shows what each agent did in
+between, per order, live.
+
+* `src/trace/trace.js`: per agent, an append-only working log in its own SQLite file
+  (`<dataDir>/<name>.trace.db`, in memory without a data dir), never in the hash chain and never in a
+  protocol message; the last 2,000 entries are kept. Entries `{at, agent, orderId, ref, convo, kind,
+  title, detail, ms}`, kinds `received`, `model`, `check`, `decision`, `signed_out`, `signed_in`,
+  `ledger`, `reply`. A handling (one person's message, or one A2A message) runs in an
+  `AsyncLocalStorage` context: its entries carry the conversation (a keyed hash of agent, line and
+  phone) and join the order as soon as one is written; a held step's entries join through its
+  reference; the person's understood message before a "हाँ" that creates the order joins it too.
+* `src/trace/hooks.js`: wrappers at the central places, contracts unchanged: Muse Spark (job read
+  from the request's shape: schema = explain, an `answer` tool = ask, else understand), the photo
+  readers and voice, the committing tools (the decision, recorded before the step runs), the
+  ledger's `append`/`ensureOrder`, the link's sends with the A2A transport timed, and
+  `createA2AHandler`'s new optional `onReceived` observer. Named checks are one `traceCheck(...)`
+  line at the place each check is made (meter continuity and photo consistency, hours × rate, UPI
+  amount vs bill, site count vs signed delivery, challan numbers, bill vs delivery × rate, the site's
+  signed copy, the explanation and answer guards); the approval gate's check wraps `office.commit`
+  and calls the office's own `holds`.
+* Privacy: no phone, key, prompt, image or audio bytes; people's words only with `HB_TRACE_TEXT=1`,
+  every run of 8+ digits masked, a UTR only in its own field. Every recording is caught and dropped
+  on failure; `test/trace/app-trace.test.js` runs both jobs with all traces broken and gets the same
+  messages to the same people.
+* `GET /agents/<name>/trace?since=<iso>&order=<ref>`: the export's token rule. The judge page shows
+  the timeline under each ledger column and polls every 3 s when "live" is on (`web/README.md`).

@@ -1,6 +1,8 @@
 // Explanations are display-only. Code supplies the facts, figure list and numeric whitelist;
 // neither the model's words nor its tool calls become a decision or a ledger entry.
 
+import { traceCheck } from '../trace/trace.js';
+
 /** @typedef {'hours'|'quantity'|'money'|'identifier'|'date'|'time'} NumberKind */
 /** @typedef {{value:string, kind:NumberKind}} AllowedNumber */
 /** @typedef {{context:object, figures:string, allowedNumbers:AllowedNumber[]}} ExplanationFacts */
@@ -284,8 +286,11 @@ export async function explainDifference({ spark, facts, audience }) {
       || !('toolCalls' in response) || !Array.isArray(response.toolCalls) || response.toolCalls.length !== 0
       || !('json' in response) || !response.json || typeof response.json !== 'object' || Array.isArray(response.json)) return fallback;
     const json = response.json;
-    if (Object.keys(json).length !== 1 || !('explanation' in json) || typeof json.explanation !== 'string'
-      || !explanationSupported(json.explanation, facts.allowedNumbers, recordedReasons(facts.context))) return fallback;
+    if (Object.keys(json).length !== 1 || !('explanation' in json) || typeof json.explanation !== 'string') return fallback;
+    const violation = guardViolation(json.explanation, facts.allowedNumbers, recordedReasons(facts.context));
+    traceCheck(violation === null ? 'every number in the explanation is in the ledger ✓, no side taken ✓' : `explanation dropped ✗ (${violation}); plain figures sent`,
+      violation === null, { name: 'explanation_guard', rule: violation, allowedNumbers: facts.allowedNumbers.length });
+    if (violation !== null) return fallback;
     return { key: 'explain.wrapper', params: { explanation: json.explanation.trim(), figures: facts.figures } };
   } catch { return fallback; }
   finally { if (timer !== undefined) clearTimeout(timer); }

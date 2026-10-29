@@ -6,7 +6,7 @@ Each agent works for its own owner on WhatsApp: it keeps that business's ledger,
 
 Built during the Meta Global AI Developer Hackathon (Startup track, *Build for Your World*), 27 October to 4 November 2026.
 
-- **Live judge page:** https://16-4-100-70.sslip.io/judge/ (three ledgers side by side, every message with its signature check)
+- **Live judge page:** https://16-4-100-70.sslip.io/judge/ (three ledgers side by side, every message with its signature check; inside the agent: every Muse call, every code check, every decision, live)
 - **Agent Cards:** `https://16-4-100-70.sslip.io/agents/{jcb,site,supplier}/.well-known/agent-card.json`
 - **Demo video:** *(link added at submission)*
 
@@ -70,6 +70,7 @@ flowchart LR
 - **Evidence on request** (`src/agents/evidence.js`): on a dispute, a count difference or `सबूत J-1`, an agent asks the other for the photo behind a record; the photo's owner is asked first and only their हाँ sends it, hash-checked against the fingerprint already in the asker's ledger; नहीं sends a signed refusal (`declined_by_owner`).
 - **Explanations** (`src/agents/explain.js`): when two sides' figures differ, each agent gives Muse Spark the facts from its own ledger and gets back a short, neutral Hindi explanation of where the figures differ and what each rests on. Code checks that every number in it exists in the ledger and that it takes no side, tells no one to pay and invents no reason; otherwise only the plain figures go out.
 - **Ask anything** (`src/agents/ask.js`): a question about one's own records goes to a read-only route. Muse Spark chooses lookups (orders, one order, totals, payments, stock) over that agent's own ledger, filtered by the person's role; code computes every figure; Muse Spark writes the answer, and code checks that every number came from a lookup and that it takes no side and asks no one to pay. Otherwise a plain answer written by code goes out. Nothing is written.
+- **Inside the agent** (`src/trace/`): each agent keeps a working trace apart from its ledger (never in the hash chain or a message): which Muse model did which job, its latency and structured output, each named code check with its figures, who decided with which reply, each signed message and its receipt, each ledger row. The judge page shows it per order under each ledger, live every 3 s.
 
 ## Where Meta's models do the work
 

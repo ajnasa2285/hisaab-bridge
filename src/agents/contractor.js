@@ -12,6 +12,7 @@ import { openRefs } from '../ledger/refs.js';
 import { t, variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
 import { differenceFacts } from './explain-facts.js';
+import { traceCheck } from '../trace/trace.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -94,6 +95,12 @@ export function createContractorAgent(o) {
    */
   const compareCount = (orderId, count, siteNo, d) => {
     const numbersDiffer = siteNo !== null && d.number !== null && !sameChallanNo(siteNo, d.number);
+    const itemsDiffer = countDifferences(count, d.items).length > 0;
+    traceCheck(`site count vs signed delivery ${itemsDiffer ? '✗ differs' : '✓ matches'}: ${itemsText(count)} / ${itemsText(d.items)}`, !itemsDiffer,
+      { name: 'count_vs_delivery', count, delivered: d.items }, orderId);
+    if (siteNo !== null && d.number !== null) {
+      traceCheck(`challan number ${numbersDiffer ? '✗' : '✓'} ${siteNo} ${numbersDiffer ? '≠' : '='} ${d.number}`, !numbersDiffer, { name: 'challan_number', site: siteNo, delivery: d.number }, orderId);
+    }
     return {
       same: countDifferences(count, d.items).length === 0 && !numbersDiffer,
       params: { ref: refOf(orderId), site: siteOf(orderId), count: itemsText(count), siteNo: siteNo ?? '—', challan: itemsText(d.items), challanNo: d.number ?? '—' },
@@ -262,6 +269,8 @@ export function createContractorAgent(o) {
           body: { kind: 'site_count', items }, at: new Date(agent.now()).toISOString(),
         });
         if (stored === null) return no('common.wrong_state');
+        traceCheck(`site count vs signed delivery ${sameItems(items, d.items) ? '✓ matches' : '✗ differs'}: ${itemsText(items)} / ${itemsText(d.items)}`,
+          sameItems(items, d.items), { name: 'count_vs_delivery', count: items, delivered: d.items }, a.orderId);
         if (!sameItems(items, d.items)) await o.evidence?.countDifference(a.orderId);
         const site = siteOf(a.orderId);
         const ref = refOf(a.orderId);
@@ -432,7 +441,9 @@ export function createContractorAgent(o) {
     const rates = agreedRates(events);
     const total = rupees(b.totalPaise);
     const lines = linesText(b.lines, d?.items ?? []);
-    if (!d || !rates || !billFollows(/** @type {{lines: any[], totalPaise: number}} */ (b), d.items, rates, { sameQty: m.type === 'BILL' })) {
+    const follows = !!d && !!rates && billFollows(/** @type {{lines: any[], totalPaise: number}} */ (b), d.items, rates, { sameQty: m.type === 'BILL' });
+    traceCheck(`bill = delivered × agreed rate ${follows ? '✓' : '✗'} ${total}`, follows, { name: 'bill_follows', totalPaise: b.totalPaise, delivered: d?.items ?? null }, m.order_id);
+    if (!follows || !d || !rates) {
       const want = d && rates ? materialBillBody(d.items, rates, { sha256: d.sha256, number: d.number, sentAt: d.at }) : null;
       await tell('contractor', 'site.material_bill_mismatch', { ref, site, lines, total, expected: want && d ? linesText(want.lines, d.items) : '—', expectedTotal: want ? rupees(want.totalPaise) : '—' });
       const explanation = await explainDifference({ spark: o.spark, audience: 'buyer', facts: differenceFacts(ledger, m.order_id, ref) });

@@ -6,8 +6,13 @@
 // Sources: the bundled sample (default), a file from disk, or the live ledgers of the server the
 // page is served from (`../agents/<name>/export` with the access key as a Bearer header). The key
 // lives in sessionStorage only: never in the address, never in localStorage.
+//
+// Inside the agent: under each side's column, that agent's own trace for the order (every Muse call,
+// every code check, every decision, each signed message linked to its ledger row), from the export's
+// `trace` or live from `../agents/<name>/trace`; "live" polls every 3 s while a key is entered.
 
 import { TEXTS } from './texts.js';
+import { isTrace, orderTrace, summaryText, traceRow, traceSummary } from './trace-view.js';
 
 /** @typedef {'hi'|'en'} Lang */
 /** @typedef {typeof TEXTS['hi']} Texts */
@@ -16,7 +21,8 @@ import { TEXTS } from './texts.js';
  *   body: any, at: string, prevHash: string, hash: string}} Ev
  */
 /** @typedef {{order_id: string, kind: string, counterparty: string, site: string, created_at: string}} Order */
-/** @typedef {{agentId: string, publicKey: string, orders: Order[], events: Ev[], chain: {ok: boolean, events?: number, brokenAt?: number}, refs?: Record<string, string>}} LedgerExport */
+/** @typedef {import('./trace-view.js').TraceEntry} TraceEntry */
+/** @typedef {{agentId: string, publicKey: string, orders: Order[], events: Ev[], chain: {ok: boolean, events?: number, brokenAt?: number}, refs?: Record<string, string>, trace?: TraceEntry[]}} LedgerExport */
 /** @typedef {'jcb'|'contractor'|'supplier'} SideName */
 /** @typedef {{v: string, exportedAt: string, jcb?: LedgerExport|null, contractor?: LedgerExport|null, supplier?: LedgerExport|null}} Export */
 /** @typedef {{kind: 'sample'|'file'|'live', missing: SideName[]}} Source */
@@ -28,6 +34,7 @@ const SESSION_KEY = 'hb-judge-key';
 const AGENT_PATH = { jcb: 'jcb', contractor: 'site', supplier: 'supplier' };
 /** @type {SideName[]} */
 const SIDES = ['jcb', 'contractor', 'supplier'];
+const LIVE_MS = 3000;
 
 /** @type {Lang} */
 let lang = 'hi';
@@ -469,9 +476,54 @@ function orderColumn(name, side, orderId, t) {
   const ctx = { delivery: delivery ? delivery.body.body : null };
   const replaced = new Set(events.filter((e) => e.type === 'CORRECTION').map((e) => String(e.body.body?.replaces)));
   const list = el('ol', 'events');
-  list.append(...events.map((e) => eventCard(e, t, replaced, ctx)));
+  list.append(...events.map((e) => {
+    const li = eventCard(e, t, replaced, ctx);
+    li.id = `ev-${name}-${e.seq}`;
+    return li;
+  }));
   section.append(list);
+  section.append(insideAgent(name, side, orderId, events, t));
   return section;
+}
+
+/**
+ * Inside the agent: this side's trace entries for the order as a timeline, with a one-line summary.
+ * Muse steps are marked as Meta model work; checks carry ✓/✗; a signed message or a written row
+ * links to its ledger card above.
+ * @param {SideName} name @param {LedgerExport} side @param {string} orderId @param {Ev[]} events @param {Texts} t
+ */
+function insideAgent(name, side, orderId, events, t) {
+  const box = el('section', 'inside');
+  box.append(el('h3', undefined, `${t.inside_title} — ${sideTitle(name, t)}`));
+  const entries = orderTrace(side.trace, orderId);
+  if (entries.length === 0) {
+    box.append(el('p', 'hint', t.inside_none));
+    return box;
+  }
+  box.append(el('p', 'inside-sum', summaryText(traceSummary(entries), t)));
+  const list = el('ol', 'trace-list');
+  for (const e of entries) {
+    const r = traceRow(e, t, events);
+    const li = el('li', r.cls);
+    li.append(el('span', 'tr-icon', r.icon));
+    const main = el('div', 'tr-main');
+    const head = el('div', 'tr-head');
+    head.append(el('span', 'tr-kind', r.label));
+    if (r.meta) head.append(el('span', 'tr-meta', 'META'));
+    head.append(el('span', 'tr-when', when(r.at)));
+    main.append(head);
+    main.append(el('div', 'tr-text', r.text));
+    if (r.extra) main.append(el('div', 'tr-extra', r.extra));
+    if (r.seq !== null) {
+      const a = /** @type {HTMLAnchorElement} */ (el('a', 'tr-link', `${t.to_ledger} #${r.seq}`));
+      a.href = `#ev-${name}-${r.seq}`;
+      main.append(a);
+    }
+    li.append(main);
+    list.append(li);
+  }
+  box.append(list);
+  return box;
 }
 
 /**
@@ -531,6 +583,9 @@ function renderOrders(x, t) {
     if (theirRef) head.append(el('span', undefined, `${t.their_ref}: ${theirRef}`));
     head.append(el('span', 'mono', `${t.order}: ${short(orderId, 8)}`));
     if (x.contractor && countDiffers(x.contractor.events.filter((e) => e.orderId === orderId))) head.append(el('span', 'diffmark', `${t.site_count}: ${t.differs}`));
+    // Both agents together: how much of this order was Meta's models, code checks and people.
+    const both = [...orderTrace(x[seller]?.trace, orderId), ...orderTrace(x.contractor?.trace, orderId)];
+    if (both.length) head.append(el('span', 'inside-sum', summaryText(traceSummary(both), t)));
     block.append(head);
     const cols = el('div', 'ledgers');
     cols.append(orderColumn(seller, x[seller], orderId, t), orderColumn('contractor', x.contractor, orderId, t));
@@ -590,6 +645,8 @@ async function render(x) {
 
   pendingBadges = [];
   renderOrders(x, t);
+  // Live: each timeline shows its newest entry.
+  if (liveTimer !== null) scrollTimelines();
   await verifyAll(x);
 }
 
@@ -717,11 +774,34 @@ async function fetchSide(name, key) {
   }
 }
 
-/** @param {string} key @returns {Promise<boolean>} whether anything was shown */
-async function loadLive(key) {
+/**
+ * One agent's trace from the server, same key; null when the server has none (an older server, or
+ * a key it does not accept).
+ * @param {SideName} name @param {string} key
+ * @returns {Promise<TraceEntry[]|null>}
+ */
+async function fetchTrace(name, key) {
+  try {
+    const r = await fetch(`../agents/${AGENT_PATH[name]}/trace`, { headers: { authorization: `Bearer ${key}` }, cache: 'no-store', credentials: 'omit' });
+    if (!r.ok) return null;
+    const x = await r.json();
+    return x && isTrace(x.entries) ? x.entries : null;
+  } catch {
+    return null;
+  }
+}
+
+/** What was last shown live, to redraw only when something changed. */
+let liveShown = '';
+/** @type {ReturnType<typeof setInterval> | null} */
+let liveTimer = null;
+
+/** @param {string} key @param {{quiet?: boolean}} [o] quiet: a poll, no "loading" notice @returns {Promise<boolean>} whether anything was shown */
+async function loadLive(key, o = {}) {
   const t = T();
-  notice((tt) => tt.live_loading);
-  const sides = await Promise.all(SIDES.map((n) => fetchSide(n, key)));
+  if (!o.quiet) notice((tt) => tt.live_loading);
+  const [sides, traces] = await Promise.all([Promise.all(SIDES.map((n) => fetchSide(n, key))), Promise.all(SIDES.map((n) => fetchTrace(n, key)))]);
+  sides.forEach((s, i) => { if (s && traces[i]) s.trace = /** @type {TraceEntry[]} */ (traces[i]); });
   /** @type {SideName[]} */
   const missing = SIDES.filter((_, i) => sides[i] === null);
   if (missing.length === SIDES.length) {
@@ -732,6 +812,10 @@ async function loadLive(key) {
   const first = /** @type {{exportedAt?: string} | undefined} */ (sides.find((s) => s));
   /** @type {Export} */
   const x ={ v: 'hb-export/0.1', exportedAt: first?.exportedAt ?? '', jcb: sides[0], contractor: sides[1], supplier: sides[2] };
+  // A poll that brings nothing new leaves the page as it is (no redraw, no jump).
+  const seen = JSON.stringify(sides.map((s) => [s?.events.length ?? -1, s?.trace?.at(-1)?.id ?? -1]));
+  if (o.quiet && seen === liveShown && source.kind === 'live') return true;
+  liveShown = seen;
   await show(x, { kind: 'live', missing });
   if (missing.length) notice((tt) => tt.live_partial.replace('{sides}', missing.map((n) => sideTitle(n, tt)).join(', ')));
   return true;
@@ -772,7 +856,41 @@ function savedKey() {
   await loadLive(key);
 });
 
-/** @type {HTMLButtonElement} */ (document.getElementById('use-sample')).addEventListener('click', () => { void loadSample(); });
+/** @type {HTMLButtonElement} */ (document.getElementById('use-sample')).addEventListener('click', () => {
+  stopLive();
+  void loadSample();
+});
+
+/** Stops polling and unticks the live box. */
+function stopLive() {
+  if (liveTimer !== null) clearInterval(liveTimer);
+  liveTimer = null;
+  /** @type {HTMLInputElement} */ (document.getElementById('live-toggle')).checked = false;
+}
+
+// Live: with a key entered, the ledgers and traces are fetched again every 3 s.
+/** @type {HTMLInputElement} */ (document.getElementById('live-toggle')).addEventListener('change', async (ev) => {
+  const box = /** @type {HTMLInputElement} */ (ev.target);
+  if (!box.checked) { stopLive(); return; }
+  const key = /** @type {HTMLInputElement} */ (document.getElementById('key')).value.trim() || savedKey();
+  if (!key) { box.checked = false; notice((t) => t.key_missing); return; }
+  try { sessionStorage.setItem(SESSION_KEY, key); } catch { /* the key then lives in the field only */ }
+  if (!(await loadLive(key))) { box.checked = false; return; }
+  let busy = false;
+  liveTimer = setInterval(async () => {
+    if (busy) return;
+    busy = true;
+    try { await loadLive(key, { quiet: true }); } finally { busy = false; }
+  }, LIVE_MS);
+  scrollTimelines();
+});
+
+/** Each timeline to its newest entry, at once (after layout, so the height is known). */
+function scrollTimelines() {
+  requestAnimationFrame(() => {
+    for (const l of document.querySelectorAll('.trace-list')) l.scrollTo({ top: l.scrollHeight, behavior: 'instant' });
+  });
+}
 
 const key0 = savedKey();
 /** @type {HTMLInputElement} */ (document.getElementById('key')).value = key0;

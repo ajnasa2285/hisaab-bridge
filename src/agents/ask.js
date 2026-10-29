@@ -13,6 +13,7 @@ import { openRefs, parseRef } from '../ledger/refs.js';
 import { blank, istDay } from '../orchestrator/units.js';
 import { day as dayName, hours as hoursText, qty as qtyText, rupees, tenths } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
+import { traceCheck } from '../trace/trace.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('../wa/directory.js').Role} Role */
@@ -556,7 +557,10 @@ export async function answerQuestion(o) {
       // An answer needs a lookup behind it; its words are display-only and never reach a tool.
       if (!done.some((l) => !l.data.error)) break;
       const said = typeof answer.args?.answer === 'string' ? answer.args.answer.trim() : '';
-      if (answerViolation(said, done.flatMap((l) => l.allowed)) !== null) break;
+      const violation = answerViolation(said, done.flatMap((l) => l.allowed));
+      traceCheck(violation === null ? `every number in the answer came from a lookup ✓ (${done.length} lookups)` : `answer dropped ✗ (${violation}); figures written by code`,
+        violation === null, { name: 'answer_guard', rule: violation, lookups: done.length });
+      if (violation !== null) break;
       const refs = [...new Set(done.flatMap((l) => l.refs))];
       return refs.length && refs.length <= 8 ? { key: 'records.answer', params: { answer: said, refs: refs.join(', ') } } : { key: 'records.answer_plain', params: { answer: said } };
     }
