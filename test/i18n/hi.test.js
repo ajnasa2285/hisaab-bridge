@@ -15,6 +15,7 @@ const CHASING = ['जल्दी', 'तुरंत', 'याद दिला',
 
 /** A sample value for every parameter, so every key can be filled. @type {Record<string, string|number>} */
 const SAMPLE = {
+  message: 'बिल मिला।', pct: 30, n: 5, metric: 'दर', value: '₹380/बोरी', min: '₹350/बोरी', max: '₹400/बोरी',
   who: 'सप्लायर', recordKind: 'चालान',
   details: 'नकद, अग्रिम', due: '₹3,000', credit: '₹200', waiting: '₹1,000', denied: '₹500',
   group: 'एक साथ P-1, P-2', shares: 'P-1 का हिस्सा ₹3,000', payments: 'पक्का भुगतान ₹4,000',

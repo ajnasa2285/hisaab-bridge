@@ -12,6 +12,7 @@ import { day as dayName, qty, rupees, tenths } from '../i18n/format.js';
 import { t, variant } from '../i18n/index.js';
 import { itemsText, signedWord, siteReceipt } from './material.js';
 import { orderBalanceText, orderPaymentText, paymentWaiting } from './payment-view.js';
+import { withUsual } from './usual.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('./common.js').Tool} Tool */
@@ -202,7 +203,15 @@ export function createOffice(o) {
   async function commit(person, tool, args) {
     const step = Object.hasOwn(o.tools, tool) ? o.tools[tool] : undefined;
     if (step?.hold && holds(person, tool, args)) return hold(person, tool, step.hold.limit, args, step.hold.estimatePaise(args));
-    return runTool(o.tools, person, { tool, args });
+    const result = await runTool(o.tools, person, { tool, args });
+    if (result.ok && person.role === 'supervisor' && NEW_ORDER_REF[tool]) {
+      const notes = step?.hold?.usualNote?.(args, false) ?? '';
+      if (notes) {
+        const notice = withUsual(result, notes);
+        await o.tell('contractor', notice.key, notice.params);
+      }
+    }
+    return result;
   }
 
   /**
@@ -228,7 +237,10 @@ export function createOffice(o) {
   async function hold(person, tool, limit, args, estimate) {
     const ref = knownOrder(args.orderId) ? refs.refOf(args.orderId) ?? refs.reserve('J') : refs.reserve(NEW_ORDER_REF[tool] ?? 'J');
     q.insertHeld.run(ref, JSON.stringify(person), tool, JSON.stringify(args), limit, estimate, nowIso());
-    await o.tell('contractor', variant('office.approval_needed', { estimate: estimate !== null }), { ref, by: nameOf(person), ...(estimate !== null ? { estimate: money(estimate) } : {}), step: stepText(tool, args) });
+    const notice = withUsual({ key: variant('office.approval_needed', { estimate: estimate !== null }),
+      params: { ref, by: nameOf(person), ...(estimate !== null ? { estimate: money(estimate) } : {}), step: stepText(tool, args) } },
+    o.tools[tool]?.hold?.usualNote?.(args) ?? '');
+    await o.tell('contractor', notice.key, notice.params);
     // One message to the supervisor: what was understood, and that it went for approval.
     const what = Object.hasOwn(o.tools, tool) ? o.tools[tool].summary?.(args) : undefined;
     return what ? ok('office.held_step', { ref, what: t(what.key, what.params) }) : ok('office.held', { ref });
@@ -275,7 +287,7 @@ export function createOffice(o) {
     await o.reply(h.person, note ? 'office.approved_note' : 'office.approved', { ref: c.ref, by: nameOf(person), ...(note ? { note } : {}) });
     const r = await runHeld(h);
     await o.reply(h.person, r.key, r.params);
-    return r;
+    return r.ok ? withUsual(r, o.tools[h.tool]?.hold?.usualNote?.(h.args, false) ?? '') : r;
   }
 
   /** What an order is about, in words. @param {string} orderId @param {string} kind */

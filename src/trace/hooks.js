@@ -5,6 +5,7 @@
 
 import { currentTrace } from './trace.js';
 import { paymentChecks } from './payments.js';
+import { usualChecks } from './usual.js';
 
 /** @typedef {import('./trace.js').Recorder} Recorder */
 
@@ -203,6 +204,7 @@ export function traceLedger(ledger, rec) {
         const orders = ledger.orders().filter((o) => o.counterparty === counterparty)
           .map((o) => ({ orderId: String(o.order_id), events: ledger.events(String(o.order_id)) }));
         for (const check of paymentChecks(r, orders)) rec.add('check', check.title, check.detail, { orderId: check.orderId });
+        for (const check of usualChecks(r, orders.flatMap((o) => o.events))) rec.add('check', check.title, check.detail, { orderId: check.orderId });
       }
     } catch { /* dropped */ }
     return r;

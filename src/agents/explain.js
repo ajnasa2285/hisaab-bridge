@@ -2,6 +2,7 @@
 // neither the model's words nor its tool calls become a decision or a ledger entry.
 
 import { traceCheck } from '../trace/trace.js';
+import { t } from '../i18n/index.js';
 
 /** @typedef {'hours'|'quantity'|'money'|'identifier'|'date'|'time'} NumberKind */
 /** @typedef {{value:string, kind:NumberKind}} AllowedNumber */
@@ -54,6 +55,7 @@ export function brief(c, audience) {
     `संदर्भ: ${str(c?.ref) || '—'}; काम: ${c?.kind === 'jcb_hours' ? 'JCB घंटे' : 'सामान'}`,
   ];
   if (c?.currentBill) out.push(`लागू बिल (${c.currentBill.source === 'CORRECTION' ? 'सुधरा हुआ' : 'मूल'}): ${billLine(c.currentBill)}`);
+  for (const row of c?.usualFigures ?? []) out.push(t('explain.figures.usual', row));
   const m = c?.meterEvidence;
   if (m && (m.start || m.end)) out.push(`मीटर फ़ोटो: शुरू ${m.start?.reading ?? '—'}, अंत ${m.end?.reading ?? '—'}; कोड से गिना अंतर ${m.computedHours ? `${m.computedHours} घंटे` : '—'}`);
   if (c?.signedDelivery) out.push(`विक्रेता की हस्ताक्षरित डिलीवरी${c.signedDelivery.challanNumber ? `, चालान ${c.signedDelivery.challanNumber}` : ''}: ${itemsLine(c.signedDelivery.items)}`);

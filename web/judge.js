@@ -19,6 +19,7 @@ import { isTrace, orderTrace, summaryText, traceRow, traceSummary } from './trac
 import { paymentPanel } from './payments-view.js';
 import { stateOf } from './order-state.js';
 import { learningCard, readLearning } from './learning-view.js';
+import { usualPanels } from './usual-view.js';
 
 /** @typedef {'hi'|'en'} Lang */
 /** @typedef {typeof TEXTS['hi']} Texts */
@@ -396,6 +397,25 @@ function ledgerCard(name, side, t, chain) {
   card.append(meta);
   const learning = readLearning(side.learning);
   if (learning) card.append(learningBox(learning, t));
+  const remembered = el('section', 'usual-figures');
+  remembered.append(el('h3', undefined, t.usual_title), el('p', 'hint', t.usual_note));
+  const panels = usualPanels(side.events, t);
+  if (!panels.length) remembered.append(el('p', 'hint', t.usual_empty));
+  for (const panel of panels) {
+    const party = el('section', 'usual-party');
+    party.append(el('h4', undefined, panel.counterparty));
+    const figures = el('ul', 'usual-list');
+    for (const figure of panel.rows) {
+      const item = el('li');
+      item.append(el('strong', undefined, `${figure.item} · ${figure.metric}`),
+        el('div', undefined, `${t.usual_median}: ${figure.median} · ${t.usual_count}: ${figure.n}`),
+        el('div', 'hint', `${t.usual_range}: ${figure.min} … ${figure.max} · ${t.usual_last}: ${figure.last}`));
+      figures.append(item);
+    }
+    party.append(figures);
+    remembered.append(party);
+  }
+  card.append(remembered);
   return card;
 }
 

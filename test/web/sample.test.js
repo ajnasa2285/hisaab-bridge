@@ -45,7 +45,7 @@ function checkExport(x) {
   assert.ok(jcbOrder && matOrder);
   assert.deepEqual([jcbOrder.counterparty, matOrder.counterparty], [x.jcb.agentId, x.supplier.agentId]);
   assert.deepEqual(x.jcb.orders.map((o) => o.order_id), [jcbOrder.order_id]);
-  assert.equal(x.supplier.orders.length, 3);
+  assert.equal(x.supplier.orders.length, 7);
   assert.equal(x.supplier.orders[0].order_id, matOrder.order_id);
   // References: the contractor's J-1 and P-1, each seller's own.
   assert.equal(x.contractor.refs?.[jcbOrder.order_id], 'J-1');
@@ -108,6 +108,13 @@ function checkExport(x) {
   for (const side of sides) for (const order of side.orders) assert.equal(stateOf(side.events.filter((e) => e.orderId === order.order_id)).fits, true, `${side.agentId}: ${side.refs?.[order.order_id]} display replay`);
   assert.equal(stateOf(x.contractor.events.filter((e) => e.orderId === p2)).state, 'settled');
   assert.equal(stateOf(x.contractor.events.filter((e) => e.orderId === p3)).state, 'payment_claimed');
+  const unusualOrder = x.supplier.orders[6].order_id;
+  assert.equal(stateOf(x.contractor.events.filter((e) => e.orderId === unusualOrder)).state, 'billed', 'unusual figure does not hold or accept');
+  for (const side of [x.contractor, x.supplier]) {
+    const check = side.trace?.find((e) => e.orderId === unusualOrder && e.detail.name === 'usual' && e.detail.metric === 'rate');
+    assert.ok(check);
+    assert.deepEqual([check.detail.value, check.detail.median, check.detail.n, check.detail.pct, check.detail.unusual], [50000, 38000, 4, 32, true]);
+  }
 }
 
 test('the committed sample export verifies: signatures and all three chains', () => {

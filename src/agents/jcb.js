@@ -4,6 +4,7 @@
 // is computed by a model.
 
 import { randomUUID } from 'node:crypto';
+import { rateUsualNotes, withUsual } from './usual.js';
 import { tenths as hours, rupees, day as dayName } from '../i18n/format.js';
 import { deliveryResult, isIso, isSha256, isTime, isDay, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
 import { openRefs } from '../ledger/refs.js';
@@ -106,10 +107,10 @@ export function createJcbAgent(o) {
       commits: true,
       describe: (a) => {
         const w = answered(a);
-        return {
+        return withUsual({
           key: variant(`step.reply_booking_${a.answer}`, { time: a.answer !== 'no' && w.time }),
           params: { site: siteOf(a.orderId), day: w.day, ...(w.time ? { time: w.time } : {}), rate: posInt(a.ratePaise) ? rupees(a.ratePaise) : '—' },
-        };
+        }, a.answer === 'yes' && posInt(a.ratePaise) ? rateUsualNotes(ledger, a.orderId, a.ratePaise) : '');
       },
       async run(_p, a) {
         if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
@@ -129,7 +130,8 @@ export function createJcbAgent(o) {
           await tell('operator', n.key, n.params);
         }
         // One receipt of what was sent, with the figures.
-        return deliveryResult(d, `jcb.reply_sent_${a.answer}`, { ref: refOf(a.orderId), site: siteOf(a.orderId), day: w.day, ...(posInt(a.ratePaise) ? { rate: rupees(a.ratePaise) } : {}) });
+        return withUsual(deliveryResult(d, `jcb.reply_sent_${a.answer}`, { ref: refOf(a.orderId), site: siteOf(a.orderId), day: w.day, ...(posInt(a.ratePaise) ? { rate: rupees(a.ratePaise) } : {}) }),
+          d.ok && a.answer === 'yes' ? rateUsualNotes(ledger, a.orderId, a.ratePaise) : '');
       },
     },
 

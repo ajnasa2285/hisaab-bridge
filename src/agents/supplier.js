@@ -5,6 +5,7 @@
 // DELIVERY or the corrected ones the supplier typed); nothing is computed by a model.
 
 import { rupees, day as dayName, qty } from '../i18n/format.js';
+import { rateUsualNotes, withUsual } from './usual.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, ofType, posInt } from './common.js';
 import { agreedRates, countDifferences, delivery, invoiceCheck, isGstPercent, itemsText, linesText, materialBillBody, rateFor, ratesText, requestedItems, sameChallanNo, signedWord, validItems } from './material.js';
 import { t } from '../i18n/index.js';
@@ -82,10 +83,10 @@ export function createSupplierAgent(o) {
         // The day the answer is about: another day when offered, else the day asked for.
         const day = isDay(a.day) ? a.day : ofType(eventsOf(a.orderId), 'BOOKING_REQUEST', 'in').at(-1)?.body.body.day;
         const time = a.answer === 'other_time' && isTime(a.time) ? a.time : null;
-        return {
+        return withUsual({
           key: variant(`step.reply_order_${a.answer}`, { time }),
           params: { site: siteOf(a.orderId), day: isDay(day) ? dayName(day) : '—', ...(time ? { time } : {}), rates: rates ? ratesText(rates) : '—' },
-        };
+        }, a.answer === 'yes' && rates ? rateUsualNotes(ledger, a.orderId, rates) : '');
       },
       async run(_p, a) {
         if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
@@ -102,7 +103,8 @@ export function createSupplierAgent(o) {
         const d = await link.send({ type: 'BOOKING_REPLY', to: /** @type {string} */ (counterparty(a.orderId)), orderId: a.orderId, body });
         // One receipt of what was sent, with the figures.
         const day = isDay(a.day) ? a.day : ofType(ledger.events(a.orderId), 'BOOKING_REQUEST', 'in').at(-1)?.body.body.day;
-        return deliveryResult(d, `supplier.reply_sent_${a.answer}`, { ref: refOf(a.orderId), site: siteOf(a.orderId), day: isDay(day) ? dayName(day) : '—', ...(rates ? { rates: ratesText(rates) } : {}) });
+        return withUsual(deliveryResult(d, `supplier.reply_sent_${a.answer}`, { ref: refOf(a.orderId), site: siteOf(a.orderId), day: isDay(day) ? dayName(day) : '—', ...(rates ? { rates: ratesText(rates) } : {}) }),
+          d.ok && rates ? rateUsualNotes(ledger, a.orderId, rates) : '');
       },
     },
 

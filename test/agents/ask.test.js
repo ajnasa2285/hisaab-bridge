@@ -101,7 +101,7 @@ test('a one-lookup question: totals by code, the answer with only figures from t
     assert.ok(d.said.at(-1)?.[2].includes('(बही से: P-1)'));
     // The router offered the read-only route; the loop offered this role's lookups and the answer.
     assert.ok(names(f.seen[0]).includes('ask_records'));
-    assert.deepEqual(names(f.seen[1]), ['list_orders', 'order_detail', 'totals', 'payments', 'stock', 'answer']);
+    assert.deepEqual(names(f.seen[1]), ['list_orders', 'order_detail', 'totals', 'payments', 'stock', 'usual', 'answer']);
     assert.equal(f.seen[1].reasoningEffort, 'low');
     // The model saw the code's figures as display values ("50 बोरी"), never stored integers.
     assert.ok(f.seen[2].text.includes('"delivered_on_challan":"50 बोरी"') && f.seen[2].text.includes('"received_at_site":"48 बोरी"'));

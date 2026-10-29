@@ -8,6 +8,7 @@ import { agreedRates, billLine, billLines, delivery, requestedItems, siteChallan
 import { cleanEvidenceReading, hasReceivedEvidence } from './evidence-readings.js';
 import { paymentSummary } from '../ledger/payments.js';
 import { openRefs } from '../ledger/refs.js';
+import { billFigures, unusual, usualFigures, usualKey } from '../ledger/usual.js';
 
 /** @typedef {import('./explain.js').Facts} Facts */
 
@@ -88,6 +89,21 @@ export function differenceFacts(ledger, orderId, ref) {
     return { direction: e.direction, concernsCurrentBill: e.body.body.bill === current?.msgId,
       figure, reason: e.body.body.reason, recordedAt: time(e.at) };
   });
+
+  // Keep the baseline to completed orders already known when this bill arrived. A later accepted
+  // order, this disputed order itself, or another agent's local records cannot change that baseline.
+  const baseline = current && disputes.some((d) => d.concernsCurrentBill)
+    ? usualFigures(ledger.orders().filter((o) => o.order_id !== orderId).flatMap((o) => ledger.events(String(o.order_id)))
+      .filter((e) => e.seq < current.seq).sort((a, b) => a.seq - b.seq)) : new Map();
+  const usual = current ? billFigures(events, current.body.body).flatMap((r) => {
+    // Percentages remain outside the explanation guard; the usual rate always excludes GST.
+    if (r.metric === 'gst') return [];
+    const past = baseline.get(usualKey(r.counterparty, r.item, r.unit, r.metric));
+    if (!past || !unusual(r.value, past).unusual) return [];
+    const value = r.metric === 'rate' ? `${money(past.median)}/${r.unit}`
+      : r.metric === 'hours' ? `${hours(past.median)} ${t('explain.unit.hours')}` : `${quantity(past.median)} ${r.unit}`;
+    return [{ item: r.item, metric: t(`usual.metric.${r.metric}`), value, n: allow(String(past.n), 'quantity') }];
+  }) : [];
 
   const meterPhotos = (current?.body.body.evidence ?? []).filter((/** @type {any} */ e) => e.kind === 'meter');
   /** @param {any} e */
@@ -174,7 +190,7 @@ export function differenceFacts(ledger, orderId, ref) {
     confirmed: money(summary.confirmedPaise), waiting: money(summary.waitingPaise), credit: money(summary.creditPaise) };
   const context = { ref: identifier(ref), site: order.site, kind: order.kind, currentBill, meterEvidence,
     signedDelivery, deliveryAtAgreedRates, localSiteCount, peerSiteCount, receivedEvidence, disputes, corrections,
-    payments, paymentBalance,
+    payments, paymentBalance, usualFigures: usual,
     agreedRates: rates?.map((r) => ({ item: r.name, unit: r.unit, rate: money(r.ratePaise) })) ?? null };
 
   /** @param {{item:string,quantity:string,unit:string}[]} rows */
@@ -186,6 +202,7 @@ export function differenceFacts(ledger, orderId, ref) {
   /** @param {ReturnType<typeof time>} when */
   const showTime = (when) => when ? `${when.date} ${when.time} ${t('explain.time.ist')}` : t('records.not_recorded');
   const figures = [t('explain.figures.order', { ref, site: String(order.site) }), currentBill ? showBill(currentBill) : t('records.not_recorded')];
+  figures.push(...usual.map((r) => t('explain.figures.usual', r)));
   if (meterEvidence) {
     figures.push(t('explain.figures.meter', { start: start?.reading ?? t('records.not_recorded'), end: end?.reading ?? t('records.not_recorded'), hours: computedHours ?? t('records.not_recorded') }));
     figures.push(t('explain.figures.photoTimes', { start: showTime(start?.photoTakenAt ?? null), end: showTime(end?.photoTakenAt ?? null) }));
