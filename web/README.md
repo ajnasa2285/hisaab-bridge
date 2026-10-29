@@ -51,6 +51,9 @@ Labels are in Hindi; the button at the top switches to English for judges. Texts
 - the dispute and its correction: the first bill stays in the list, struck through, with
   "replaced by a correction — kept in history"; the correction names what it replaces;
 - the payment claim (amount, UTR, day, screenshot fingerprint) and the settlement;
+- a payment panel per side and order: method, advance, confirmed/waiting/denied status, billed,
+  confirmed, waiting, due and credit, all from `src/ledger/payments.js`; clubbed payments link to
+  their other orders with the same group total, and each order shows only its own share;
 - the chain check of each ledger and, per order, the state replayed from its events (the
   material path included; a history that breaks the state rules is marked ❌);
 - a results panel from `eval/results/*.json` (aggregate numbers only); "—" when there are none;
@@ -104,6 +107,15 @@ phones (`9190000000xx`), fingerprints and UTRs are invented. Keys are generated 
 so the file differs run to run; `test/web/sample.test.js` checks that the committed export's
 signatures verify, all three chains recompute, and both stories are there.
 
+The generator then adds `P-2` and `P-3` as signed invented events in the agreed CONTRACTS 4.1
+shapes, independent of the parallel recording-tools branch. They show a cash advance, a partial
+cash claim acknowledged by the seller, one UPI payment allocated across both orders, a waiting
+claim, a denied claim and credit. Both exported sides contain the same signed payment messages.
+These extra events are constructed for the export; they do not bypass runtime ledger checks.
+
+The browser imports the exact pure balance module at `/src/ledger/payments.js`; the app serves
+only this source path, alongside its explicit judge-file allow-list. No other source is exposed.
+
 ## Inside the agent
 
 Under each side's ledger column, every order gets a timeline of what happened inside that agent for
@@ -117,6 +129,9 @@ it, from the agent's own trace (`src/trace/`, kept apart from the ledger):
   end − start … = ₹7,320", "bill = delivered × agreed rate ✓", "site count vs signed delivery ✗
   differs", "every number in the explanation is in the ledger ✓"), and ⏸ for a step held for approval
   ("approval needed: no limit set → held for the contractor");
+- payment audit checks after ledger writes: balance, complete group shares versus their total
+  (and whether they match `allocate`), and whether the UTR appeared in an earlier payment of the
+  same counterparty; shares of one group may use the same UTR. These checks never make decisions;
 - 🙋 **people's decisions**: who decided, for whom, and their exact short reply ("OK J-1", "हाँ 1200")
   when the server keeps words (`HB_TRACE_TEXT=1`);
 - 📤 / 📥 **signed messages** out and in: type, to/from, signature verified, the A2A round trip,
@@ -153,7 +168,7 @@ audio bytes, or a prompt; people's words only with `HB_TRACE_TEXT=1`, every run 
 (a UTR only in its own field). The page's rendering is in `web/trace-view.js` (pure functions,
 `test/web/trace-view.test.js`).
 
-In the sample, the code checks, decisions, signed messages and ledger rows are the real agents' own
+In the first two sample stories, the code checks, decisions, signed messages and ledger rows are the real agents' own
 (recorded by the same hooks); the Muse steps are invented entries with invented latencies, since the
 sample runs without a model, and the explanations go through the real explanation checks with a
 stand-in's fixed words.

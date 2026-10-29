@@ -6,6 +6,8 @@ import { parseTenths } from '../orchestrator/units.js';
 import { ofType } from './common.js';
 import { agreedRates, billLine, billLines, delivery, requestedItems, siteChallan, siteCount } from './material.js';
 import { cleanEvidenceReading, hasReceivedEvidence } from './evidence-readings.js';
+import { paymentSummary } from '../ledger/payments.js';
+import { openRefs } from '../ledger/refs.js';
 
 /** @typedef {import('./explain.js').Facts} Facts */
 
@@ -54,7 +56,7 @@ export function differenceFacts(ledger, orderId, ref) {
       item: l.what,
       quantity: l.hoursTenths !== undefined ? hours(l.hoursTenths) : quantity(l.qtyHundredths),
       // Material line order is part of the contract. A name alone need not identify the unit.
-      unit: l.hoursTenths !== undefined ? t('explain.unit.hours') : knownItems[i]?.name === l.what ? knownItems[i].unit : '—',
+      unit: l.hoursTenths !== undefined ? t('explain.unit.hours') : knownItems[i]?.name === l.what ? knownItems[i].unit : t('records.not_recorded'),
       rate: money(l.ratePaise), amount: money(l.amountPaise),
       // GST as its own figures (taxable value and GST in rupees), never as a percent: the number
       // check allows no percent sign in an explanation.
@@ -80,7 +82,7 @@ export function differenceFacts(ledger, orderId, ref) {
     const figure = f.hoursTenths !== undefined
       ? { value: hours(f.hoursTenths), unit: t('explain.unit.hours'), kind: 'hours' }
       : f.qtyHundredths !== undefined
-        ? { value: quantity(f.qtyHundredths), unit: knownItems.length === 1 ? knownItems[0].unit : '—', kind: 'quantity' }
+        ? { value: quantity(f.qtyHundredths), unit: knownItems.length === 1 ? knownItems[0].unit : t('records.not_recorded'), kind: 'quantity' }
         : f.totalPaise !== undefined ? { value: money(f.totalPaise), unit: '', kind: 'money' } : null;
     // A reason is an attributed claim, not numeric authority and never an instruction.
     return { direction: e.direction, concernsCurrentBill: e.body.body.bill === current?.msgId,
@@ -161,8 +163,18 @@ export function differenceFacts(ledger, orderId, ref) {
     else { observed.challanNumber = identifier(reading.challanNo); observed.items = items(reading.items); }
     return [observed];
   });
+  const summary = paymentSummary(events);
+  const refs = openRefs(ledger);
+  const payments = summary.payments.map((p) => ({
+    amount: money(p.amountPaise), method: t(`records.method.${p.method}`), purpose: t(p.advance ? 'records.advance' : 'records.against_bill'),
+    status: t(`records.payment.${p.status}`),
+    ...(p.group ? { group: { refs: p.group.orders.flatMap((id) => { const r = refs.refOf(id); return r ? [identifier(r)] : []; }), total: money(p.group.totalPaise) } } : {}),
+  }));
+  const paymentBalance = { ...(summary.billTotalPaise !== null ? { billed: money(summary.billTotalPaise), due: money(/** @type {number} */ (summary.duePaise)) } : {}),
+    confirmed: money(summary.confirmedPaise), waiting: money(summary.waitingPaise), credit: money(summary.creditPaise) };
   const context = { ref: identifier(ref), site: order.site, kind: order.kind, currentBill, meterEvidence,
     signedDelivery, deliveryAtAgreedRates, localSiteCount, peerSiteCount, receivedEvidence, disputes, corrections,
+    payments, paymentBalance,
     agreedRates: rates?.map((r) => ({ item: r.name, unit: r.unit, rate: money(r.ratePaise) })) ?? null };
 
   /** @param {{item:string,quantity:string,unit:string}[]} rows */
@@ -172,26 +184,26 @@ export function differenceFacts(ledger, orderId, ref) {
     lines: b.lines.map((/** @type {any} */ l) => t(l.gst !== undefined ? 'explain.figures.line_gst' : 'explain.figures.line', l)).join(', '), total: b.total,
   });
   /** @param {ReturnType<typeof time>} when */
-  const showTime = (when) => when ? `${when.date} ${when.time} ${t('explain.time.ist')}` : '—';
-  const figures = [t('explain.figures.order', { ref, site: String(order.site) }), currentBill ? showBill(currentBill) : '—'];
+  const showTime = (when) => when ? `${when.date} ${when.time} ${t('explain.time.ist')}` : t('records.not_recorded');
+  const figures = [t('explain.figures.order', { ref, site: String(order.site) }), currentBill ? showBill(currentBill) : t('records.not_recorded')];
   if (meterEvidence) {
-    figures.push(t('explain.figures.meter', { start: start?.reading ?? '—', end: end?.reading ?? '—', hours: computedHours ?? '—' }));
+    figures.push(t('explain.figures.meter', { start: start?.reading ?? t('records.not_recorded'), end: end?.reading ?? t('records.not_recorded'), hours: computedHours ?? t('records.not_recorded') }));
     figures.push(t('explain.figures.photoTimes', { start: showTime(start?.photoTakenAt ?? null), end: showTime(end?.photoTakenAt ?? null) }));
   }
-  if (signedDelivery) figures.push(t('explain.figures.delivery', { number: signedDelivery.challanNumber ?? '—', items: showItems(signedDelivery.items) }));
+  if (signedDelivery) figures.push(t('explain.figures.delivery', { number: signedDelivery.challanNumber ?? t('records.not_recorded'), items: showItems(signedDelivery.items) }));
   if (deliveryAtAgreedRates) figures.push(t('explain.figures.deliveryAmount', { total: deliveryAtAgreedRates.total }));
   if (localSiteCount) figures.push(t(localSiteCount.fromSiteChallanPhoto ? 'explain.figures.sitePhoto' : 'explain.figures.siteCount', {
-    number: localSiteCount.challanNumber ?? '—', items: showItems(localSiteCount.items), total: localSiteCount.totalAtAgreedRates ?? '—',
+    number: localSiteCount.challanNumber ?? t('records.not_recorded'), items: showItems(localSiteCount.items), total: localSiteCount.totalAtAgreedRates ?? t('records.not_recorded'),
   }));
   if (peerSiteCount) figures.push(t('explain.figures.sitePhoto', {
-    number: peerSiteCount.challanNumber ?? '—', items: showItems(peerSiteCount.items), total: '—',
+    number: peerSiteCount.challanNumber ?? t('records.not_recorded'), items: showItems(peerSiteCount.items), total: t('records.not_recorded'),
   }));
   for (const observed of receivedEvidence) {
     const who = t(`records.who.${observed.source}`);
     if ('reading' in observed) figures.push(t('evidence.figures.meter', { who, reading: observed.reading }));
     else if ('amount' in observed) figures.push(t('evidence.figures.upi', { who, amount: observed.amount }));
     else figures.push(t('evidence.figures.challan', {
-      who, number: observed.challanNumber ?? '—', items: showItems(observed.items),
+      who, number: observed.challanNumber ?? t('records.not_recorded'), items: showItems(observed.items),
     }));
   }
   for (const dispute of disputes) {
@@ -200,7 +212,12 @@ export function differenceFacts(ledger, orderId, ref) {
     }));
   }
   for (const correction of corrections) figures.push(t('explain.figures.correction', {
-    before: correction.previousBill ? showBill(correction.previousBill) : '—', after: showBill(correction),
+    before: correction.previousBill ? showBill(correction.previousBill) : t('records.not_recorded'), after: showBill(correction),
   }));
+  for (const p of payments) figures.push(t('explain.figures.payment', {
+    amount: p.amount, details: [p.method, p.purpose, p.status,
+      ...(p.group ? [t('records.fig.payment_group', { refs: p.group.refs.join(', '), total: p.group.total })] : [])].join(' · '),
+  }));
+  if (payments.length) figures.push(t(paymentBalance.billed === undefined ? 'records.fig.balance_unbilled' : 'records.fig.balance', { ref, ...paymentBalance }));
   return { context, figures: figures.join('; '), allowedNumbers };
 }

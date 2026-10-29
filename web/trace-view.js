@@ -66,6 +66,12 @@ export function traceRow(e, t, events = []) {
     mark = d.ok === false ? 'bad' : '';
   } else if (e.kind === 'check') {
     mark = d.name === 'approval' && d.held ? 'held' : d.pass ? 'ok' : 'bad';
+    if (d.name === 'payment_balance') {
+      for (const key of ['billTotalPaise', 'confirmedPaise', 'waitingPaise', 'duePaise', 'creditPaise']) {
+        if (d[key] !== null && d[key] !== undefined) extra.push(`${key}: ${d[key]}`);
+      }
+    } else if (d.name === 'payment_shares') extra.push(`${d.sharesPaise} / ${d.totalPaise} paise`);
+    else if (d.name === 'payment_utr') extra.push(`UTR ${d.utr}`);
   } else if (e.kind === 'decision') {
     extra.push(d.onBehalfOf ? `${d.role} (${d.onBehalfOf})` : String(d.role ?? ''));
   } else if (e.kind === 'signed_out') {
@@ -85,7 +91,8 @@ export function traceRow(e, t, events = []) {
   if (ms) extra.push(ms);
   return {
     id: e.id, icon: mark === 'held' ? '⏸' : ICONS[e.kind] ?? '•', cls: `tr ${e.kind}${meta ? ' muse' : ''}${mark ? ` ${mark}` : ''}`,
-    label, text: e.title, extra: extra.filter(Boolean).join(' · '), meta, mark, seq: seqOf(e, events), at: e.at,
+    label, text: e.kind === 'check' ? t.payment_checks[/** @type {keyof Texts['payment_checks']} */ (d.name)] ?? e.title : e.title,
+    extra: extra.filter(Boolean).join(' · '), meta, mark, seq: seqOf(e, events), at: e.at,
   };
 }
 

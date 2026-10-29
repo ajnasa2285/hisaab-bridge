@@ -13,6 +13,8 @@
 
 import { TEXTS } from './texts.js';
 import { isTrace, orderTrace, summaryText, traceRow, traceSummary } from './trace-view.js';
+import { paymentPanel } from './payments-view.js';
+import { stateOf } from './order-state.js';
 
 /** @typedef {'hi'|'en'} Lang */
 /** @typedef {typeof TEXTS['hi']} Texts */
@@ -171,72 +173,6 @@ function when(iso) {
   return `${d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })} IST`;
 }
 
-// --- Order state, replayed from the events (the rules of src/ledger/states.js) ---------------
-
-/**
- * Replays one order's events. A sent message the other side REFUSED does not count; local events
- * (EVIDENCE, NOTE) and RECEIPT/REFUSE never change the state except that the first meter photo on
- * a booked JCB order means work has started. `fits` is false when the history breaks the rules.
- * @param {Ev[]} events
- */
-function stateOf(events) {
-  const refused = new Set(events.filter((e) => e.direction === 'in' && e.type === 'REFUSE').map((e) => e.body.body?.refers_to));
-  let state = 'none';
-  /** @type {string|null} */
-  let kind = null;
-  /** @type {string|null} */
-  let currentBill = null;
-  /** @type {string|null} */
-  let payment = null;
-  let billRev = 0;
-  let fits = true;
-  for (const e of events) {
-    if (e.direction === 'out' && refused.has(e.msgId)) continue;
-    const b = e.direction === 'local' ? e.body ?? {} : e.body.body ?? {};
-    switch (e.type) {
-      case 'BOOKING_REQUEST':
-        if (state !== 'none' && state !== 'offered') fits = false;
-        state = 'requested'; kind = b.kind ?? null; break;
-      case 'BOOKING_REPLY':
-        if (state !== 'requested') fits = false;
-        if (b.answer === 'yes' && (kind === 'material') !== Array.isArray(b.rates)) fits = false;
-        state = b.answer === 'yes' ? 'booked' : b.answer === 'no' ? 'declined' : 'offered'; break;
-      case 'EVIDENCE':
-        if (state === 'booked' && kind === 'jcb_hours') state = 'working';
-        else if (state === 'none' || state === 'declined' || state === 'settled') fits = false;
-        break;
-      case 'DELIVERY':
-        if (state !== 'booked' || kind !== 'material') fits = false;
-        state = 'delivered'; break;
-      case 'BILL': {
-        const meter = Array.isArray(b.evidence) && b.evidence.some((/** @type {any} */ x) => x && x.kind === 'meter');
-        const ready = kind === 'jcb_hours' ? (state === 'booked' || state === 'working') && meter : state === 'delivered';
-        if (!ready) fits = false;
-        state = 'billed'; currentBill = e.msgId; billRev += 1; break;
-      }
-      case 'CORRECTION':
-        if ((state !== 'billed' && state !== 'disputed') || b.replaces !== currentBill) fits = false;
-        state = 'billed'; currentBill = e.msgId; billRev += 1; break;
-      case 'ACCEPT':
-        if ((state !== 'billed' && state !== 'disputed') || b.bill !== currentBill) fits = false;
-        state = 'accepted'; break;
-      case 'DISPUTE':
-        if (state !== 'billed' || b.bill !== currentBill) fits = false;
-        state = 'disputed'; break;
-      case 'PAYMENT_CLAIM':
-        if ((state !== 'accepted' && state !== 'payment_claimed') || b.bill !== currentBill) fits = false;
-        state = 'payment_claimed'; payment = e.msgId; break;
-      case 'SETTLED':
-        if (state !== 'payment_claimed' || b.bill !== currentBill || b.payment !== payment) fits = false;
-        state = 'settled'; break;
-      case 'RECEIPT': case 'REFUSE': break;
-      case 'NOTE': break; // the site's own count stays local and never moves the state
-      default: fits = false;
-    }
-  }
-  return { state, kind, currentBill, billRev, fits };
-}
-
 // --- Rendering --------------------------------------------------------------------------------
 
 /** @param {string} tag @param {string} [cls] @param {string} [text] */
@@ -346,15 +282,25 @@ function bodyOf(e, t, ctx) {
       break;
     }
     case 'PAYMENT_CLAIM':
-      row(grid, t.bill, short(b.bill, 8), 'mono');
+    case 'PAYMENT_RECEIVED':
+      if (b.bill) row(grid, t.bill, short(b.bill, 8), 'mono');
+      else row(grid, t.payment, t.payment_advance);
       row(grid, t.amount, rupees(b.amountPaise));
-      row(grid, t.utr, String(b.utr ?? '—'), 'mono');
-      row(grid, t.paid_on, String(b.paidOn ?? '—'));
-      row(grid, t.screenshot, short(b.screenshot?.sha256, 12), 'mono');
+      row(grid, t.payment_method, b.method === 'cash' ? t.payment_cash : 'UPI');
+      if (b.utr) row(grid, t.utr, String(b.utr), 'mono');
+      if (b.paidOn || b.receivedOn) row(grid, t.paid_on, String(b.paidOn ?? b.receivedOn));
+      if (b.paidAt) row(grid, t.time, String(b.paidAt));
+      if (b.screenshot?.sha256) row(grid, t.photo, short(b.screenshot.sha256, 12), 'mono');
+      if (b.group) row(grid, t.payment_group, rupees(b.group.totalPaise));
+      break;
+    case 'PAYMENT_ACK':
+      row(grid, t.payment, short(b.payment, 8), 'mono');
+      row(grid, t.amount, rupees(b.amountPaise));
+      row(grid, t.answer, b.received === true ? t.payment_confirmed : t.payment_denied);
       break;
     case 'SETTLED':
       row(grid, t.bill, short(b.bill, 8), 'mono');
-      row(grid, t.payment, short(b.payment, 8), 'mono');
+      row(grid, t.payment, Array.isArray(b.payments) ? b.payments.map((/** @type {string} */ id) => short(id, 8)).join(', ') : short(b.payment, 8), 'mono');
       row(grid, t.amount, rupees(b.amountPaise));
       break;
     case 'REFUSE':
@@ -476,6 +422,28 @@ function orderColumn(name, side, orderId, t) {
   add(t.order_chain, String(events.length));
   section.append(meta);
 
+  const payments = paymentPanel(events, side.refs ?? {}, t);
+  const panel = el('section', 'payments-panel');
+  panel.append(el('h3', undefined, t.payments), el('p', 'payment-balance', payments.balance));
+  if (!payments.rows.length) panel.append(el('p', 'hint', t.payment_none));
+  const paidList = el('ul', 'payments');
+  for (const p of payments.rows) {
+    const item = el('li', `payment-row ${p.status}`);
+    item.append(el('div', undefined, p.text));
+    if (p.group) {
+      const group = el('div', 'payment-group', `${p.group.text}: `);
+      for (const member of p.group.orders) {
+        const a = /** @type {HTMLAnchorElement} */ (el('a', undefined, member.ref));
+        a.href = `#order-${encodeURIComponent(member.id)}`;
+        group.append(a, document.createTextNode(' '));
+      }
+      item.append(group);
+    }
+    paidList.append(item);
+  }
+  panel.append(paidList);
+  section.append(panel);
+
   const delivery = [...events].reverse().find((e) => e.type === 'DELIVERY');
   /** @type {OrderCtx} */
   const ctx = { delivery: delivery ? delivery.body.body : null };
@@ -576,6 +544,7 @@ function renderOrders(x, t) {
   host.replaceChildren();
   for (const { orderId, order, seller } of allOrders(x)) {
     const block = el('article', 'order');
+    block.id = `order-${encodeURIComponent(orderId)}`;
     const head = el('div', 'order-head');
     const ref = x.contractor?.refs?.[orderId] ?? x[seller]?.refs?.[orderId] ?? short(orderId, 8);
     head.append(el('span', 'ref', ref));

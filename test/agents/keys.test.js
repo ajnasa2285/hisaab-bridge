@@ -12,7 +12,7 @@ test('every key used in src/agents exists in hi.js', () => {
   for (const f of readdirSync(dir)) {
     const text = readFileSync(new URL(f, dir), 'utf8');
     // ('site.material_' alone is the prefix keyFor puts on a key, not a key.)
-    for (const m of text.matchAll(/'((?:common|jcb|site|supplier|challan|step)\.[a-z_]+)'/g)) if (!m[1].endsWith('_')) used.add(m[1]);
+    for (const m of text.matchAll(/'((?:common|jcb|site|supplier|challan|step|payview|cash_receipt)\.[a-z_]+(?:\.[a-z_]+)*)'/g)) if (!m[1].endsWith('_')) used.add(m[1]);
     // Keys built from a fixed set of values.
     for (const m of text.matchAll(/`((?:jcb|site)\.[a-z_]+)\$\{a\.which\}_saved`/g)) ['start', 'end'].forEach((w) => used.add(`${m[1]}${w}_saved`));
     for (const m of text.matchAll(/`((?:jcb|site|supplier|step)\.[a-z_]+)\$\{(?:a|b)\.answer\}`/g)) ['yes', 'no', 'other_time'].forEach((w) => used.add(`${m[1]}${w}`));

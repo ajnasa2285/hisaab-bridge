@@ -13,6 +13,7 @@ import { variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
 import { differenceFacts } from './explain-facts.js';
 import { traceCheck } from '../trace/trace.js';
+import { paymentWaiting } from './payment-view.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -327,7 +328,7 @@ export function createSupplierAgent(o) {
 
   // What still waits for the supplier, by the order's state, and the message that asked for it.
   /** @type {Record<string, string>} */
-  const WAITS = { requested: 'BOOKING_REQUEST', disputed: 'DISPUTE', payment_claimed: 'PAYMENT_CLAIM' };
+  const WAITS = { requested: 'BOOKING_REQUEST', disputed: 'DISPUTE' };
 
   /**
    * What is still waiting for the supplier, rebuilt from the ledger: open orders, objections and
@@ -337,7 +338,7 @@ export function createSupplierAgent(o) {
   function waiting(role) {
     if (role !== 'supplier') return [];
     /** @type {Notice[]} */
-    const out = [];
+    const out = paymentWaiting(ledger);
     for (const order of /** @type {{order_id: string}[]} */ (ledger.orders())) {
       const type = WAITS[ledger.view(order.order_id).state];
       const e = type ? ofType(ledger.events(order.order_id), type, 'in').at(-1) : undefined;

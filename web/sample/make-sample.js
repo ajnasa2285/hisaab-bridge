@@ -15,7 +15,11 @@
 import { createServer } from 'node:http';
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { generateKeys, publicKeyFromText, publicKeyText } from '../../src/protocol/keys.js';
+import { createHash, randomUUID } from 'node:crypto';
+import { canonicalize } from '../../src/protocol/canonical.js';
+import { generateKeys, publicKeyFromText, publicKeyText, signMessage } from '../../src/protocol/keys.js';
+import { allocate, paymentSummary } from '../../src/ledger/payments.js';
+import { paymentChecks } from '../../src/trace/payments.js';
 import { openLedger } from '../../src/ledger/store.js';
 import { openRefs } from '../../src/ledger/refs.js';
 import { agentCardJson, createA2AHandler, sendToAgent } from '../../src/transport/a2a.js';
@@ -192,6 +196,77 @@ const muse = (rec, title, detail, ms) => rec.add('model', title, { model: MODEL,
 const none = () => {};
 
 /**
+ * Build 5's contract-only example, independent of the parallel recording-tools branch. These
+ * signed invented events extend the exported chains; no runtime ledger validation is bypassed.
+ * @param {Export} x @param {Awaited<ReturnType<typeof setup>>} s
+ */
+function paymentExample(x, s) {
+  const ids = [randomUUID(), randomUUID()];
+  let tick = Date.parse(x.exportedAt);
+  const now = () => new Date(tick += 60_000).toISOString();
+  for (let i = 0; i < ids.length; i += 1) {
+    const at = now();
+    for (const side of [x.contractor, x.supplier]) {
+      side.orders.push({ order_id: ids[i], kind: 'material', counterparty: side === x.contractor ? x.supplier.agentId : x.contractor.agentId, site: 'नमूना साइट', created_at: at });
+      (side.refs ??= {})[ids[i]] = `P-${i + 2}`;
+    }
+  }
+  /** @param {string} orderId @param {string} type @param {Record<string, any>} body @param {boolean} seller */
+  const send = (orderId, type, body, seller) => {
+    const at = now();
+    const core = seller ? s.supCore : s.siteCore;
+    const message = signMessage({ v: 'hb/0.1', msg_id: randomUUID(), type, from: core.self.id,
+      to: seller ? x.contractor.agentId : x.supplier.agentId, order_id: orderId, rev: 1,
+      created_at: at, expires_at: new Date(Date.parse(at) + 86400000).toISOString(), body }, core.self.privateKey);
+    for (const side of [x.contractor, x.supplier]) {
+      const seq = (side.events.at(-1)?.seq ?? 0) + 1;
+      const direction = side.agentId === core.self.id ? 'out' : 'in';
+      const prevHash = side.events.at(-1)?.hash ?? '0'.repeat(64);
+      const content = canonicalize({ seq, order_id: orderId, direction, type, msg_id: message.msg_id, body: message, at });
+      const hash = createHash('sha256').update(prevHash).update(content).digest('hex');
+      /** @type {LedgerEvent} */
+      const event = { seq, orderId, direction, type, msgId: message.msg_id, body: message, at, prevHash, hash };
+      side.events.push(event);
+      const trace = side.trace ??= [];
+      const traceBase = { at, agent: side === x.contractor ? 'site' : 'supplier', orderId, ref: side.refs?.[orderId] ?? null, convo: null, ms: null };
+      trace.push({ ...traceBase, id: (trace.at(-1)?.id ?? 0) + 1, kind: 'ledger', title: `#${seq} ${type}`, detail: { seq, type, direction, msg: message.msg_id, hash, prev: prevHash } });
+      const sameParty = side.orders.filter((o) => o.counterparty === (side === x.contractor ? x.supplier.agentId : x.contractor.agentId))
+        .map((o) => ({ orderId: o.order_id, events: side.events.filter((e) => e.orderId === o.order_id) }));
+      for (const check of paymentChecks(event, sameParty)) trace.push({ ...traceBase, id: (trace.at(-1)?.id ?? 0) + 1, kind: 'check', title: check.title, detail: check.detail });
+      side.chain = { ok: true, events: side.events.length };
+    }
+    return message.msg_id;
+  };
+  const bills = [];
+  for (let i = 0; i < ids.length; i += 1) {
+    const id = ids[i], total = i === 0 ? 100000 : 80000;
+    send(id, 'BOOKING_REQUEST', { kind: 'material', site: 'नमूना साइट', day: '2026-11-02', items: [{ name: 'ईंट', qtyHundredths: 10000, unit: 'नग' }] }, false);
+    send(id, 'BOOKING_REPLY', { answer: 'yes', rates: [{ name: 'ईंट', unit: 'नग', ratePaise: total / 100 }] }, true);
+    if (i === 0) send(id, 'PAYMENT_RECEIVED', { bill: null, method: 'cash', amountPaise: 20000, receivedOn: '2026-11-02' }, true);
+    send(id, 'DELIVERY', { items: [{ name: 'ईंट', qtyHundredths: 10000, unit: 'नग', ratePaise: total / 100 }], challan: { sha256: 'd'.repeat(64), number: `N-${i + 1}` }, deliveredAt: now() }, true);
+    bills.push(send(id, 'BILL', { lines: [{ what: 'ईंट', qtyHundredths: 10000, ratePaise: total / 100, amountPaise: total }], totalPaise: total,
+      evidence: [{ kind: 'challan', sha256: 'd'.repeat(64), readValue: `N-${i + 1}`, takenAt: null, sentAt: now() }] }, true));
+    send(id, 'ACCEPT', { bill: bills[i] }, false);
+  }
+  const cash = send(ids[0], 'PAYMENT_CLAIM', { bill: bills[0], method: 'cash', amountPaise: 10000, paidOn: '2026-11-02' }, false);
+  send(ids[0], 'PAYMENT_ACK', { payment: cash, amountPaise: 10000, received: true }, true);
+  const group = { id: randomUUID(), totalPaise: 130000, orders: ids };
+  const shares = allocate(group.totalPaise, ids.map((id) => ({ orderId: id, duePaise: paymentSummary(x.contractor.events.filter((e) => e.orderId === id)).duePaise })));
+  for (const share of shares ?? []) {
+    const i = ids.indexOf(share.orderId);
+    const claim = send(share.orderId, 'PAYMENT_CLAIM', { bill: bills[i], method: 'upi', amountPaise: share.amountPaise, paidOn: '2026-11-02', utr: '000000000003', screenshot: { sha256: 'e'.repeat(64) }, group }, false);
+    send(share.orderId, 'PAYMENT_ACK', { payment: claim, amountPaise: share.amountPaise, received: true }, true);
+  }
+  const paid = paymentSummary(x.contractor.events.filter((e) => e.orderId === ids[0]));
+  send(ids[0], 'SETTLED', { bill: bills[0], amountPaise: paid.confirmedPaise, payments: paid.payments.filter((p) => p.status === 'confirmed').map((p) => p.msgId) }, true);
+  send(ids[1], 'PAYMENT_CLAIM', { bill: bills[1], method: 'cash', amountPaise: 5000, paidOn: '2026-11-02' }, false);
+  const denied = send(ids[1], 'PAYMENT_CLAIM', { bill: bills[1], method: 'cash', amountPaise: 1000, paidOn: '2026-11-02' }, false);
+  send(ids[1], 'PAYMENT_ACK', { payment: denied, amountPaise: 1000, received: false }, true);
+  send(ids[1], 'PAYMENT_RECEIVED', { bill: bills[1], method: 'cash', amountPaise: 25000, receivedOn: '2026-11-02' }, true);
+  x.exportedAt = now();
+}
+
+/**
  * The JCB job: request (held for the contractor's OK) → yes (₹1,200/h) → start and end meter →
  * bill 6.1 h → dispute 5.5 h → correction → accept → payment claim → settled.
  * @param {Awaited<ReturnType<typeof setup>>} s
@@ -328,7 +403,9 @@ export async function buildSample() {
       });
       return { agentId: core.self.id, publicKey: publicKeyText(core.self.privateKey), orders, events, chain: core.ledger.verifyChain(), refs: refByOrder, trace };
     };
-    return { v: 'hb-export/0.1', exportedAt: new Date(s.jcbCore.now()).toISOString(), jcb: dump(s.jcbCore, s.traces.jcb), contractor: dump(s.siteCore, s.traces.site), supplier: dump(s.supCore, s.traces.sup) };
+    const exported = { v: 'hb-export/0.1', exportedAt: new Date(s.jcbCore.now()).toISOString(), jcb: dump(s.jcbCore, s.traces.jcb), contractor: dump(s.siteCore, s.traces.site), supplier: dump(s.supCore, s.traces.sup) };
+    paymentExample(exported, s);
+    return exported;
   } finally {
     await s.close();
     for (const rec of Object.values(s.traces)) rec.close();
