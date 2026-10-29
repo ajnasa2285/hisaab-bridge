@@ -203,7 +203,7 @@ test('challan: memory that changes a quantity is read back to the supplier befor
   await f.supTalk.onImage(supplier, photo(3));
   assert.equal(f.last()?.[1], 'learn.read_back_challan');
   assert.ok(f.last()?.[2].includes('सीमेंट 50 बोरी'), f.last()?.[2]);
-  assert.equal(f.s.supCore.ledger.events(f.orderId).some((e) => e.type === 'DELIVERY'), false, 'nothing sent silently');
+  assert.equal(f.s.supCore.ledger.events(f.orderId).some((/** @type {any} */ e) => e.type === 'DELIVERY'), false, 'nothing sent silently');
   await f.supTalk.onText(supplier, 'हाँ');
   assert.equal(f.last()?.[1], 'supplier.delivery_sent');
 });
