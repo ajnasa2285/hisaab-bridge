@@ -10,7 +10,7 @@ import { generateKeys } from '../src/protocol/keys.js';
 import { TYPES } from '../src/protocol/messages.js';
 import { runTool } from '../src/agents/common.js';
 
-test('app exchanges evidence over real A2A, sends WhatsApp image and exports signed metadata only', async () => {
+test('app asks the supplier first, then exchanges evidence over real A2A, sends WhatsApp image and exports signed metadata only', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'hb-app-evidence-'));
   const keys = [generateKeys(), generateKeys()];
   const ids = ['agent:contractor-1', 'agent:supplier-1'];
@@ -28,8 +28,9 @@ test('app exchanges evidence over real A2A, sends WhatsApp image and exports sig
       privateKey: keys[i].privateKey, ledgerFile: join(dataDir, `${i}.db`), jcbAgentId: 'agent:jcb-1', supplierAgentId: ids[1],
       peers: [{ id: ids[1-i], publicKey: keys[1-i].publicKey, mayReceiveFrom: new Set(TYPES) }],
       peerUrls: { [ids[1-i]]: `${baseUrl}/agents/${i === 0 ? 'supplier' : 'site'}` } })),
-    lines: [{ name: 'site', phoneNumberId: 'line-site', appSecret: 'invented-secret', verifyToken: 'invented-verify', accessToken: 'invented-access' }],
-    people: [contractor], log: () => {},
+    lines: [{ name: 'site', phoneNumberId: 'line-site', appSecret: 'invented-secret', verifyToken: 'invented-verify', accessToken: 'invented-access' },
+      { name: 'supplier', phoneNumberId: 'line-supplier', appSecret: 'invented-secret-2', verifyToken: 'invented-verify-2', accessToken: 'invented-access-2' }],
+    people: [contractor, supplier], log: () => {},
     spark: async () => ({ ok: true, json: { explanation: 'सप्लायर के चालान पर 50 बोरी दर्ज है।' }, toolCalls: [] }),
     readChallan: async (image) => { reads.push(image); return { ok: true, kind: 'challan', challanNo: '701', date: '2026-10-29', clear: true,
       items: [{ name: 'सीमेंट', qtyHundredths: 5000, unit: 'बोरी', raw: '50' }] }; },
@@ -49,13 +50,25 @@ test('app exchanges evidence over real A2A, sends WhatsApp image and exports sig
     const bytes = Buffer.from('invented app challan bytes');
     const image = sup.core.mediaStore.put({ bytes, mime: 'image/png' });
     assert.equal((await runTool(sup.agent.tools, supplier, { tool: 'record_delivery', args: { orderId, items, sha256: image.sha256, challanNo: '701' } })).ok, true);
-    const body = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'invented', changes: [{ field: 'messages', value: {
-      metadata: { phone_number_id: 'line-site' }, messages: [{ from: contractor.phone, id: 'wamid.evidence-command', timestamp: String(Math.floor(Date.now()/1000)), type: 'text', text: { body: 'सबूत P-1' } }],
-    } }] }] });
-    const response = await fetch(`${baseUrl}/wa/site/webhook`, { method: 'POST', body,
-      headers: { 'x-hub-signature-256': `sha256=${createHmac('sha256', 'invented-secret').update(body).digest('hex')}` } });
-    assert.equal(response.status, 200);
-    for (let n = 0; n < 100 && !sent.some((m) => m.text?.body?.includes('सबूत मिल गया')); n += 1) await new Promise((r) => setTimeout(r, 10));
+    /** @param {'site'|'supplier'} line @param {string} from @param {string} id @param {string} text */
+    const post = async (line, from, id, text) => {
+      const body = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'invented', changes: [{ field: 'messages', value: {
+        metadata: { phone_number_id: `line-${line}` }, messages: [{ from, id, timestamp: String(Math.floor(Date.now()/1000)), type: 'text', text: { body: text } }],
+      } }] }] });
+      const response = await fetch(`${baseUrl}/wa/${line}/webhook`, { method: 'POST', body,
+        headers: { 'x-hub-signature-256': `sha256=${createHmac('sha256', line === 'site' ? 'invented-secret' : 'invented-secret-2').update(body).digest('hex')}` } });
+      assert.equal(response.status, 200);
+    };
+    /** @param {(m: any) => boolean} seen */
+    const until = async (seen) => { for (let n = 0; n < 200 && !sent.some(seen); n += 1) await new Promise((r) => setTimeout(r, 10)); };
+    await post('supplier', supplier.phone, 'wamid.supplier-hello', 'मदद');
+    await post('site', contractor.phone, 'wamid.evidence-command', 'सबूत P-1');
+    await until((m) => m.to === supplier.phone && m.text?.body?.includes('भेजें? हाँ / नहीं'));
+    await until((m) => m.to === contractor.phone && m.text?.body?.includes('उनके हाँ कहने पर आएगी'));
+    assert.ok(sent.some((m) => m.to === contractor.phone && m.text?.body?.includes('उनके हाँ कहने पर आएगी')), 'the contractor waits for the supplier');
+    assert.equal(sent.filter((m) => m.type === 'image').length, 0, 'nothing shared before the supplier decides');
+    await post('supplier', supplier.phone, 'wamid.supplier-yes', 'हाँ');
+    await until((m) => m.type === 'image');
     assert.equal(uploads.length, 1);
     assert.equal(sent.filter((m) => m.type === 'image').length, 1);
     assert.match(sent.find((m) => m.type === 'image').image.caption, /फ़ोटो वही है जो दर्ज हुई थी/);

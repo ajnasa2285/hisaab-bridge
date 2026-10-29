@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { readMeter, meterTenths } from '../../src/readers/meter.js';
 
 const image = { mime: /** @type {const} */ ('image/png'), bytes: new Uint8Array([1, 2, 3]) };
-const visible = { kind: 'hour_meter', raw: '00123.4', clear: true, decimalCertain: true, uncertainDigits: [], dashClock: '09:17' };
+const visible = { kind: 'hour_meter', raw: '00123.4', clear: true, decimalCertain: true, uncertainDigits: [], dashClock: '09:17', displayDate: null };
 
 /** @param {import('node:test').TestContext} t @param {object} response */
 function model(t, response) {
@@ -59,7 +59,7 @@ test('dashboard clock never replaces the hour reading; invalid clocks become nul
 });
 
 test('non-meter returns the fixed minimal contract', async t => {
-  model(t, { kind: 'not_meter', raw: '', clear: false, decimalCertain: false, uncertainDigits: [], dashClock: null });
+  model(t, { kind: 'not_meter', raw: '', clear: false, decimalCertain: false, uncertainDigits: [], dashClock: null, displayDate: null });
   const result = await readMeter(image);
   assert.ok(result.ok && result.kind === 'not_meter');
   assert.equal('raw' in result, false); assert.equal('valueTenths' in result, false);

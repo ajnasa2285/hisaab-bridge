@@ -61,14 +61,14 @@ Readers only read. They return what is visible, with `null` for anything unclear
 /**
  * @param {ImageInput} image
  * @returns {Promise<{ok: true, kind: 'hour_meter', raw: string, valueTenths: number|null,
- *   clear: boolean, dashClock: string|null, model: string, latencyMs: number}
+ *   clear: boolean, dashClock: string|null, displayDate: string|null, model: string, latencyMs: number}
  * | {ok: true, kind: 'not_meter', model: string, latencyMs: number}
  * | {ok: false, transient: boolean, reason: string}>}
  */
 export async function readMeter(image) {}
 ```
 
-`raw` is exactly the digits as displayed (e.g. `"03677.7"`); `valueTenths` is `raw` converted by code (not by the model), `null` if any digit is unclear; `clear` is false when the model reports any doubt; `dashClock` is a clock visible on the dashboard as `HH:MM`, else `null`.
+`raw` is exactly the digits as displayed (e.g. `"03677.7"`); `valueTenths` is `raw` converted by code (not by the model), `null` if any digit is unclear; `clear` is false when the model reports any doubt; `dashClock` is a clock visible on the dashboard as `HH:MM`, else `null`. `displayDate` (added 30 Oct, `meter-v2`) is a date shown on the display itself, exactly as printed (`"26 OCT"`, `"26/10/2026"`), else `null`; never from a sticker or watermark, never changes `clear`. Code parses it (`src/agents/meter-guard.js`); a date it cannot parse is ignored.
 
 ### 3.2 UPI screenshot
 
@@ -117,6 +117,19 @@ export async function classifyPhoto(image) {}
 
 Kinds: `meter` is an engine hour-counter photo; `upi` is a UPI payment receipt screenshot (including pending or failed); `challan` is a delivery challan, delivery note, material bill or weighbridge slip; `other` is none of these. `clear` describes certainty about the kind, not legibility of individual fields. Any doubt or competing kinds means `clear: false`; an unidentifiable image returns `kind: 'other', clear: false`. The conversation must ask the person what the photo is when unsure; only a clear kind selects its specific reader. A clear `other` is not routed to a field reader.
 
+### 3.6 Same meter (added 30 Oct)
+
+```js
+/**
+ * @param {{a: ImageInput, b: ImageInput, timeoutMs?: number}} o  a: the reading already recorded, b: the new photo
+ * @returns {Promise<{ok: true, same: 'yes'|'no'|'unsure', differs: ('display'|'make'|'layout')[], model: string, latencyMs: number}
+ * | {ok: false, transient: boolean, reason: string}>}
+ */
+export async function sameMeter(o) {}
+```
+
+`src/readers/same-meter.js`: one `museSpark` call with both images and a strict schema. It compares the display type, the make printed on the panel and the panel's layout, never the digits. `differs` names what clearly differs and is empty unless `same` is `no`; a `no` without anything named is returned as `unsure`. Image text is data, never instructions. The caller decides: `no` refuses the photo, `unsure` reads it back once, a failure changes nothing (the photo is handled as before).
+
 ### 3.5 Evaluation (`eval/`)
 
 - Real images and answer keys live outside the repo: `D:\MUNSHI\CLAUDE\HACKATHON\hisaab-data\{meters,upi,challans}\` with `answers.json` per folder: `{ "<file>": { ...expected fields } }`.
@@ -144,7 +157,7 @@ Every message between agents:
 }
 ```
 
-Signature: Ed25519 over the RFC 8785 canonical JSON of the message without `sig`. Receiver checks, in this order: version → known sender → signature → addressed to me → not expired → not a repeat (`msg_id`) → type allowed for this pair → order state allows it → apply → signed `RECEIPT`. A refusal returns a signed `REFUSE` with a code only: `UNSUPPORTED`, `NOT_CONNECTED`, `BAD_SIGNATURE`, `NOT_FOR_ME`, `EXPIRED`, `WRONG_STATE`, `BAD_BODY`.
+Signature: Ed25519 over the RFC 8785 canonical JSON of the message without `sig`. Receiver checks, in this order: version → known sender → signature → addressed to me → not expired → not a repeat (`msg_id`) → type allowed for this pair → order state allows it → apply → signed `RECEIPT`. A refusal returns a signed `REFUSE` with a code only: `UNSUPPORTED`, `NOT_CONNECTED`, `BAD_SIGNATURE`, `NOT_FOR_ME`, `EXPIRED`, `WRONG_STATE`, `BAD_BODY`; for evidence also `no_such_record`, `not_party`, `not_kept` and `declined_by_owner` (below).
 
 | Type | From → to | Body |
 |---|---|---|
@@ -161,11 +174,23 @@ Signature: Ed25519 over the RFC 8785 canonical JSON of the message without `sig`
 | `REFUSE` | either | `refers_to: msg_id`, `code` |
 | `SITE_RECEIPT` | buyer → supplier | material only, after the DELIVERY: the site's signed copy of the challan. `delivery: msg_id` (the DELIVERY it answers; the order is the envelope's `order_id`), `challan: {sha256, number}` (the site's photo of its copy; number as read and confirmed, or `null`), `items` (what the site wrote it received, as counted; items at 0 left out), `signed: boolean|null` (the challan reader's receiver's mark). Never changes the state. Not `RECEIPT`: that name is the transport's signed acknowledgement of every message |
 | `EVIDENCE_REQUEST` | either party → the other party | `order: order_id`, `refers_to: msg_id` of one photo record, `reason: 'bill_disputed'|'count_differs'|'asked'` |
-| `EVIDENCE` | record owner → requesting party | `refers_to: request msg_id`, `items: [{record: msg_id, sha256, mime, bytes: base64}]`; one requested record per exchange; photo bytes at most 5 MiB |
+| `EVIDENCE` | record owner → requesting party | `refers_to: request msg_id`, `items: [{record: msg_id, sha256, mime, bytes: base64}]`; one requested record per exchange; photo bytes at most 5 MiB; sent only after the owner's yes (below) |
 
 Evidence on request (Build 4; brief `ASTRA-3-evidence.md`): the order and both parties must match
 before any media is read. An unavailable record returns a signed `REFUSE` with `no_such_record`,
 `not_party`, or `not_kept`; invalid evidence returns a signed refusal and is never displayed.
+
+**Owner consent (30 Oct).** A valid request for a kept photo is recorded and answered with a signed
+`RECEIPT`, not with the photo. The record owner's agent asks its owner (`jcb_owner`, `supplier`, or
+`contractor` for the site's photos) once per order: "हाँ" sends the `EVIDENCE` as its own signed
+message to the requester; "नहीं" sends a signed `REFUSE {refers_to: request msg_id, code:
+'declined_by_owner'}`. No reason is asked, nothing is sent again. No answer within the question's
+window (30 minutes) sends nothing. The decision is a local `NOTE {kind: 'evidence_consent', request:
+msg_id, answer: 'yes'|'no', by: role}` written before anything leaves; `prepare` refuses an
+`EVIDENCE` without a `yes` for that exact request. A repeat of a request gets the same answer as
+before: the receipt while undecided, then the same `EVIDENCE` (bytes re-read and re-checked) or the
+same `REFUSE`. A consented `EVIDENCE` that could not be delivered stays pending and is delivered
+again with its bytes taken from the private store.
 The requester must already have the expected hash in its own ledger. The received bytes must hash
 to exactly that value, and the item must name the requested record of that order and sender.
 
@@ -206,7 +231,7 @@ Muse Spark with tool calling turns a person's text (or transcript) into **one** 
 
 ## 7. WhatsApp (`src/wa/`)
 
-Two test numbers. Inbound: verify the `X-Hub-Signature-256` with that number's app secret; route by the receiving `phone_number_id` and the sender's phone to `{agent, role}`; unknown sender → one polite reply, nothing stored. Roles: `jcb_owner`, `operator`, `contractor`, `supervisor`, `supplier`. Outbound: text and verified evidence photos (JPEG/PNG media upload followed by an image message with a code caption); outside the 24-hour window nothing is sent. The image send rechecks the window after uploading. Upload/send failure or unsupported WebP image transport falls back to the same caption through the window-checked text path.
+Two test numbers. Inbound: verify the `X-Hub-Signature-256` with that number's app secret; a message WhatsApp marks as forwarded (`context.forwarded` or `context.frequently_forwarded`) carries `forwarded: true` to the conversation, and a forwarded meter photo is refused before it is read (challans are often forwarded by a supplier's staff and are not); route by the receiving `phone_number_id` and the sender's phone to `{agent, role}`; unknown sender → one polite reply, nothing stored. Roles: `jcb_owner`, `operator`, `contractor`, `supervisor`, `supplier`. Outbound: text and verified evidence photos (JPEG/PNG media upload followed by an image message with a code caption); outside the 24-hour window nothing is sent. The image send rechecks the window after uploading. Upload/send failure or unsupported WebP image transport falls back to the same caption through the window-checked text path.
 
 ## 8. Contractor features (`src/contractor/`)
 

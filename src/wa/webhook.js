@@ -17,6 +17,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
  *   mediaSha256?: string,
  *   caption?: string,
  *   replyId?: string,
+ *   forwarded?: boolean,
  * }} Inbound
  */
 
@@ -76,6 +77,8 @@ export function parseInbound(payload) {
         const seconds = Number(m.timestamp);
         /** @type {Inbound} */
         const msg = { phoneNumberId, from, msgId, atMs: Number.isFinite(seconds) ? seconds * 1000 : 0, kind: 'other' };
+        // WhatsApp marks a forwarded message (and one forwarded many times) in its context.
+        if (isObj(m.context) && (m.context.forwarded === true || m.context.frequently_forwarded === true)) msg.forwarded = true;
         if (m.type === 'text' && isObj(m.text)) {
           msg.kind = 'text';
           msg.text = str(m.text.body) ?? '';

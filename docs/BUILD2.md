@@ -165,6 +165,9 @@ the received photo; a local reading note supplies both sides' attributed figures
 `explainDifference`. Its existing number and wording checks still apply. A new reading never
 changes the recorded quantities, a bill, or a person's decision. No reminders or verdicts.
 
+Since 30 Oct the photo's owner decides first (next section): a request is answered with a receipt,
+the owner is asked "हाँ / नहीं", and only a yes sends the photo. The requester is told it waits.
+
 ## 6. Intake: ask only for what is missing (28 Oct 2026)
 
 A real test showed a supervisor's plain request ("कल साइट पर सीमेंट 50 बोरी चाहिए", a voice note with
@@ -344,3 +347,46 @@ amount and the UTR.
   shown as "—".
 * Ask-anything: `payments` rows carry `paid_at` when present, and `order_detail`'s
   `payment_reported` includes it; the time is an allowed figure for the answer check.
+
+## Photo guards and owner consent (30 Oct 2026)
+
+Live on 29 Oct the operator sent a clear start photo of one JCB (2061.7) and, as the end photo,
+forwarded an old photo of a different JCB (a plain LCD showing 6799.9 and "26 OCT"). Muse Spark read
+both correctly; code accepted end > start and a 4,738-hour bill reached the contractor. The lead added
+the 24-hour limit (`MAX_JOB_TENTHS`) and the 12-hour read-back. The owner's rule: a wrong photo is
+rejected at the start, or every later step between agents needs corrections from every person. The
+same day the JCB agent sent its owner's meter photos to the contractor without asking.
+
+**A meter photo is checked before anything is recorded** (`onMeterImage`, `src/agents/meter-guard.js`):
+
+| Check | By | Result |
+|---|---|---|
+| Forwarded (WhatsApp's `context.forwarded` / `frequently_forwarded`, carried by the webhook as `image.forwarded`) | code | refused before it is read: "मीटर की फ़ोटो अभी खींचकर भेजें, फ़ॉरवर्ड की हुई फ़ोटो नहीं चलेगी।" Challan photos are not checked: a supplier's staff often forward them |
+| Same machine as the other reading's photo (the end against the start, a start against an end) | Muse Spark `sameMeter`, one call with both images, run alongside the reading | `no` refused, naming what differs (display, make, layout); `unsure` read back once, "हाँ" records it; `yes` goes on. Model error or timeout: handled as before, said in the log only, work never blocked. No kept photo of the other reading: no comparison |
+| Date on the display (meter reader's new `displayDate`, as printed) | code parses "26 OCT", "26/10/2026", "2026-10-26", "OCT 26"; no year = the nearest | refused unless the job's day, the day before (a night shift), today or yesterday in IST (a job worked later than booked). A numeric date that reads both ways is refused only when neither reading fits. Unparseable or absent: ignored |
+| 24 hours between readings / more than 12 hours | code (unchanged) | refused / read back once |
+
+A refused photo records nothing and leaves no question open; the person sends a fresh photo of the
+same JCB's meter (or types the digits where the existing flow asks for them).
+
+**The owner decides before their photo is shared** (`src/agents/evidence.js`, CONTRACTS section 4):
+
+* A received `EVIDENCE_REQUEST` (automatic on a dispute or count difference, or `सबूत <ref>`) is
+  recorded and answered with a receipt. The record owner's agent asks its owner once per order:
+  "J-1: ठेकेदार मीटर की फ़ोटो माँग रहे हैं (बिल पर आपत्ति)। भेजें? हाँ / नहीं". JCB photos: the JCB owner;
+  challans: the supplier; the site's copy of a challan: the contractor. A second request on the same
+  order while the question is open is covered by it (same kind of photo) or asks again naming all.
+* "हाँ" (any short yes) sends every open request's photo as a signed `EVIDENCE`, hash-checked as
+  before. "नहीं" sends a signed `REFUSE` with `declined_by_owner`; the requester is told
+  "J-1: JCB मालिक ने फ़ोटो भेजने से मना किया।" once. No reason asked, no reminder.
+* The requester is told at once that it waits for the other side's owner. No answer within the
+  question's 30 minutes: nothing is sent. A later `सबूत` asks again.
+* Each decision is a local `NOTE evidence_consent` before anything leaves; the protocol refuses an
+  `EVIDENCE` without a yes. The `no` of a yes/no question can now be a step too (`expect.no`).
+
+Live check of `sameMeter` (30 Oct, invented drawn images, `muse-spark-1.3`): 5 of 6 pairs as expected
+(same panel moved, tilted and darker: yes; same mechanical counter: yes; LCD against drum counter: no,
+display/make/layout; same panel shape with another brand plate: no, make; blurred: unsure). A full
+panel against a close-up of a plain LCD came back unsure (twice), so it is read back; in the live
+case the display date and the 24-hour rule refuse that photo too. p50 8 s, run alongside the meter
+reading. The prompt was not tuned on these images.

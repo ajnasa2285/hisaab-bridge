@@ -22,8 +22,10 @@ import { t } from '../i18n/index.js';
 /** @typedef {{limit: 'procurement' | 'payment', estimatePaise: (args: Record<string, any>) => number | null}} Hold */
 /**
  * Tells everyone in a role. `expect` is the step a plain "yes" from them will mean (the text asks a
- * yes/no question), so they answer once instead of being asked again.
- * @typedef {(role: Role, key: string, params?: Record<string, string | number>, expect?: {tool: string, args: Record<string, any>}) => Promise<void> | void} Tell
+ * yes/no question), so they answer once instead of being asked again; `expect.no` is the step a plain
+ * "no" means, when "no" is a decision too.
+ * @typedef {(role: Role, key: string, params?: Record<string, string | number>,
+ *   expect?: {tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}}) => Promise<void> | void} Tell
  */
 /** @typedef {import('../ledger/store.js').LedgerEvent} LedgerEvent */
 
