@@ -15,6 +15,13 @@ import { differenceFacts } from './explain-facts.js';
 /** @typedef {import('./common.js').Tell} Tell */
 /** @typedef {import('../protocol/messages.js').Message} Message */
 /** @typedef {import('../ledger/store.js').LedgerEvent} LedgerEvent */
+// One job is one day's work: more than 24 hours between two meter readings means the photos are of
+// different machines or a misread, never work done. Code refuses it; the person sends the right photo
+// or types the digits. (Found live on 29 Oct: two clear photos of two different JCBs gave 4,738 hours.)
+export const MAX_JOB_TENTHS = 240;
+/** @param {number} startTenths @param {number} endTenths */
+export const impossible = (startTenths, endTenths) => ({ start: hours(startTenths), end: hours(endTenths), hours: hours(endTenths - startTenths) });
+
 /** @typedef {{which: 'start' | 'end', valueTenths: number, sha256: string, takenAt: string | null, at: string, record?: string}} MeterReading */
 
 /**
@@ -132,8 +139,10 @@ export function createJcbAgent(o) {
         if (a.which === 'end') {
           if (!r.start) return no('jcb.start_first');
           if (a.valueTenths <= r.start.valueTenths) return no('jcb.end_not_after_start', { start: hours(r.start.valueTenths) });
+          if (a.valueTenths - r.start.valueTenths > MAX_JOB_TENTHS) return no('jcb.meter_hours_impossible', impossible(r.start.valueTenths, a.valueTenths));
         }
         if (a.which === 'start' && r.end && a.valueTenths >= r.end.valueTenths) return no('jcb.end_not_after_start', { start: hours(a.valueTenths) });
+        if (a.which === 'start' && r.end && r.end.valueTenths - a.valueTenths > MAX_JOB_TENTHS) return no('jcb.meter_hours_impossible', impossible(a.valueTenths, r.end.valueTenths));
         const stored = ledger.append({
           orderId: a.orderId, direction: 'local', type: 'EVIDENCE', msgId: randomUUID(),
           body: { kind: 'meter', which: a.which, valueTenths: a.valueTenths, sha256: a.sha256, takenAt: a.takenAt ?? null },
@@ -187,7 +196,7 @@ export function createJcbAgent(o) {
       },
       async run(_p, a) {
         if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
-        if (!posInt(a.hoursTenths)) return no('common.bad_args');
+        if (!posInt(a.hoursTenths) || a.hoursTenths > MAX_JOB_TENTHS) return no('common.bad_args');
         const events = ledger.events(a.orderId);
         const view = ledger.view(a.orderId);
         const rate = agreedRate(events);

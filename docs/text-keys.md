@@ -29,6 +29,7 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `jcb.meter_end_saved` | reading, hours | to operator: end reading saved, hours worked |
 | `jcb.start_first` | — | to operator: send the start photo first |
 | `jcb.end_not_after_start` | start | to operator: the end reading must be more than the start |
+| `jcb.meter_hours_impossible` | start, end, hours | to operator/owner: more than 24 h between the readings, so not this job (another machine or a misread); nothing recorded; send the right photo or type the digits (Claude drafted, Fable to polish) |
 | `jcb.meter_done` | hours | to owner: the job's hours are in |
 | `jcb.readings_missing` | — | to owner: no bill without both meter readings |
 | `jcb.bill_sent` | hours, rate, total | to owner: bill sent with photos |

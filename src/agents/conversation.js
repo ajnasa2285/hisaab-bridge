@@ -18,7 +18,7 @@
 import { createHash } from 'node:crypto';
 import { fillStep, proposeStep, orderRefs, pickOrder } from '../orchestrator/orchestrator.js';
 import { parseHundredthsList } from '../orchestrator/units.js';
-import { meterReadings } from './jcb.js';
+import { impossible, meterReadings, MAX_JOB_TENTHS } from './jcb.js';
 import { challanQuantities, countDifferences, delivery, requestedItems, sameChallanNo, siteCount } from './material.js';
 import { exactReply, yesNo } from './replies.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
@@ -58,6 +58,8 @@ import { t } from '../i18n/index.js';
  *   {ok: false, transient: boolean, reason: string}>} UpiReader */
 
 const PENDING_MS = 30 * 60 * 1000;
+/** A JCB day longer than this (12 h) is read back once before it counts. */
+const LONG_JOB_TENTHS = 120;
 // A short yes or no, typed or spoken ("हाँ जी", "ok bhej do", "नहीं चाहिए"; src/agents/replies.js).
 const YES = { has: (/** @type {string} */ said) => yesNo(said) === 'yes' };
 const NO = { has: (/** @type {string} */ said) => yesNo(said) === 'no' };
@@ -421,7 +423,16 @@ export function createConversation(o) {
     // Code's check: an end reading must be above the start (and a start below an end). A reading that
     // fails it is read back, so the person can type the right digits; a clear one is recorded at once.
     const mismatch = which === 'end' ? r.start !== null && read.valueTenths <= r.start.valueTenths : r.end !== null && read.valueTenths >= r.end.valueTenths;
-    return mismatch ? propose(person, 'record_meter', args) : commitNow(person, 'record_meter', args);
+    // More than a day's work between the two readings: not this job (another machine, or a misread).
+    // Nothing is recorded; the person sends the right photo or types the digits.
+    const worked = which === 'end' && r.start !== null ? read.valueTenths - r.start.valueTenths : null;
+    if (worked !== null && worked > MAX_JOB_TENTHS) {
+      pending.set(keyOf(person), { kind: 'meter_digits', orderId: picked.orderId, which, sha256, takenAt, at: o.now() });
+      return o.reply(person, 'jcb.meter_hours_impossible', impossible(/** @type {{valueTenths: number}} */ (r.start).valueTenths, read.valueTenths));
+    }
+    // A long day (more than LONG_JOB_TENTHS) is possible but unusual: read back once before it counts.
+    const long = worked !== null && worked > LONG_JOB_TENTHS;
+    return mismatch || long ? propose(person, 'record_meter', args) : commitNow(person, 'record_meter', args);
   }
 
   /**

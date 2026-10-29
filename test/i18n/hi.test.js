@@ -120,7 +120,7 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'jcb.booking_request': ['ref', 'site', 'day', 'time', 'hours'], 'jcb.rate_needed': [], 'jcb.day_needed': [],
     'jcb.reply_sent_yes': ['ref', 'site', 'day', 'rate'], 'jcb.reply_sent_no': ['ref', 'site', 'day'], 'jcb.reply_sent_other_time': ['ref', 'site', 'day'],
     'jcb.job_booked': ['ref', 'site', 'day', 'time'], 'jcb.meter_start_saved': ['reading'], 'jcb.meter_end_saved': ['reading', 'hours'],
-    'jcb.start_first': [], 'jcb.end_not_after_start': ['start'], 'jcb.meter_done': ['hours'], 'jcb.readings_missing': [],
+    'jcb.start_first': [], 'jcb.end_not_after_start': ['start'], 'jcb.meter_hours_impossible': ['start', 'end', 'hours'], 'jcb.meter_done': ['hours'], 'jcb.readings_missing': [],
     'jcb.bill_sent': ['hours', 'rate', 'total'], 'jcb.bill_accepted': ['ref', 'site'], 'jcb.bill_disputed': ['ref', 'site', 'their', 'reason'],
     'jcb.correction_sent': ['hours', 'total'], 'jcb.payment_claimed': ['ref', 'site', 'amount', 'utr', 'day'], 'jcb.settled_sent': ['amount'],
     'site.jcb_requested': ['ref', 'site', 'day', 'time'], 'site.booking_yes': ['ref', 'site', 'day', 'time', 'rate'],

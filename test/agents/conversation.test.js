@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createConversation } from '../../src/agents/conversation.js';
+import { runTool } from '../../src/agents/common.js';
 import { t } from '../../src/i18n/index.js';
 import { setup, person, seesPhoto } from './helpers.js';
 
@@ -71,6 +72,16 @@ test('a JCB job by conversation: free words are read back; exact replies and cle
     await jcbTalk.onImage(operator, { mime: 'image/jpeg', bytes: new Uint8Array([1, 2, 3]) });
     assert.deepEqual(said.at(-1)?.slice(0, 2), ['operator', 'jcb.meter_start_saved']);
     assert.ok(said.at(-1)?.[2].includes('1234.5'));
+    // A clear photo of another machine (live, 29 Oct: 2061.7 then 6799.9): more than 24 h is not this
+    // job. Nothing is recorded; the digits question stays open, so typed digits would also do.
+    nextRead = { ok: true, kind: 'hour_meter', raw: '6799.9', valueTenths: 67999, clear: true };
+    await jcbTalk.onImage(operator, { mime: 'image/jpeg', bytes: new Uint8Array([9, 9, 9]) });
+    assert.equal(last(), 'jcb.meter_hours_impossible');
+    assert.ok(said.at(-1)?.[2].includes('5565.4'), said.at(-1)?.[2]);
+    assert.equal(s.jcbCore.ledger.events(/** @type {any} */ (s.jcbCore.ledger.orders()[0]).order_id).filter((e) => e.type === 'EVIDENCE').length, 1);
+    // The tool refuses it too, whatever path it comes by.
+    const refused = await runTool(s.jcb.tools, operator, { tool: 'record_meter', args: { orderId: /** @type {any} */ (s.jcbCore.ledger.orders()[0]).order_id, which: 'end', valueTenths: 67999, sha256: 'a'.repeat(64), takenAt: null } });
+    assert.equal(refused.key, 'jcb.meter_hours_impossible');
     nextRead = { ok: true, kind: 'hour_meter', raw: '124?.6', valueTenths: null, clear: false };
     await jcbTalk.onImage(operator, { mime: 'image/jpeg', bytes: new Uint8Array([4, 5, 6]) });
     assert.equal(last(), 'meter.ask_person');
