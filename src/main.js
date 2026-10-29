@@ -126,6 +126,8 @@ export function loadConfig(env) {
     baseUrl,
     dataDir,
     exportToken: env.HB_EXPORT_TOKEN || undefined,
+    // The trace keeps people's own words only when this is 1 (the demo); digits masked either way.
+    traceText: env.HB_TRACE_TEXT === '1',
     waStoreFile: join(dataDir, 'wa.db'),
     lines,
     people,

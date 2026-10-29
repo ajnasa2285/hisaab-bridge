@@ -24,6 +24,7 @@ import { exactReply, yesNo } from './replies.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
 import { runTool } from './common.js';
 import { parseCommand } from './office.js';
+import { traceCheck } from '../trace/trace.js';
 import { answerQuestion } from './ask.js';
 import { day as dayName, qty as qtyText, rupees } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
@@ -421,6 +422,8 @@ export function createConversation(o) {
     // Code's check: an end reading must be above the start (and a start below an end). A reading that
     // fails it is read back, so the person can type the right digits; a clear one is recorded at once.
     const mismatch = which === 'end' ? r.start !== null && read.valueTenths <= r.start.valueTenths : r.end !== null && read.valueTenths >= r.end.valueTenths;
+    traceCheck(mismatch ? `meter reading not consistent with the ${which === 'end' ? 'start' : 'end'} ✗ → read back` : `meter reading clear and consistent ✓ → recorded at once`,
+      !mismatch, { name: 'meter_photo', which, valueTenths: read.valueTenths, startTenths: r.start?.valueTenths ?? null, endTenths: r.end?.valueTenths ?? null }, picked.orderId);
     return mismatch ? propose(person, 'record_meter', args) : commitNow(person, 'record_meter', args);
   }
 
@@ -615,6 +618,8 @@ export function createConversation(o) {
     const bill = o.ledger.view(picked.orderId).currentBill;
     const total = bill ? o.ledger.eventOfMessage(bill)?.body.body.totalPaise : undefined;
     // A different amount is not refused (part payments happen); the contractor sees both figures first.
+    traceCheck(Number.isSafeInteger(total) ? `UPI amount ${total === read.amountPaise ? '✓ =' : '✗ ≠'} bill: ${rupees(read.amountPaise)} / ${rupees(/** @type {number} */ (total))}` : 'UPI amount: no bill total to compare',
+      total === read.amountPaise, { name: 'upi_amount', paidPaise: read.amountPaise, billPaise: total ?? null, utr: read.utr }, picked.orderId);
     if (Number.isSafeInteger(total) && total !== read.amountPaise) {
       return propose(person, 'claim_payment', args, { key: 'payment.amount_differs', params: { seen: rupees(read.amountPaise), total: rupees(/** @type {number} */ (total)) } });
     }

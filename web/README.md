@@ -53,7 +53,8 @@ Labels are in Hindi; the button at the top switches to English for judges. Texts
 - the payment claim (amount, UTR, day, screenshot fingerprint) and the settlement;
 - the chain check of each ledger and, per order, the state replayed from its events (the
   material path included; a history that breaks the state rules is marked ❌);
-- a results panel from `eval/results/*.json` (aggregate numbers only); "—" when there are none.
+- a results panel from `eval/results/*.json` (aggregate numbers only); "—" when there are none;
+- **inside the agent** (below), under each side's column.
 
 ## Export shape (`hb-export/0.1`)
 
@@ -87,6 +88,7 @@ Labels are in Hindi; the button at the top switches to English for judges. Texts
 - Signatures are checked with the `publicKey` of the side whose `agentId` equals the message's
   `from`. An export therefore carries both public keys and no private material.
 - `refs` (optional) maps `order_id` to that side's own reference, `J-n` or `P-n`.
+- `trace` (optional) is that agent's trace entries, oldest first, in the shape of `GET /agents/<name>/trace` (below).
 - The server's `GET /agents/<name>/export` (CONTRACTS section 10) returns one side in this shape
   (the inner object, with `v` and `exportedAt` of its own); the page combines the sides as above.
   A side may be missing.
@@ -101,3 +103,57 @@ counts 48 → bill 50 × ₹350 → dispute 48 → correction → accept → pay
 phones (`9190000000xx`), fingerprints and UTRs are invented. Keys are generated fresh on each run,
 so the file differs run to run; `test/web/sample.test.js` checks that the committed export's
 signatures verify, all three chains recompute, and both stories are there.
+
+## Inside the agent
+
+Under each side's ledger column, every order gets a timeline of what happened inside that agent for
+it, from the agent's own trace (`src/trace/`, kept apart from the ledger):
+
+- ✨ **Meta model** rows, marked `META`: the job (understood the message, what the photo is, read the
+  hour meter / UPI receipt / challan, voice to text, explained the difference, question lookups and
+  answer), the model id, reasoning effort, latency, and the structured output (tool and arguments,
+  photo kind and clear, the reading's fields, the explanation's length);
+- 🔎 **code checks** with ✓ / ✗ and the figures ("meter end above start ✓ 1240.6 > 1234.5", "hours =
+  end − start … = ₹7,320", "bill = delivered × agreed rate ✓", "site count vs signed delivery ✗
+  differs", "every number in the explanation is in the ledger ✓"), and ⏸ for a step held for approval
+  ("approval needed: no limit set → held for the contractor");
+- 🙋 **people's decisions**: who decided, for whom, and their exact short reply ("OK J-1", "हाँ 1200")
+  when the server keeps words (`HB_TRACE_TEXT=1`);
+- 📤 / 📥 **signed messages** out and in: type, to/from, signature verified, the A2A round trip,
+  the receipt; 📒 **ledger rows** with sequence and hash prefixes. Both link to the ledger card above
+  (`ledger row #n`);
+- 📩 messages in (text, command, photo, voice) and 💬 replies (the text key, and the time since the
+  message arrived).
+
+The order's header sums both agents: Muse calls, total model time, checks passed, people's decisions.
+
+**Live.** With the access key entered, the "live (every 3 s)" box fetches the three ledgers and the
+three traces again every 3 seconds, redraws only when something changed, and scrolls each timeline
+to its newest entry. Laid out to be read at 1280×720 for screen recording.
+
+**Trace endpoint.** `GET /agents/<name>/trace?since=<iso>&order=<ref>` with the same
+`Authorization: Bearer <HB_EXPORT_TOKEN>` as the export (404 without it, and always 404 when no token
+is configured):
+
+```json
+{
+  "v": "hb-trace/0.1", "exportedAt": "...", "agentId": "agent:jcb-1", "name": "jcb",
+  "entries": [
+    { "id": 17, "at": "2026-10-29T03:05:00.000Z", "agent": "jcb", "orderId": "uuid", "ref": "J-1",
+      "convo": "c-1a2b3c4d5e", "kind": "model", "title": "meter reads 1234.5",
+      "detail": { "job": "meter", "model": "muse-spark-1.2", "reasoningEffort": "default", "raw": "1234.5", "valueTenths": 12345, "clear": true },
+      "ms": 2620 }
+  ]
+}
+```
+
+`kind` is one of `received`, `model`, `check`, `decision`, `signed_out`, `signed_in`, `ledger`,
+`reply`. `convo` is a keyed hash of the person (never a phone). A trace never holds a key, image or
+audio bytes, or a prompt; people's words only with `HB_TRACE_TEXT=1`, every run of 8+ digits masked
+(a UTR only in its own field). The page's rendering is in `web/trace-view.js` (pure functions,
+`test/web/trace-view.test.js`).
+
+In the sample, the code checks, decisions, signed messages and ledger rows are the real agents' own
+(recorded by the same hooks); the Muse steps are invented entries with invented latencies, since the
+sample runs without a model, and the explanations go through the real explanation checks with a
+stand-in's fixed words.

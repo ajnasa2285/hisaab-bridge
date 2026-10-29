@@ -10,6 +10,7 @@ import { openRefs } from '../ledger/refs.js';
 import { variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
 import { differenceFacts } from './explain-facts.js';
+import { traceCheck } from '../trace/trace.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -131,6 +132,8 @@ export function createJcbAgent(o) {
         const r = meterReadings(ledger.events(a.orderId));
         if (a.which === 'end') {
           if (!r.start) return no('jcb.start_first');
+          traceCheck(`meter end above start ${a.valueTenths > r.start.valueTenths ? '✓' : '✗'} ${hours(a.valueTenths)} > ${hours(r.start.valueTenths)}`,
+            a.valueTenths > r.start.valueTenths, { name: 'meter_order', startTenths: r.start.valueTenths, endTenths: a.valueTenths }, a.orderId);
           if (a.valueTenths <= r.start.valueTenths) return no('jcb.end_not_after_start', { start: hours(r.start.valueTenths) });
         }
         if (a.which === 'start' && r.end && a.valueTenths >= r.end.valueTenths) return no('jcb.end_not_after_start', { start: hours(a.valueTenths) });
@@ -171,6 +174,8 @@ export function createJcbAgent(o) {
         const rate = agreedRate(events);
         if (rate === null) return no('jcb.rate_needed');
         const body = jcbBillBody(end.valueTenths - start.valueTenths, rate, [start, end]);
+        traceCheck(`hours = end − start: ${hours(end.valueTenths)} − ${hours(start.valueTenths)} = ${hours(body.lines[0].hoursTenths)} h × ${rupees(rate)} = ${rupees(body.totalPaise)}`,
+          true, { name: 'bill_from_meter', startTenths: start.valueTenths, endTenths: end.valueTenths, hoursTenths: body.lines[0].hoursTenths, ratePaise: rate, totalPaise: body.totalPaise }, a.orderId);
         const d = await link.send({ type: 'BILL', to: /** @type {string} */ (counterparty(a.orderId)), orderId: a.orderId, body });
         return deliveryResult(d, 'jcb.bill_sent', { hours: hours(body.lines[0].hoursTenths), rate: rupees(rate), total: rupees(body.totalPaise) });
       },

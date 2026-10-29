@@ -104,6 +104,21 @@ export const TEXTS = {
     results_hint: 'सिर्फ़ कुल आँकड़े; असली फ़ोटो या उनके नाम कभी नहीं।',
     no_export: 'निर्यात नहीं मिला। web/sample/export.json बनाएँ: node web/sample/make-sample.js',
     exported_at: 'निर्यात',
+    inside_title: 'एजेंट के अंदर',
+    inside_hint: 'हर Muse कॉल, हर कोड जाँच, हर फ़ैसला: इस एजेंट ने इस काम पर क्या किया, क्रम से।',
+    inside_none: 'इस काम का अंदर का ब्यौरा नहीं है।',
+    inside_summary: '{muse} Muse कॉल · मॉडल समय {ms} · जाँच {pass}/{checks} ✓ · लोगों के फ़ैसले {decisions}',
+    live_toggle: 'लाइव (हर 3 सेकंड)',
+    meta_model: 'Meta मॉडल',
+    to_ledger: 'बही की पंक्ति',
+    trace_kinds: {
+      received: 'संदेश आया', model: 'Meta मॉडल', check: 'कोड की जाँच', decision: 'व्यक्ति का फ़ैसला',
+      signed_out: 'मुहरबंद संदेश गया', signed_in: 'मुहरबंद संदेश आया', ledger: 'बही में दर्ज', reply: 'जवाब भेजा',
+    },
+    trace_jobs: {
+      understand: 'संदेश समझा', photo_kind: 'फ़ोटो किस चीज़ की', meter: 'मीटर पढ़ा', upi: 'UPI रसीद पढ़ी', challan: 'चालान पढ़ा',
+      transcribe: 'आवाज़ से शब्द', explain: 'फ़र्क समझाया', ask_plan: 'सवाल: क्या देखें', ask_answer: 'सवाल: जवाब लिखा',
+    },
     result: {
       planned: 'जाँचे / तय', labeled: 'उत्तर-कुंजी वाले', unlabeled: 'बिना कुंजी', confident: 'पक्के पढ़े', unclear: 'अस्पष्ट',
       not_meter: 'मीटर नहीं', failures: 'विफल', exact: 'अंक ज्यों के त्यों सही', value: 'मान सही', classification: 'वर्ग सही',
@@ -221,6 +236,21 @@ export const TEXTS = {
     results_hint: 'Aggregate numbers only; never real images or their names.',
     no_export: 'No export found. Make web/sample/export.json with: node web/sample/make-sample.js',
     exported_at: 'Exported',
+    inside_title: 'Inside the agent',
+    inside_hint: 'Every Muse call, every code check, every decision: what this agent did on this order, in order.',
+    inside_none: 'No inside view for this order.',
+    inside_summary: '{muse} Muse calls · model time {ms} · checks {pass}/{checks} ✓ · people\'s decisions {decisions}',
+    live_toggle: 'Live (every 3 s)',
+    meta_model: 'Meta model',
+    to_ledger: 'ledger row',
+    trace_kinds: {
+      received: 'message in', model: 'Meta model', check: 'code check', decision: 'person decided',
+      signed_out: 'signed message out', signed_in: 'signed message in', ledger: 'ledger row written', reply: 'reply sent',
+    },
+    trace_jobs: {
+      understand: 'understood the message', photo_kind: 'what the photo is', meter: 'read the hour meter', upi: 'read the UPI receipt', challan: 'read the challan',
+      transcribe: 'voice to text', explain: 'explained the difference', ask_plan: 'question: chose lookups', ask_answer: 'question: wrote the answer',
+    },
     result: {
       planned: 'Evaluated / planned', labeled: 'With answer key', unlabeled: 'without', confident: 'Read confidently', unclear: 'Unclear',
       not_meter: 'Not a meter', failures: 'Failures', exact: 'Exact digits correct', value: 'Value correct', classification: 'Classification correct',

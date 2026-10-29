@@ -78,15 +78,25 @@ function a2aMessage(role, data, contextId) {
  * The receiving side: a handler for POST /a2a and GET /.well-known/agent-card.json.
  * @param {Parameters<typeof receive>[0]} agent
  * @param {Record<string, any>} cardJson from agentCardJson
- * @param {{onApplied?: (message: import('../protocol/messages.js').Message) => void}} [hooks]
- *   onApplied runs after a message has been written for the first time (e.g. to tell the owner)
+ * @param {{onApplied?: (message: import('../protocol/messages.js').Message) => void,
+ *   onReceived?: (incoming: unknown, r: ReturnType<typeof receive>, ms: number) => void}} [hooks]
+ *   onApplied runs after a message has been written for the first time (e.g. to tell the owner);
+ *   onReceived (optional, an observer such as the trace) sees every verdict, refusals included
  */
 export function createA2AHandler(agent, cardJson, hooks = {}) {
   /** @type {import('@a2a-js/sdk/server').AgentExecutor} */
   const executor = {
     async execute(ctx, bus) {
       const incoming = dataPart(ctx.userMessage);
+      const start = performance.now();
       const r = receive(agent, incoming);
+      if (hooks.onReceived) {
+        try {
+          hooks.onReceived(incoming, r, Math.round(performance.now() - start));
+        } catch {
+          // An observer never changes the answer.
+        }
+      }
       bus.publish(AgentEvent.message(a2aMessage('ROLE_AGENT', r.answer, ctx.contextId)));
       bus.finished();
       if (r.applied && r.message && hooks.onApplied) {
