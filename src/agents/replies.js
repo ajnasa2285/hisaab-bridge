@@ -31,6 +31,8 @@ const FILLER = words([
   'है', 'हैं', 'जी', 'भेज', 'भेजो', 'भेजें', 'भेजिए', 'दो', 'दें', 'दीजिए', 'कर', 'करो', 'करें', 'अभी', 'चाहिए', 'भाई', 'सर', 'साहब',
   'आ', 'गया', 'गए', 'गई', 'मिल', 'मिला', 'मिले', 'आया', 'आए', 'हो', 'please', 'plz', 'pls', 'hai', 'bhej', 'bhejo', 'do', 'de', 'kar', 'karo',
   'abhi', 'chahiye', 'chaiye', 'bhai', 'sir', 'sahab', 'aa', 'gaya', 'gaye', 'mil', 'mila', 'aaya', 'ho',
+  // "हां दर्ज कर लो" (live, 30 Oct, a supplier's voice yes to a read-back), "लिख लो", "रख लो".
+  'दर्ज', 'लो', 'लें', 'लीजिए', 'लिख', 'लिखो', 'रख', 'रखो', 'darj', 'lo', 'likh', 'likho', 'rakh', 'rakho',
 ]);
 const BILL_WORDS = words(['बिल', 'bill']);
 // Words that may follow a rate ("हाँ 1200 घंटा", "हाँ ₹380 रुपये").

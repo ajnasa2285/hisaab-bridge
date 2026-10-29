@@ -24,6 +24,7 @@ test('short yes and no: typed or spoken, punctuation stripped; anything with dig
   for (const s of ['हाँ', 'हां जी', 'जी हाँ', 'हाँ जी।', 'हां भेज दो', 'haan ji', 'ok bhej do', 'ठीक है भेजो', 'Ok.', 'हाँ, भेज दो।', 'जी', 'हाँ?', 'हाँ आ गया']) {
     assert.equal(yesNo(s), 'yes', s);
   }
+  for (const s of ['हां दर्ज कर लो.', 'हाँ लिख लो', 'haan darj karo']) assert.equal(yesNo(s), 'yes', s);
   for (const s of ['नहीं', 'नहीं चाहिए', 'nahi abhi nahi', 'नहीं, अभी नहीं।', 'जी नहीं', 'no.', 'नहीं आया']) {
     assert.equal(yesNo(s), 'no', s);
   }
