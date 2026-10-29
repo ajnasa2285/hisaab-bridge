@@ -837,7 +837,7 @@ export function createConversation(o) {
     // The supplier printed the challan: its memory is that supplier's, when all open orders are with one.
     const sellers = new Set(open.map((r) => /** @type {{counterparty: string} | null} */ (o.ledger.order(r.orderId))?.counterparty));
     const seller = sellers.size === 1 ? [...sellers][0] : undefined;
-    const photo = { mime: image.mime, bytes: image.bytes };
+    const photo = { mime: /** @type {'image/jpeg'} */ (image.mime), bytes: image.bytes };
     const learnt = seller
       ? await readLearned('site_challan', seller, open.length === 1 ? open[0].orderId : null, o.readChallan, photo,
         (r) => (r.ok && r.kind === 'challan' ? JSON.stringify([r.items.map((i) => i.qtyHundredths), r.challanNo]) : 'none'))

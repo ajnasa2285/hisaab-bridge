@@ -58,7 +58,7 @@ async function jcbJob(tc, learn = openLearn()) {
   f.talk = createConversation({
     ledger: s.jcbCore.ledger, tools: s.jcb.tools, spark: async () => ({ ok: true, toolCalls: [] }), now: s.jcbCore.now, learn,
     classifyPhoto: seesPhoto('meter'),
-    readMeter: async (_image, opts) => { reads.push({ opts }); return opts?.memory ? f.withMemory ?? f.plain : f.plain; },
+    readMeter: async (/** @type {any} */ _image, /** @type {any} */ opts = undefined) => { reads.push({ opts }); return opts?.memory ? f.withMemory ?? f.plain : f.plain; },
     reply: (_p, key, params) => { said.push([key, t(key, params)]); },
   });
   return f;
@@ -163,6 +163,7 @@ async function materialOrder(tc) {
   tc.after(() => s.close());
   const reply = (/** @type {any} */ p, /** @type {string} */ key, /** @type {any} */ params) => { said.push([p.role, key, t(key, params)]); };
   const spark = async () => ({ ok: /** @type {const} */ (true), toolCalls: [] });
+  /** @type {any} */
   const f = {
     s, said, supLearn: openLearn(), siteLearn: openLearn(),
     /** @type {any} */ plain: null, /** @type {any} */ withMemory: null,
@@ -170,7 +171,7 @@ async function materialOrder(tc) {
     last: () => said.at(-1),
     /** @type {any} */ supTalk: null, /** @type {any} */ siteTalk: null, orderId: '',
   };
-  /** @param {any} _image @param {any} o */
+  /** @param {any} _image @param {any} [o] */
   const readChallan = async (_image, o) => { f.opts.push(o); return o?.memory ? f.withMemory ?? f.plain : f.plain; };
   f.supTalk = createConversation({ ledger: s.supCore.ledger, tools: s.sup.tools, spark, readChallan, classifyPhoto: seesPhoto('challan'), reply, now: s.supCore.now, learn: f.supLearn });
   siteTalk = f.siteTalk = createConversation({ ledger: s.siteCore.ledger, tools: s.site.tools, spark, readChallan, classifyPhoto: seesPhoto('challan'), reply, now: s.siteCore.now, learn: f.siteLearn });

@@ -1,5 +1,6 @@
 {
   "v": "hb-learn-eval/0.1",
+  "reader": "learn",
   "model": "muse-spark-1.3",
   "data": "invented documents (eval/learn/answers.json)",
   "pairs": 10,

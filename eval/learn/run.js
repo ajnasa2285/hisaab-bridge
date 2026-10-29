@@ -156,7 +156,7 @@ async function main() {
   learn.close();
   const calls = attempts() - before;
   const summary = {
-    v: 'hb-learn-eval/0.1', model: process.env.MUSE_SPARK_MODEL ?? null, data: 'invented documents (eval/learn/answers.json)',
+    v: 'hb-learn-eval/0.1', reader: 'learn', model: process.env.MUSE_SPARK_MODEL ?? null, data: 'invented documents (eval/learn/answers.json)',
     pairs: pairs.length, fieldsPerReading: 'each item qty + challanNo',
     docA: { fields: tally.a.n, accuracy: rate(tally.a.ok, tally.a.n), wrongButConfident: tally.a.cw },
     docB: {
