@@ -391,6 +391,55 @@ panel against a close-up of a plain LCD came back unsure (twice), so it is read 
 case the display date and the 24-hour rule refuse that photo too. p50 8 s, run alongside the meter
 reading. The prompt was not tuned on these images.
 
+## GST on material (30 Oct 2026)
+
+Live on 29 Oct a cement delivery came with a GST tax invoice: 50 bags at ₹380, taxable ₹19,000,
+CGST 14% ₹2,660, SGST 14% ₹2,660, grand total ₹24,320. The supplier had answered "हाँ 380", so the
+bill would have been ₹19,000 and the UPI payment compared with the wrong amount. Now:
+
+* **The yes may carry GST** (`src/agents/replies.js`, exact, before the model): "हाँ 380 + 28%",
+  "हाँ 380 28% gst", "हाँ 350 18%, 4000 5%". A percent belongs to the rate before it; only the slabs
+  0, 5, 12, 18, 28, 40 (whole percent); anything else goes to the model route, whose `reply_order`
+  has `gst_percents` and is read back. Stored as `rates[i].gstPercent` (optional; old replies = no GST
+  known).
+* **The invoice tells too** (`challan-v2`): per line `rate`, `taxableValue`, CGST/SGST/IGST rates and
+  the document's `grandTotal`, as printed, parsed by code to paise; unclear → null; never quantities,
+  never `clear`. A tax summary printed once applies to lines that print no rate. Carried on the
+  DELIVERY: items' `gstPercent`, `invoiceRatePaise`, `taxablePaise`, and `grandTotalPaise`.
+* **The bill** (code, both sides with the same `billLine`): taxable = qty × rate; GST = 2 × each half
+  (taxable × gst% / 200) rounded to the paisa, half up (as invoices print CGST and SGST); line amount =
+  taxable + GST; `totalPaise` the sum. GST rate from the yes, else the invoice, else none (today's
+  bill). The contractor's code checks every line including GST.
+* **Against the invoice's grand total** (`invoiceCheck`): equal, or the invoice rounded off to the
+  rupee and equal to the bill rounded to the rupee → both sides read "चालान/इनवॉइस से मिलान ठीक".
+  Different → the supplier's "बिल" is read back once with both figures before it leaves; the contractor
+  gets the bill with both figures. The bill is always code's figure, never the printed one.
+* **Downstream**: UPI amount vs the bill, ask-anything totals (`order_detail` adds `bill_gst_included`),
+  explanation facts (taxable and GST as rupee figures; a percent is never allowed in an explanation),
+  the judge page (lines, rates, invoice total). Stock and counts unchanged (quantities only).
+  The approval-limit estimate (`request_material`) is still rate × quantity, without GST.
+* **JCB hire**: unchanged (no GST). The same optional line fields would fit, but nothing sets them.
+
+Live check (30 Oct, four invented invoices rendered by us, `muse-spark-1.3`): 4/4 read exactly (rate,
+taxable value, GST percent, grand total), including two items at 18% and 5% on one invoice, IGST 18%,
+and a tax summary printed once with a round-off; code's total matched the grand total on all four
+(one by the rupee round-off). p50 about 7.6 s. Clean rendered images, not phone photos.
+
+**Two fixes from the same live test.**
+
+* *Notices lost outside the 24-hour window.* A notice about an order (its reference and text key,
+  never the text) that could not be sent because the window was closed is remembered
+  (`wa_missed` in the WhatsApp store). When that person next writes anything, the agent first rebuilds
+  what is still waiting for them from its ledger (`waiting(role)`: JCB owner — open requests,
+  objections, reported payments; operator — booked jobs not started; supplier — open orders,
+  objections, reported payments) and sends each missed one that is still open, as its notice would
+  say it now; then the message is handled. Each missed record is taken once, so nothing is told twice;
+  one about an order that moved on is dropped. Contractor-side notices are not rebuilt yet.
+* *Correction hint.* The seller's dispute notice ends "सुधार भेजना हो तो लिखें: 'सुधार 6.0 घंटे'" (the
+  hours the contractor named, else billed) / "'सुधार 48 बोरी'" (the quantity named on a one-line bill,
+  else the delivered quantities). Code reads "सुधार <figure(s)> [unit]" as `send_correction` and reads
+  it back once.
+
 ## Inside the agent (29 Oct 2026)
 
 Judges see the WhatsApp chats and the signed ledgers; the trace shows what each agent did in

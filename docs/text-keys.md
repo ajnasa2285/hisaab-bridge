@@ -34,7 +34,7 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `jcb.readings_missing` | — | to owner: no bill without both meter readings |
 | `jcb.bill_sent` | hours, rate, total | to owner: bill sent with photos |
 | `jcb.bill_accepted` | ref, site | to owner: the contractor accepted the bill |
-| `jcb.bill_disputed` | ref, site, their, reason | to owner: the contractor disputes; their figure and reason |
+| `jcb.bill_disputed` | ref, site, their, reason, example | to owner: the contractor disputes; their figure and reason; how to send a correction ("सुधार {example} घंटे", 30 Oct) |
 | `jcb.correction_sent` | hours, total | to owner: corrected bill sent |
 | `jcb.payment_claimed` | ref, site, amount, utr, day | to owner: the contractor says they paid; please check your account |
 | `jcb.settled_sent` | amount | to owner: you confirmed receipt; the job is settled |
@@ -101,8 +101,9 @@ Supplier side (`supplier`):
 | `supplier.delivery_sent` | ref, site, items | the delivery (with the challan fingerprint) went to the contractor |
 | `supplier.delivery_missing` | — | no bill before the delivery is recorded |
 | `supplier.bill_sent` | lines, total | bill sent with the challan as evidence |
+| `supplier.bill_sent_invoice_match` / `_invoice_differs` | lines, total, (invoiceTotal) | the same, with the tax invoice's grand total equal / different (both figures) (30 Oct; drafted, Fable to polish) |
 | `supplier.bill_accepted` | ref, site | the contractor accepted the bill |
-| `supplier.bill_disputed` | ref, site, their, reason | the contractor disputes; their figure and reason |
+| `supplier.bill_disputed` | ref, site, their, reason, example | the contractor disputes; their figure and reason; how to send a correction ("सुधार {example}", 30 Oct) |
 | `supplier.correction_sent` | lines, total | corrected bill sent |
 | `supplier.payment_claimed` | ref, site, amount, utr, day | the contractor says they paid; please check your account ("हाँ" = confirm_payment) |
 | `supplier.settled_sent` | amount | you confirmed receipt; settled |
@@ -310,6 +311,20 @@ A value that was not given is left out of the sentence, never shown as "—": co
 | `office.approval_needed` / `_estimate` | ref, by, [estimate], step | to the contractor; `step` is now the `what.*` statement |
 | `office.status_held` / `_estimate` | ref, step, [estimate], decision | `status <ref>` for a held step |
 | `reply.which_order` | refs, ref | an exact reply fits several open orders: write the reference in front |
+
+## GST on material (docs/BUILD2.md, 30 Oct; drafted, Fable to polish)
+
+| Key | Params | When |
+|---|---|---|
+| `bill.line_gst` | percent, gst, amount | inside a bill line after the taxable value: "+ GST 28% ₹5,320 = ₹24,320" |
+| `bill.rate_gst` | percent | after a rate: "₹380/बोरी + GST 28%" |
+| `step.send_material_bill_invoice_match` | site, lines, total | supplier's read-back (model route) when the invoice total matches |
+| `step.send_material_bill_invoice_differs` | site, lines, total, invoiceTotal | supplier: the bill differs from the invoice's grand total; send anyway? both figures |
+| `site.material_bill_received_invoice_match` / `_invoice_differs` | ref, site, lines, total, photos, (invoiceTotal) | contractor: bill with "मिलान ठीक" / with both figures |
+| `site.material_correction_received_invoice_match` / `_invoice_differs` | ref, site, lines, total, (invoiceTotal) | the same for a correction |
+| `explain.figures.line_gst` | item, quantity, unit, rate, taxable, gst, amount | an explanation's bill line with GST as its own figure |
+
+`supplier.order_request(_time)` now shows the GST form ("हाँ 350 + 18%"). "GST" is an allowed Latin word in `test/i18n/hi.test.js`.
 
 ## Photo guards and owner consent (docs/BUILD2.md, 30 Oct; drafted, Fable to polish)
 

@@ -33,6 +33,7 @@ JCB owner               "आया" -> SETTLED on both ledgers
 ```
 
 The material flow is the same with a supplier agent: an order with items, rates in the supplier's yes, a delivery with a challan photo read by Muse Spark, the supervisor's own count on arrival (48 of 50 bags becomes a dispute, not an argument), then bill, payment and settlement.
+GST is part of the bill: the rate comes from the supplier's yes ("हाँ 380 + 28%") or from the tax invoice Muse Spark reads, code adds CGST + SGST to the paisa and checks the total against the invoice's grand total.
 
 **Nothing is booked, sent, accepted, corrected or settled without the explicit WhatsApp reply of the person allowed to decide it.** There are no payment reminders and no chasing; the JCB owner sees "unpaid", the agent never nags.
 
