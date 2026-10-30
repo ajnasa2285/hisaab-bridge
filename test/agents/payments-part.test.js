@@ -131,6 +131,31 @@ test('part by UPI, the rest in cash: each confirmed by the supplier; settled by 
   }
 });
 
+test('a forwarded UPI screenshot or cash receipt is refused before it is read; no claim is signed', async () => {
+  const s = await setup();
+  try {
+    /** @type {string[]} */
+    const said = [];
+    let reads = 0;
+    /** @param {'upi' | 'cash_receipt'} kind */
+    const talkFor = (kind) => createConversation({ ledger: s.siteCore.ledger, tools: s.site.tools, spark: async () => ({ ok: /** @type {const} */ (true), toolCalls: [] }),
+      reply: (_p, key) => { said.push(key); }, now: s.siteCore.now, classifyPhoto: /** @type {any} */ (async () => ({ ok: true, kind, clear: true, model: 'stand-in', latencyMs: 1 })),
+      readUpi: /** @type {any} */ (async () => { reads += 1; return { ok: false }; }), readCashReceipt: /** @type {any} */ (async () => { reads += 1; return { ok: false }; }) });
+    await runTool(s.site.tools, contractor, { tool: 'request_material', args: { site: 'Site K', day: '2026-10-30', items: [CEMENT] } });
+    const orderId = String(/** @type {any} */ (s.siteCore.ledger.orders()[0]).order_id);
+    await runTool(s.sup.tools, supplier, { tool: 'reply_order', args: { orderId, answer: 'yes', ratesPaise: [35000] } });
+    const before = s.siteCore.ledger.events(orderId).length;
+    for (const kind of /** @type {const} */ (['upi', 'cash_receipt'])) {
+      await talkFor(kind).onImage(contractor, { mime: 'image/jpeg', bytes: new Uint8Array([7, 1]), forwarded: true });
+    }
+    assert.deepEqual(said, ['payment.forwarded', 'payment.forwarded']);
+    assert.equal(reads, 0, 'neither was read');
+    assert.equal(s.siteCore.ledger.events(orderId).length, before, 'nothing written');
+  } finally {
+    await s.close();
+  }
+});
+
 test('a denied claim: the supplier\'s नहीं counts nothing; both see the balance unchanged', async () => {
   const d = await desk();
   try {
@@ -166,6 +191,9 @@ test('an advance before the delivery that covers the bill: settled at ACCEPT by 
     await d.accept(p1);
     await until(() => d.states(p1)[0] === 'settled');
     assert.deepEqual(d.states(p1), ['settled', 'settled']);
+    // The notice goes after SETTLED has made its round trip, later than the state changes.
+    await until(() => d.toldCount('supplier:supplier', 'pay.seller.settled_at_accept') === 1);
+    await until(() => d.told('site:contractor', 'site.material_settled') !== undefined);
     assert.ok(d.told('supplier:supplier', 'pay.seller.settled_at_accept')?.includes('₹17,500'));
     assert.ok(d.told('site:contractor', 'site.material_settled'));
   } finally {

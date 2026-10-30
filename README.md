@@ -66,7 +66,7 @@ flowchart LR
 - **A2A** (`src/transport/a2a.js`): the official `@a2a-js/sdk`, A2A 1.0 JSON-RPC. Each agent publishes an Agent Card with its id and public key; our signed message travels as a `data` part and the signed receipt comes back the same way. A2A is the envelope only; whether a message is genuine is decided by the protocol layer, never by the transport.
 - **WhatsApp** (`src/wa/`): one webhook per line, `X-Hub-Signature-256` checked on the raw bytes before parsing, each message handled once, replies only inside the 24-hour window. A line is only transport: people are routed by `{line, phone}` to `{agent, role}`, so one phone can be a JCB owner on one number and a contractor on another.
 - **Conversation** (`src/agents/conversation.js`): Muse Spark turns free words into one proposed tool call; the agent reads it back in Hindi and acts only on the person's हाँ. A person's own exact reply to a request open for them ("हाँ 380", "नहीं", "30-10", "बिल", typed figures) and a clear photo reading that code finds consistent act at once with one receipt, because each record already has a second person checking it downstream (`docs/BUILD2.md`, "Fewer steps"). Exact commands are parsed by code before any model: `status J-1`, `pending`, `stock`, `ok P-2`, `no P-2 <reason>`, `help` / `मदद`.
-- **Approvals** (`src/agents/office.js`): a supervisor's order or payment above the contractor's limit (or with no estimate) is held under its reference until the contractor replies `ok` or `no`. Nobody approves their own entry; a decision is made once.
+- **Approvals** (`src/agents/office.js`): a supervisor's order above the contractor's limit (or with no estimate) is held under its reference until the contractor replies `ok` or `no`. Nobody approves their own entry; a decision is made once.
 - **Readers** (`src/readers/`): Muse Spark with a strict JSON schema decides what a photo is (meter, UPI receipt, challan, other) and reads the hour meter, the UPI screenshot and the delivery challan, printed and handwritten. Amounts become integer paise, quantities integer hundredths. An unsure reading says so and the person is asked; a value is never guessed. A meter photo is checked before it counts: a forwarded one is refused, Muse Spark compares it with the other reading's photo (same machine?), and a date on the display must be the job's.
 - **Evidence on request** (`src/agents/evidence.js`): on a dispute, a count difference or `सबूत J-1`, an agent asks the other for the photo behind a record; the photo's owner is asked first and only their हाँ sends it, hash-checked against the fingerprint already in the asker's ledger; नहीं sends a signed refusal (`declined_by_owner`).
 - **Explanations** (`src/agents/explain.js`): when two sides' figures differ, each agent gives Muse Spark the facts from its own ledger and gets back a short, neutral Hindi explanation of where the figures differ and what each rests on. Code checks that every number in it exists in the ledger and that it takes no side, tells no one to pay and invents no reason; otherwise only the plain figures go out.
@@ -107,7 +107,7 @@ The figure that matters most is the "wrong but confident" column: across all rea
 
 Not yet measured: UPI on unseen screenshots and other UPI apps, the challan reader and the photo-kind reader on real challans. Sample sizes are small and stated as such.
 
-**Tests:** 411 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and answered with the same receipt), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, exact replies and clear photos that act at once, evidence exchange with hash checks, the site's signed copy, the explanation and answer checks, and the judge page's file serving.
+**Tests:** 632 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and answered with the same receipt), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, exact replies and clear photos that act at once, evidence exchange with hash checks, the site's signed copy, the explanation and answer checks, and the judge page's file serving.
 
 ## What works today, honestly
 
@@ -115,6 +115,16 @@ Not yet measured: UPI on unseen screenshots and other UPI apps, the challan read
 - The JCB WhatsApp number works end to end on real phones. Since 28 October all three agents run on it, each phone routed to its own agent and role (contractor, supervisor, supplier, JCB owner, JCB operator), while the contractor-side flow is tested with real people.
 - The site and supplier numbers are Meta test numbers in separate business portfolios. As of 28 October the site number's business account is locked by Meta (error 131031), which we are resolving with Meta; until then all three agents can run on one number, routed by the sender's phone.
 - Real pilot jobs with a JCB owner and a contractor we work with start only after our own full run passes.
+
+## Known limits (next steps)
+
+An independent audit found no critical or high issue. These are the limits it left that we have not built past yet:
+
+- **No request-rate limits** on the public endpoints. Forged messages are refused by their signature, but a flood could slow the service.
+- **One shared viewer key** for the judge page, not one key per viewer, and it does not expire by itself.
+- **Each WhatsApp message is handled at most once.** A crash in the middle of a message loses it. On an error the person is now told to send it again; a replay table comes later.
+- **Ledger text from the other party still sits in the model's instructions** (site and item names, now limited to plain name characters). It is guarded by the tool list, the checks in code and the read-back; moving it out of the instructions comes later.
+- **All three agents run in one process on one host.** They keep separate keys and ledgers and talk only over A2A, but a compromise of that host reaches all three.
 
 ## Roadmap: how the network grows
 
