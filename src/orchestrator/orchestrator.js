@@ -1,4 +1,5 @@
-// Muse Spark turns one message from a person into one proposed step (docs/CONTRACTS.md section 6).
+// Muse Spark turns one message from a person into one proposed step (docs/CONTRACTS.md section 6), or
+// for one combination only into two: a material order and a JCB request in the same message.
 // The model only sees the steps this person's role allows, copies figures exactly as written, and
 // names a job by its short reference (J-1, P-1). Code then converts units, resolves days, picks the
 // job and checks everything again; the model never decides who may do what, never computes, never
@@ -17,13 +18,20 @@ import { MAX_UNIT, safeName } from '../protocol/names.js';
 /**
  * @typedef {{kind: 'step', tool: string, args: Record<string, any>} | {kind: 'help'} |
  *   {kind: 'missing', tool: string, args: Record<string, any>, missing: string[], raw: Record<string, any>} |
+ *   {kind: 'pair', parts: PairPart[]} |
  *   {kind: 'ask'} | {kind: 'none', key: string}} Proposal
  */
+/** One request of a two-request message: complete, or with values to ask.
+ * @typedef {{kind: 'step', tool: string, args: Record<string, any>} |
+ *   {kind: 'missing', tool: string, args: Record<string, any>, missing: string[], raw: Record<string, any>}} PairPart */
 
 // Picking one step is a small job: 'low' halved the wait (p50 4.1 s → 2.4 s, slowest 13.9 s → 6.5 s)
 // with the same 42/42 on payment, booking, question and help messages (29 Oct, invented messages);
 // 'minimal' once took a UPI payment for cash, so not lower.
 const REASONING_EFFORT = 'low';
+// The only two steps one message may become together.
+const PAIR = ['request_material', 'request_jcb'];
+const JCB_WORD = /\bjcb\b|जेसीबी|जे\.?\s?सी\.?\s?बी/iu;
 
 // A payment fits an order from the booking on until it is settled (CONTRACTS 4.1).
 const PAYABLE = ['booked', 'working', 'delivered', 'billed', 'disputed', 'accepted', 'payment_claimed', 'part_paid'];
@@ -73,20 +81,26 @@ function figures(list, parse, zeroOk) {
 const SITE_WORDS = new Set(['साइट', 'साईट', 'साइड', 'site', 'side', 'sait', 'saait', 'yahan', 'yaha', 'yahaan', 'यहाँ', 'यहां', 'यहा', 'here', 'वहाँ', 'वहां', 'wahan', 'नाम']);
 const SITE_FILLER = new Set(['पर', 'पे', 'pe', 'par', 'में', 'me', 'mein', 'का', 'की', 'के', 'ka', 'ki', 'ke', 'पास', 'pass', 'paas', 'wali', 'wala', 'वाली', 'वाला']);
 
-/**
- * The site as written, without "site"/"pe" around it; a generic word alone is no name. A name that
- * matches a known site whatever its case is that site. No name: the default site, else null. A name
- * with characters no name has (src/protocol/names.js): null, so it is asked again, not replaced.
- * @param {unknown} raw @param {Ctx} ctx
- * @returns {string | null}
- */
-export function siteOf(raw, ctx) {
+/** The site's name as written, without "site"/"pe" around it; "" when there is none. @param {unknown} raw */
+function namedSite(raw) {
   const tokens = typeof raw === 'string' && !blank(raw) ? raw.normalize('NFC').trim().split(/\s+/) : [];
   const drop = (/** @type {string} */ w) => SITE_WORDS.has(w.toLowerCase()) || SITE_FILLER.has(w.toLowerCase());
   while (tokens.length && drop(tokens[0])) tokens.shift();
   while (tokens.length && drop(tokens[tokens.length - 1])) tokens.pop();
   const name = tokens.join(' ').replace(/^[,.।]+|[,.।]+$/gu, '').trim();
-  if (!name || /^\d+$/.test(name) || name.length > 80) return ctx.defaultSite ?? null;
+  return !name || /^\d+$/.test(name) || name.length > 80 ? '' : name;
+}
+
+/**
+ * A generic word alone is no name. A name that matches a known site whatever its case is that site.
+ * No name: the default site, else null. A name with characters no name has (src/protocol/names.js):
+ * null, so it is asked again, not replaced.
+ * @param {unknown} raw @param {Ctx} ctx
+ * @returns {string | null}
+ */
+export function siteOf(raw, ctx) {
+  const name = namedSite(raw);
+  if (!name) return ctx.defaultSite ?? null;
   if (!safeName(name)) return null;
   return (ctx.sites ?? []).find((s) => s.toLowerCase() === name.toLowerCase()) ?? name;
 }
@@ -100,6 +114,19 @@ function siteAndDay(a, ctx) {
   const day = blank(a.day) ? null : resolveDay(a.day, ctx.nowMs);
   if (day === null) missing.push('day');
   return { args: { site, day }, missing };
+}
+
+/**
+ * Hours as written, in digits or words (a voice note's "दो", "ढाई"), with or without "घंटे"; a figure
+ * finer than a tenth or anything else is null.
+ * @param {unknown} raw @returns {number | null}
+ */
+function hoursOf(raw) {
+  const said = String(raw).normalize('NFC').trim().replace(/\s*(?:घंटे|घंटा|घण्टे|घण्टा|ghante|ghanta|ghanton|hours?|hrs?)$/iu, '');
+  const digits = parseTenths(said);
+  if (digits !== null) return digits;
+  const q = parseQuantity(said);
+  return q !== null && q % 10 === 0 ? q / 10 : null;
 }
 
 /** The complete step's arguments, or null when anything is missing. @param {string} name @param {Record<string, any>} a @param {Ctx} ctx */
@@ -241,7 +268,7 @@ export const SPECS = [
         r.args.time = t;
       }
       if (!blank(a.hours)) {
-        const h = parseTenths(a.hours);
+        const h = hoursOf(a.hours);
         if (h === null || h === 0) return null;
         r.args.hoursTenths = h;
       }
@@ -375,6 +402,10 @@ export async function proposeStep(o) {
   const system = [
     `You help a ${o.person.role.replace('_', ' ')} on a construction site keep accounts over WhatsApp. Messages are mostly Hindi or Hinglish.`,
     'Call exactly one of the given functions for the message. If the message does not clearly ask for one of them, call help.',
+    ...(PAIR.every((name) => specs.some((s) => s.name === name)) ? [
+      'One exception: a message that asks for both material and the JCB gets two calls, one request_material and one request_jcb; never leave one of them out. A site, day or time said once for the whole message goes in both calls.',
+      'A message that asks only for material (however many items) or only for the JCB gets one call.',
+    ] : []),
     'Copy numbers, names and dates exactly as the person wrote them. A quantity written in words (pachaas, do sau) is copied as those words. Never calculate, convert units or guess a missing value; use null.',
     'If the message asks for one of the steps but leaves out a value (the site, the day, a quantity), still call that step with null for what is missing; do not call help for that.',
     ...(o.ask ? ['If the message only asks a question about the records (how much, how many, which) and asks for nothing to be done, call ask_records.'] : []),
@@ -383,8 +414,23 @@ export async function proposeStep(o) {
     'Open jobs:',
     jobs,
   ].join('\n');
-  const r = await o.spark({ system, text: o.text, tools: [...specs, ...(o.ask ? [ASK] : []), HELP].map(toolDef), timeoutMs: 30000, reasoningEffort: REASONING_EFFORT });
+  const tools = [...specs, ...(o.ask ? [ASK] : []), HELP].map(toolDef);
+  let r = await o.spark({ system, text: o.text, tools, timeoutMs: 30000, reasoningEffort: REASONING_EFFORT });
+  // The JCB must never go missing silently (live, 30 Oct): a message naming it that came back as material
+  // only is read once more with that said, and if it still does, nothing is sent and the person is told.
+  const jcbLeftOut = () => r.ok && r.toolCalls.length === 1 && r.toolCalls[0].name === PAIR[0] && JCB_WORD.test(o.text) && specs.some((s) => s.name === PAIR[1]);
+  if (jcbLeftOut()) {
+    r = await o.spark({ system: `${system}\nThis message names the JCB as well as material. If it asks for both, call request_material and request_jcb.`, text: o.text, tools, timeoutMs: 30000, reasoningEffort: REASONING_EFFORT });
+    if (jcbLeftOut()) return { kind: 'none', key: 'ask.jcb_separately' };
+  }
   if (!r.ok) return { kind: 'none', key: r.transient ? 'orchestrator.try_again' : 'common.unknown_step' };
+  if (r.toolCalls.length === 2) {
+    const material = r.toolCalls.find((c) => c.name === PAIR[0]);
+    const jcb = r.toolCalls.find((c) => c.name === PAIR[1]);
+    const materialSpec = specs.find((s) => s.name === PAIR[0]);
+    const jcbSpec = specs.find((s) => s.name === PAIR[1]);
+    if (material && jcb && materialSpec && jcbSpec) return pairOf([[materialSpec, material.args], [jcbSpec, jcb.args]], context(o));
+  }
   if (r.toolCalls.length !== 1) return { kind: 'none', key: 'common.unknown_step' };
   const call = r.toolCalls[0];
   if (call.name === 'help') return { kind: 'help' };
@@ -416,6 +462,44 @@ function fromPartial(spec, raw, ctx) {
   if (r === null) return { kind: 'none', key: 'common.bad_args' };
   if (r.missing.length) return { kind: 'missing', tool: spec.name, args: r.args, missing: r.missing, raw };
   return { kind: 'step', tool: spec.name, args: r.args };
+}
+
+/**
+ * Two requests from one message. The site and day said once belong to both, so one the model left
+ * out of a call is taken from the other, and the person is not asked for what they already said.
+ * @param {[Spec, Record<string, any>][]} calls material first @param {Ctx} ctx
+ * @returns {Proposal}
+ */
+function pairOf(calls, ctx) {
+  /** @type {PairPart[]} */
+  const parts = [];
+  for (const [i, [spec, raw]] of calls.entries()) {
+    const other = calls[1 - i][1];
+    const args = { ...raw, site: namedSite(raw?.site) ? raw.site : other?.site ?? null, day: blank(raw?.day) ? other?.day ?? null : raw.day };
+    const p = fromPartial(spec, args, ctx);
+    if (p.kind !== 'step' && p.kind !== 'missing') return p;
+    parts.push(p);
+  }
+  return { kind: 'pair', parts };
+}
+
+/**
+ * After one of two requests was filled in: the site or day now known goes to the other one if it is
+ * still missing there, so one answer is enough.
+ * @param {{person: Person, orders: OrderRef[], nowMs: number}} o @param {PairPart[]} parts
+ * @returns {PairPart[]}
+ */
+export function shareFilled(o, parts) {
+  const ctx = context(o);
+  return parts.map((p, i) => {
+    const spec = SPECS.find((s) => s.name === p.tool && s.partial);
+    if (p.kind !== 'missing' || !spec) return p;
+    const other = parts[1 - i].args;
+    const raw = { ...p.raw };
+    if (p.missing.includes('site') && typeof other.site === 'string') raw.site = other.site;
+    if (p.missing.includes('day') && typeof other.day === 'string') raw.day = other.day.split('-').reverse().join('-');
+    return /** @type {PairPart} */ (fromPartial(spec, raw, ctx));
+  });
 }
 
 /**

@@ -121,6 +121,9 @@ test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents
     const before = sent.length;
     await say('site', 'line-site', 'secret-site', CONTRACTOR, '', { type: 'audio', audio: { id: 'media-voice', mime_type: 'audio/ogg; codecs=opus', voice: true } });
     await wait(() => sent.length > before);
+    // Shivpuri is on the books and Gwalior is not: asked once which site it is, then read back.
+    assert.ok(sent.at(-1)?.text.includes('Gwalior') && sent.at(-1)?.text.includes('1. Shivpuri') && sent.at(-1)?.text.includes('2. नई साइट'), sent.at(-1)?.text);
+    await say('site', 'line-site', 'secret-site', CONTRACTOR, '2');
     assert.ok(sent.at(-1)?.text.includes('Gwalior') && sent.at(-1)?.text.includes('हाँ / नहीं'));
     assert.ok(!sent.at(-1)?.text.includes('—'));
 

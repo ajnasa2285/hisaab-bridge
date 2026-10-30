@@ -39,6 +39,11 @@ Each builder adds a dated entry (IST) at the end of every work session: **done, 
 - Contract changes written in `docs/CONTRACTS.md`: order of checks (repeats before expiry, 64 KiB cap), unsigned `ERROR`, which refusals count, `delivery_unsure` note, `onlyUnitMissing`, `payeeName`.
 - Next: lead runs the full suite and tsc, replays the live ledgers, merges and deploys.
 
+### 30 Oct 22:55 IST: two requests, unknown site names (branch `claude/multi-request`, worktree `hb-multi`; not merged)
+- Done: `docs/briefs/CLAUDE-multi-request-site-names.md`, BUILD2 "Two requests, unknown site names". New: `src/agents/site-names.js`, `test/agents/two-requests.test.js`, `test/orchestrator/two-calls.test.js`.
+- **Contract:** CONTRACTS 6 says one proposed step; the brief adds this one pair. Lead to word it there on merge.
+- Next: lead runs the full suite and tsc on AWS, replays the live ledgers, merges and deploys.
+
 ## Astra
 
 - 2026-10-29 (IST), `astra/usual-figures`: Done: own-ledger usual figures (last 10 accepted orders,

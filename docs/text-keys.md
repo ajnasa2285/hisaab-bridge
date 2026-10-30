@@ -502,3 +502,14 @@ No longer used by the agents (kept for the old texts): `site.payment_claimed`, `
 
 The wrapper preserves the original reference and decision metadata. With no unusual figure the
 original key and text remain unchanged. Judge labels live in `web/texts.js` in both languages.
+
+## Two requests, unknown site names (30 Oct)
+
+| Key | Parameters | When |
+|---|---|---|
+| `step.two_requests` | material, jcb | one message asked for material and the JCB: one read-back naming both |
+| `site.two_requests_done` | first, second | after the one "हाँ": what happened to each, in the words of its own result (sent, held, or failed) |
+| `site.two_requests_failed` | what, why | one line of the above when that request did not go |
+| `ask.jcb_separately` | none | a message naming the JCB came back twice as material only: nothing sent, written separately |
+| `site.which_site` | name, lines, new | a request names a site this agent does not know: numbered recent sites, then `new` = the number of "नई साइट" |
+| `site.forgot_name` | name | "भूल जाओ <नाम>": a saved site name is dropped, and asked about again next time |

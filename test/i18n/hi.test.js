@@ -15,6 +15,7 @@ const CHASING = ['जल्दी', 'तुरंत', 'याद दिला',
 
 /** A sample value for every parameter, so every key can be filled. @type {Record<string, string|number>} */
 const SAMPLE = { word: 'नमूना-word', words: 'नमूना-words',
+  material: 'शिवपुरी पर सीमेंट 50 बोरी', jcb: 'शिवपुरी पर JCB, 2 घंटे', first: 'P-1 भेजी', second: 'J-1 भेजी', why: 'जवाब नहीं आया', new: 3,
   message: 'बिल मिला।', pct: 30, n: 5, metric: 'दर', value: '₹380/बोरी', min: '₹350/बोरी', max: '₹400/बोरी',
   who: 'सप्लायर', recordKind: 'चालान',
   details: 'नकद, अग्रिम', due: '₹3,000', credit: '₹200', waiting: '₹1,000', denied: '₹500',
@@ -145,6 +146,8 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'jcb.settled_sent_credit': ['amount', 'credit'], 'supplier.settled_sent_credit': ['amount', 'credit'],
     'state.part_paid': [], 'office.await.buyer.part_paid': [], 'office.await.seller.part_paid': [],
     
+    'step.two_requests': ['material', 'jcb'], 'site.two_requests_done': ['first', 'second'], 'site.two_requests_failed': ['what', 'why'], 'ask.jcb_separately': [],
+    'site.which_site': ['name', 'lines', 'new'], 'site.forgot_name': ['name'],
     'ask.missing': ['questions'], 'ask.site': [], 'ask.day': [], 'ask.qty': ['name', 'unit'], 'ask.qty_unit': ['name'], 'ask.unit': ['name', 'qty'],
     'jcb.booking_request': ['ref', 'site', 'day', 'time', 'hours'], 'jcb.rate_needed': [], 'jcb.day_needed': [],
     'jcb.reply_sent_yes': ['ref', 'site', 'day', 'rate'], 'jcb.reply_sent_no': ['ref', 'site', 'day'], 'jcb.reply_sent_other_time': ['ref', 'site', 'day'],

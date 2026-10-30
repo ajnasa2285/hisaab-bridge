@@ -25,6 +25,7 @@ import { createSupplierAgent } from './agents/supplier.js';
 import { createConversation } from './agents/conversation.js';
 import { readCashReceipt } from './readers/cash-receipt.js';
 import { createOffice, parseCommand } from './agents/office.js';
+import { openSiteNames } from './agents/site-names.js';
 import { missedWaiting } from './agents/payment-view.js';
 import { currentTrace, openTrace, withTrace } from './trace/trace.js';
 import { traceLedger, traceLink, traceReader, traceReceived, traceSpark, traceTools, traceTranscribe, traceTransport } from './trace/hooks.js';
@@ -152,7 +153,7 @@ export function createApp(cfg) {
   }
 
   /** @type {Map<string, {cfg: AgentConfig, core: any, agent: {tools: any, onApplied: (m: any) => Promise<void>, waiting?: (role: string) => {key: string, params: Record<string, string | number>}[]}, link: ReturnType<typeof createLink>, talk: ReturnType<typeof createConversation>, a2a: ReturnType<typeof createA2AHandler>,
-   *   trace: import('./trace/trace.js').Recorder, learn: import('./learn/corrections.js').Learn, transcribe: ((req: {audio: Uint8Array, mime: string, language?: 'hi'}) => Promise<{ok: true, text: string} | {ok: false, transient: boolean, reason: string}>) | undefined}>} */
+   *   trace: import('./trace/trace.js').Recorder, learn: import('./learn/corrections.js').Learn, siteNames: import('./agents/site-names.js').SiteNames, transcribe: ((req: {audio: Uint8Array, mime: string, language?: 'hi'}) => Promise<{ok: true, text: string} | {ok: false, transient: boolean, reason: string}>) | undefined}>} */
   const agents = new Map();
   // People's own words go into the trace only when asked for (the demo), digits masked.
   const traceText = cfg.traceText ?? process.env.HB_TRACE_TEXT === '1';
@@ -172,6 +173,8 @@ export function createApp(cfg) {
     // Learning from corrections (src/learn/): this agent's own memory, in its own file, never sent to
     // another agent. `HB_LEARN=0` (or cfg.learn false) turns its use off; recording goes on.
     const learn = openLearn({ file: cfg.dataDir ? join(cfg.dataDir, `${a.name}.learn.db`) : undefined, now, enabled: cfg.learn });
+    // The site names people told this agent (src/agents/site-names.js): its own file, apart from the ledger.
+    const siteNames = openSiteNames({ file: cfg.dataDir ? join(cfg.dataDir, `${a.name}.sites.db`) : undefined, now });
     const spark = traceSpark(cfg.spark, trace);
     const readers = {
       readMeter: traceReader('meter', cfg.readMeter, trace), readUpi: traceReader('upi', cfg.readUpi, trace),
@@ -252,7 +255,8 @@ export function createApp(cfg) {
       readCashReceipt: a.kind === 'contractor' ? readers.readCashReceipt : undefined,
       readChallan: a.kind === 'supplier' || a.kind === 'contractor' ? readers.readChallan : undefined,
       classifyPhoto: readers.classifyPhoto, reply, now, office,
-      mediaStore: core.mediaStore, learn,
+      mediaStore: core.mediaStore, learn, siteNames,
+      peopleSites: () => (a.kind === 'contractor' ? [...directory.people(a.id, 'contractor'), ...directory.people(a.id, 'supervisor')].flatMap((p) => (typeof p.site === 'string' ? [p.site] : [])) : []),
     });
     const card = agentCardJson({ id: a.id, name: a.title, description: a.title, baseUrl: `${cfg.baseUrl}/agents/${a.name}`, publicKeyText: publicKeyText(a.privateKey) });
     const a2a = createA2AHandler(core, card, {
@@ -261,7 +265,7 @@ export function createApp(cfg) {
       },
       onReceived: traceReceived(trace),
     });
-    const entry = { cfg: a, core, agent, link, talk, a2a, trace, learn, transcribe: traceTranscribe(cfg.transcribe, trace) };
+    const entry = { cfg: a, core, agent, link, talk, a2a, trace, learn, siteNames, transcribe: traceTranscribe(cfg.transcribe, trace) };
     agents.set(a.id, entry);
   }
 
@@ -481,10 +485,11 @@ export function createApp(cfg) {
     agent: (id) => agents.get(id),
     close() {
       clearInterval(timer);
-      for (const { core, trace, learn } of agents.values()) {
+      for (const { core, trace, learn, siteNames } of agents.values()) {
         core.ledger.close();
         trace.close();
         learn.close();
+        siteNames.close();
       }
       store.close();
     },

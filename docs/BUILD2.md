@@ -636,3 +636,56 @@ median from history already accepted before that bill. GST percentages remain co
 under the existing conservative prose guard. Trace checks show both normal and unusual comparisons;
 the judge page uses the same pure calculator for each ledger's counterparty cards. The signed
 sample has accepted cement history at ₹380 and one ₹500 bill flagged at 32% above usual.
+
+## Two requests, unknown site names (30 Oct 2026)
+
+Live on 30 Oct, "50 bags cement, 40 tons sand and jcb for 2 hours ..." and its Hindi form, 8 runs: 5 silently
+dropped the JCB (the read-back showed only the material, so a "हाँ" never ordered it) and 3 got
+`common.unknown_step` because Muse correctly returned two calls. "NDUAT" would also have become a new site, though
+it may be a short name for one on the books. The owner's rule: the agent asks about a name it does not know; it
+never guesses. Brief: `docs/briefs/CLAUDE-multi-request-site-names.md`.
+
+**One message, two requests** (`proposeStep`, `twoRequests`/`commitTwo` in `src/agents/conversation.js`).
+
+* Only one `request_material` with one `request_jcb`, for the roles that may call them; the prompt allows it for
+  them only. Any other several-call answer is `common.unknown_step`. A call code cannot use refuses both.
+* A site or day said once serves both: one the model left out of a call comes from the other, and a value asked
+  for one request and answered fills the other (`shareFilled`). What is still missing is asked as in section 6,
+  one question at a time; "नहीं" cancels both; nothing goes until the one read-back gets its one "हाँ".
+* **One read-back always**, even when a supervisor's two would both be held (a single held request has none).
+  After "हाँ" each runs as its own order through `office.commit`: own reference, own signed message, own limit
+  check. One may be held while the other goes. A failure on one (refused, unreachable, thrown) leaves the other
+  standing, and the one reply says what happened to each.
+* **The JCB is never dropped silently.** A message with a JCB word that comes back as material only is read once
+  more with that said; if it still does, nothing is sent and the person is asked to write them separately
+  (`ask.jcb_separately`). A material word left out of a JCB call has no such guard (none seen live).
+* The open question holds both (`two_requests`), like any read-back: a notice waits in the queue behind it, and a
+  yes older than the question is not its answer.
+* Hours may be words, with or without "घंटे" ("दो", "ढाई"), and a time may carry am/pm ("10 Am"): the live messages
+  refused them with `common.bad_args`. This also helps a single request.
+
+**A site name the agent does not know** (`stepsReady`, `src/agents/site-names.js`).
+
+* A request (one or both of two) naming a site not known here, with at least one site known, asks once before the
+  read-back: "NDUAT कौन सी साइट है? 1. शिवपुरी ... 3. नई साइट", at most 6 sites (the person's own first, then the most
+  recent), then "नई साइट". Known means: the person's own site, every order on the ledger (settled too), steps
+  waiting for approval, saved names, and the sites `people.json` gives this agent's people.
+* Code decides, from an exact match after trimming and case-folding. Muse is not asked; "Shivpur" is not "Shivpuri".
+* A number (or a site's exact name) picks that site: the short name is saved and the order goes under the full name.
+  The last number or "नई साइट" saves the name as a new site. Either way it is not asked again, for anyone on this
+  agent. "नहीं" cancels and saves nothing; another message lapses the question and is read as new; a number off the
+  list or a "हाँ" asks again.
+* Two requests with one unknown name ask one question. Two different unknown names ask one after the other.
+* Saved in `<dataDir>/<name>.sites.db`, append-only, not in the ledger, so events and old ledgers stay as they are.
+  The first answer stands until "भूल जाओ NDUAT" (contractor or supervisor) drops it; orders already recorded stay.
+* With no known sites nothing is asked. A person's default site works as before and needs no question.
+* Known limits: a voice note's corrected words are not learnt from a refused two-request read-back; ask-anything
+  and `stock` know full site names only, so "NDUAT पर कितना सीमेंट" does not find the site's orders.
+
+Live check (30 Oct, `proposeStep` at its real effort, `muse-spark-1.3`, invented wordings; 11 asking for both in
+Hindi, Hinglish and English, 7 that must stay as they are). First run, prompt only, 3 runs each: both came back
+30/33; one Hindi wording dropped the JCB once, and a wording with hours in words was refused 3/3. With the guard and
+hours in words, 5 runs each: both 55/55; the singles stayed single 34/35, with "10am" refused twice. With am/pm too,
+3 runs each: both 33/33, singles 21/21, none dropped, none turned into two; p50 3.3 s, slowest 7.0 s. How often the
+guard's second reading fired was not counted. Site, day, time, hours, items and units in the second run's pairs were
+all as written.

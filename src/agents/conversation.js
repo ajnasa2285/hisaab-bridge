@@ -19,19 +19,24 @@
 // One question is open per person: a notice that asks something while another question is open waits
 // in that person's queue and is asked when the open one is answered or lapses, so a bare हाँ always
 // answers what the person was last asked. A yes/no older than the question is not an answer to it.
+// One message may ask for material and the JCB together: one read-back, one "हाँ", two orders, each
+// through the office's gate on its own. A request naming a site this agent does not know asks once
+// which site it is, before the read-back; the answer is kept for everyone on this agent
+// (src/agents/site-names.js). Code decides from exact matches only.
 // People decide; the model only proposes.
 
 import { createHash } from 'node:crypto';
-import { fillStep, proposeStep, orderRefs, pickOrder } from '../orchestrator/orchestrator.js';
-import { parseHundredthsList } from '../orchestrator/units.js';
+import { fillStep, proposeStep, orderRefs, pickOrder, shareFilled } from '../orchestrator/orchestrator.js';
+import { parseHundredthsList, parseQuantity } from '../orchestrator/units.js';
 import { impossible, meterReadings, MAX_JOB_TENTHS } from './jcb.js';
 import { displayDateWrong, jobDay } from './meter-guard.js';
 import { challanQuantities, countDifferences, delivery, invoiceFromReading, requestedItems, sameChallanNo, siteCount, unitFromOrder } from './material.js';
 import { exactReply, saysCash, yesNo } from './replies.js';
 import { balanceText, owedPaise, payableOrders, paymentLine, shares, summaryOf, todayIst, utrUses } from './pay.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
-import { runTool } from './common.js';
+import { no, runTool } from './common.js';
 import { parseCommand } from './office.js';
+import { siteKey } from './site-names.js';
 import { traceCheck } from '../trace/trace.js';
 import { answerQuestion } from './ask.js';
 import { day as dayName, qty as qtyText, rupees, tenths } from '../i18n/format.js';
@@ -47,10 +52,14 @@ import { plain, promptBlock, voiceParty } from '../learn/corrections.js';
  *   {kind: 'challan_figures', orderId: string, sha256: string, challanNo: string | null, invoice?: Invoice | null, at: number} |
  *   {kind: 'site_challan_order', orderIds: string[], sha256: string, reading: SiteReading, at: number} |
  *   {kind: 'site_challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number} |
- *   {kind: 'fill', tool: string, raw: Record<string, any>, args: Record<string, any>, missing: string[], said: string, at: number} |
+ *   {kind: 'fill', tool: string, raw: Record<string, any>, args: Record<string, any>, missing: string[], said: string, at: number, pair?: {parts: PairPart[], index: number}} |
+ *   {kind: 'site_name', name: string, options: string[], steps: Step[], at: number} |
+ *   {kind: 'two_requests', steps: Step[], at: number} |
  *   {kind: 'photo_kind', image: Photo, at: number} |
  *   {kind: 'pay_choice', orderIds: string[], group: boolean, amountPaise: number, base: Record<string, any>, at: number}} Pending
  */
+/** @typedef {import('../orchestrator/orchestrator.js').PairPart} PairPart */
+/** A request understood completely. @typedef {{tool: string, args: Record<string, any>}} Step */
 /** The words of a question. @typedef {{key: string, params?: Record<string, string | number>}} Asked */
 /** A question waiting for the open one to end. @typedef {{tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}, ask?: Asked}} Waiting */
 /**
@@ -107,6 +116,10 @@ const norm = (text) => text.trim().toLowerCase().replace(/[।.!?,]+$/u, '').rep
 // "भूल जाओ P-1": drop what was learnt from that order's corrections (owner or contractor).
 const FORGET = /^(?:भूल\s*जाओ|भूल\s*जाइए|भूल\s*जाइये|bhool\s*jao|bhul\s*jao|forget)\s+(.+)$/iu;
 const FORGET_ROLES = new Set(['jcb_owner', 'supplier', 'contractor']);
+// The requests whose site name is checked, and the most recent sites a question shows.
+const SITE_TOOLS = new Set(['request_material', 'request_jcb']);
+const MAX_SITE_CHOICES = 6;
+const NEW_SITE_WORDS = new Set(['नई साइट', 'नयी साइट', 'नई', 'नयी', 'new site', 'new', 'nayi site', 'nai site', 'nayi', 'nai']);
 // "कितनी बार ग़लत पढ़ा गया?" (with or without the nukta, or in Latin letters): answered by code from the
 // memory. Only a question: "how many" and no figure, so a dispute ("नहीं 5 घंटे, मीटर ग़लत पढ़ा") is never taken.
 const MISREAD_Q = /^(?!.*[0-9०-९])(?=.*(?:कितन|kitn|how many))(?=.*(?:ग़?लत|galat|wrong))(?=.*(?:पढ|padh|read|सुन|sun))/iu;
@@ -131,8 +144,12 @@ const tenthsText = (/** @type {number} */ v) => `${Math.floor(v / 10)}.${v % 10}
  *   mediaStore?: ReturnType<typeof import('../media/store.js').openMediaStore>,
  *   log?: (line: string) => void,
  *   learn?: import('../learn/corrections.js').Learn,
+ *   siteNames?: import('./site-names.js').SiteNames,
+ *   peopleSites?: () => string[],
  * }} o
  * `learn`: this agent's own correction memory (src/learn/corrections.js); without it nothing is learnt.
+ * `siteNames`: the site names this agent was told (src/agents/site-names.js); without it no site is asked about.
+ * `peopleSites`: the sites people.json gives this agent's people.
  */
 export function createConversation(o) {
   /** @type {Map<string, Pending>} */
@@ -419,6 +436,8 @@ export function createConversation(o) {
    */
   async function handleText(person, text, atMs) {
     const said = norm(text);
+    const forgotSite = forgetSite(person, said);
+    if (forgotSite) return o.reply(person, forgotSite.key, forgotSite.params);
     const learnt = learnCommand(person, said);
     // Like an exact command, it leaves any open question as it was.
     if (learnt) return o.reply(person, learnt.key, learnt.params);
@@ -498,6 +517,27 @@ export function createConversation(o) {
       // Anything else: the question lapses and the message is read as a new one.
       pending.delete(keyOf(person));
     }
+    if (p && p.kind === 'two_requests') {
+      if ((YES.has(said) || NO.has(said)) && atMs && atMs + 1000 < p.at) {
+        traceCheck('a yes/no older than the question ✗ → asked again', false, { name: 'answer_older_than_question', tool: 'two_requests' });
+        return readBackTwo(person, p.steps);
+      }
+      pending.delete(keyOf(person));
+      if (YES.has(said)) return commitTwo(person, p.steps);
+      if (NO.has(said)) return o.reply(person, 'step.cancelled');
+    }
+    if (p && p.kind === 'site_name') {
+      const answer = siteAnswer(text, said, p.options);
+      // A yes or a number that is not on the list does not say which site: asked again.
+      if (answer?.again || YES.has(said)) return askSite(person, p);
+      pending.delete(keyOf(person));
+      if (NO.has(said)) return o.reply(person, 'step.cancelled');
+      if (answer) {
+        /** @type {import('./site-names.js').SiteNames} */ (o.siteNames).save(p.name, answer.site ?? p.name, person.role);
+        return stepsReady(person, p.steps);
+      }
+      // Anything else: the question lapses and the message is read as a new one.
+    }
     if (p && p.kind === 'challan_figures') {
       const figures = parseHundredthsList(said);
       if (figures) {
@@ -551,7 +591,7 @@ export function createConversation(o) {
         // The model could not be reached: the question stays open for the same reply again.
         if (r && r.kind === 'none' && r.key === 'orchestrator.try_again') return o.reply(person, r.key);
         pending.delete(keyOf(person));
-        if (r) return onProposal(person, p.said, r);
+        if (r) return onProposal(person, p.said, r, p.pair);
       }
       // Not an answer: the question lapses and the message is read as a new one.
       pending.delete(keyOf(person));
@@ -580,8 +620,15 @@ export function createConversation(o) {
   /**
    * @param {Person} person @param {string} text the message the step came from (the first one, across a second question)
    * @param {import('../orchestrator/orchestrator.js').Proposal} proposal
+   * @param {{parts: PairPart[], index: number}} [pair] the step is one of two requests from that message
    */
-  function onProposal(person, text, proposal) {
+  function onProposal(person, text, proposal, pair) {
+    if (proposal.kind === 'pair') return twoRequests(person, text, proposal.parts);
+    if (pair && (proposal.kind === 'step' || proposal.kind === 'missing')) {
+      const filled = proposal;
+      const parts = pair.parts.map((part, i) => (i === pair.index ? filled : part));
+      return twoRequests(person, text, shareFilled({ person, orders: orderRefs(o.ledger), nowMs: o.now() }, parts));
+    }
     if (proposal.kind === 'help') return o.reply(person, `help.${person.role}`);
     if (proposal.kind === 'none') return o.reply(person, proposal.key);
     if (proposal.kind === 'ask') return o.reply(person, 'common.unknown_step');
@@ -594,7 +641,153 @@ export function createConversation(o) {
       pending.set(keyOf(person), { kind: 'fill', tool: proposal.tool, raw: proposal.raw, args: proposal.args, missing: proposal.missing, said: text, at: o.now() });
       return o.reply(person, 'ask.missing', { questions: askText(proposal.args, proposal.missing) });
     }
-    return propose(person, proposal.tool, proposal.args);
+    return stepsReady(person, [{ tool: proposal.tool, args: proposal.args }]);
+  }
+
+  /**
+   * Two requests from one message: what is still missing is asked first, one question at a time;
+   * nothing is read back until both are complete.
+   * @param {Person} person @param {string} text the first message @param {PairPart[]} parts
+   */
+  function twoRequests(person, text, parts) {
+    const index = parts.findIndex((part) => part.kind === 'missing');
+    const open = parts[index];
+    if (open?.kind === 'missing') {
+      pending.set(keyOf(person), { kind: 'fill', tool: open.tool, raw: open.raw, args: open.args, missing: open.missing, said: text, at: o.now(), pair: { parts, index } });
+      return o.reply(person, 'ask.missing', { questions: askText(open.args, open.missing) });
+    }
+    return stepsReady(person, parts.map((part) => ({ tool: part.tool, args: part.args })));
+  }
+
+  /**
+   * Complete requests go on to their read-back, unless one names a site this agent does not know:
+   * then that is asked first, once, and they wait for the answer.
+   * @param {Person} person @param {Step[]} steps
+   */
+  function stepsReady(person, steps) {
+    const ready = [];
+    for (const step of steps) {
+      if (!o.siteNames || !SITE_TOOLS.has(step.tool) || typeof step.args.site !== 'string') {
+        ready.push(step);
+        continue;
+      }
+      const known = knownSite(person, step.args.site);
+      if (typeof known !== 'string') {
+        traceCheck('a site name this agent does not know ✗ → asked once', false, { name: 'site_name_unknown', choices: known.length });
+        const question = { kind: /** @type {const} */ ('site_name'), name: step.args.site, options: known, steps, at: o.now() };
+        pending.set(keyOf(person), question);
+        return askSite(person, question);
+      }
+      ready.push({ ...step, args: { ...step.args, site: known } });
+    }
+    if (ready.length === 1) return propose(person, ready[0].tool, ready[0].args);
+    pending.set(keyOf(person), { kind: 'two_requests', steps: ready, at: o.now() });
+    return readBackTwo(person, ready);
+  }
+
+  /** @param {Person} person @param {{name: string, options: string[]}} q */
+  function askSite(person, q) {
+    const lines = q.options.map((site, i) => `${i + 1}. ${site}`).join('\n');
+    return o.reply(person, 'site.which_site', { name: q.name, lines, new: q.options.length + 1 });
+  }
+
+  /**
+   * The sites on this agent, most recent first; the person's own comes first of all. Every order on the
+   * ledger counts (a settled site is still a site), with steps waiting for approval, the sites saved
+   * here and those people.json gives its people.
+   * @param {Person} person @returns {string[]}
+   */
+  function sitesHere(person) {
+    const orders = /** @type {{site: string, created_at: string}[]} */ (o.ledger.orders()).map((x) => ({ site: x.site, at: x.created_at }));
+    const held = (o.office?.held() ?? []).filter((h) => h.decision?.decision !== 'no' && typeof h.args.site === 'string').map((h) => ({ site: /** @type {string} */ (h.args.site), at: h.createdAt }));
+    const dated = [...orders, ...held, ...(o.siteNames?.sites() ?? [])].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)).map((x) => x.site);
+    const seen = new Set();
+    return [...(person.site ? [person.site] : []), ...dated, ...(o.peopleSites?.() ?? [])].filter((site) => {
+      const key = siteKey(site);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  /**
+   * The full site's name this name is, from an exact match only; with no sites at all any name is
+   * taken as it is. Otherwise the choices to offer.
+   * @param {Person} person @param {string} name @returns {string | string[]}
+   */
+  function knownSite(person, name) {
+    const sites = sitesHere(person);
+    const key = siteKey(name);
+    const exact = sites.find((site) => siteKey(site) === key);
+    if (exact) return exact;
+    const saved = o.siteNames?.lookup(name);
+    if (saved) return saved;
+    return sites.length === 0 ? name : sites.slice(0, MAX_SITE_CHOICES);
+  }
+
+  /**
+   * The reply to "which site?", read by code: a number or a site's exact name is that site; the last
+   * number or "नई साइट" is the name itself as a new site (no `site`). A number off the list is `again`;
+   * anything else null.
+   * @param {string} text @param {string} said @param {string[]} options
+   * @returns {{site?: string, again?: boolean} | null}
+   */
+  function siteAnswer(text, said, options) {
+    if (NEW_SITE_WORDS.has(said)) return {};
+    const named = options.find((site) => siteKey(site) === siteKey(text));
+    if (named) return { site: named };
+    const digits = said.replace(/[०-९]/gu, (d) => String(d.charCodeAt(0) - 0x0966));
+    const q = /^\d{1,2}$/.test(digits) ? Number(digits) * 100 : parseQuantity(digits);
+    if (typeof q !== 'number' || q <= 0 || q % 100 !== 0) return null;
+    const n = q / 100;
+    if (n === options.length + 1) return {};
+    return n <= options.length ? { site: options[n - 1] } : { again: true };
+  }
+
+  /** @param {Person} person @param {Step[]} steps */
+  function readBackTwo(person, steps) {
+    const [material, jcb] = steps.map((s) => stepWords(s));
+    return o.reply(person, 'step.two_requests', { material, jcb });
+  }
+
+  /** A request as a plain statement. @param {Step} step */
+  function stepWords(step) {
+    const what = o.tools[step.tool].summary?.(step.args);
+    return what ? t(what.key, what.params) : t('office.step_unknown');
+  }
+
+  /**
+   * "हाँ" to both: each runs as its own order through the office's gate, so the limit is checked per
+   * order. A failure on one leaves the other's result standing, and the reply says what happened to each.
+   * @param {Person} person @param {Step[]} steps
+   */
+  async function commitTwo(person, steps) {
+    const lines = [];
+    for (const step of steps) {
+      let r;
+      try {
+        r = o.office ? await o.office.commit(person, step.tool, step.args) : await runTool(o.tools, person, step);
+      } catch {
+        o.log?.(`two requests: ${step.tool} failed`);
+        r = no('common.try_again');
+      }
+      if (r.ok) {
+        try { learnVoice(person, step.tool, step.args); } catch { o.log?.('learn: correction not kept'); }
+      }
+      lines.push(r.ok ? t(r.key, r.params) : t('site.two_requests_failed', { what: stepWords(step), why: t(r.key, r.params) }));
+    }
+    return o.reply(person, 'site.two_requests_done', { first: lines[0], second: lines[1] });
+  }
+
+  /**
+   * "भूल जाओ NDUAT": a site name saved here is dropped, so it is asked again. Orders already recorded
+   * stay as they are.
+   * @param {Person} person @param {string} said @returns {{key: string, params?: Record<string, string | number>} | null}
+   */
+  function forgetSite(person, said) {
+    const f = FORGET.exec(said);
+    if (!f || !o.siteNames || parseRef(f[1]) !== null || !may(person, 'request_material') || !o.siteNames.forget(f[1], person.role)) return null;
+    return { key: 'site.forgot_name', params: { name: f[1].trim() } };
   }
 
   /**

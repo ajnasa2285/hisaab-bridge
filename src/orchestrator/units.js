@@ -217,6 +217,13 @@ export function parseTime(s) {
   if (typeof s !== 'string') return null;
   const m = /^(\d{1,2})(?::([0-5]\d))?$/.exec(s.trim());
   if (m) return Number(m[1]) > 23 ? null : `${m[1].padStart(2, '0')}:${m[2] ?? '00'}`;
+  // "10am", "10 AM", "2:30 pm"; an hour outside 1 to 12 with am/pm is no time.
+  const ampm = /^(\d{1,2})(?::([0-5]\d))?\s*([ap])\.?m\.?$/iu.exec(s.trim());
+  if (ampm) {
+    const hour = Number(ampm[1]);
+    if (hour < 1 || hour > 12) return null;
+    return `${String((hour % 12) + (ampm[3].toLowerCase() === 'p' ? 12 : 0)).padStart(2, '0')}:${ampm[2] ?? '00'}`;
+  }
   const said = s.normalize('NFC').trim().replace(/\s*(?:बजे|baje|बज|o'?clock)$/iu, '');
   const h = said && !/\d/.test(said) ? parseQuantity(said) : null;
   if (h === null || h < 100 || h >= 2400 || h % 25 !== 0) return null;

@@ -184,6 +184,12 @@ export const hi = Object.freeze({
   'step.site_challan': '{ref}: {site}, चालान की फ़ोटो में पढ़ा: {items}। यह सप्लायर की डिलीवरी से अलग है। साइट पर यही आया? अलग हो तो सही गिनती उसी क्रम में लिखें ({names})। हाँ / नहीं',
   'step.site_challan_challan': '{ref}: {site}, चालान {challan} की फ़ोटो में पढ़ा: {items}। यह सप्लायर की डिलीवरी से अलग है। साइट पर यही आया? अलग हो तो सही गिनती उसी क्रम में लिखें ({names})। हाँ / नहीं',
   'step.cancelled': 'ठीक है, कुछ नहीं भेजा गया।',
+  'step.two_requests': 'दो माँग भेजें:\n1. सामान: {material}\n2. {jcb}\nहाँ / नहीं',
+  'site.two_requests_done': 'दोनों माँग:\n1. {first}\n2. {second}',
+  'site.two_requests_failed': '{what}: यह अभी नहीं गई। {why}',
+  'ask.jcb_separately': 'इस संदेश में JCB भी लिखा है, पर समझ नहीं आया कि उसकी माँग भेजनी है या नहीं। कुछ नहीं भेजा गया। सामान और JCB की माँग अलग-अलग लिखें।',
+  'site.which_site': '{name} कौन सी साइट है?\n{lines}\n{new}. नई साइट\nनंबर लिखें। ("नहीं" लिखें तो कुछ नहीं भेजा जाएगा।)',
+  'site.forgot_name': '{name} भुला दिया। अगली बार यह नाम आने पर पूछा जाएगा।',
   // A request as a plain statement, only the parts given (a time or hours not said are left out).
   'what.jcb': '{site} पर {day} को JCB',
   'what.jcb_time': '{site} पर {day} को {time} बजे से JCB',
