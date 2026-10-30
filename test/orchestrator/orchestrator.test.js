@@ -28,6 +28,14 @@ test('figures as written become integers in code', () => {
   assert.equal(parseTime('8'), '08:00');
   assert.equal(parseTime('8:30'), '08:30');
   assert.equal(parseTime('25'), null);
+  // A voice note's time in words: whole hours, साढ़े/सवा/पौने; anything else is not a time.
+  assert.equal(parseTime('दस'), '10:00');
+  assert.equal(parseTime('आठ बजे'), '08:00');
+  assert.equal(parseTime('saadhe aath'), '08:30');
+  assert.equal(parseTime('सवा नौ'), '09:15');
+  assert.equal(parseTime('पौने दस'), '09:45');
+  assert.equal(parseTime('सुबह'), null);
+  assert.equal(parseTime('पचास'), null);
 });
 
 test('days are resolved in India time by code', () => {

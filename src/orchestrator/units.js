@@ -208,10 +208,17 @@ export function resolveDay(s, nowMs) {
   return day;
 }
 
-/** "8", "8:00", "08:30" → "08:00"/"08:30"; null when absent or not a time. @param {unknown} s */
+/**
+ * "8", "8:00", "08:30" → "08:00"/"08:30"; a voice note's words too: "आठ", "दस बजे", "साढ़े आठ" →
+ * "08:30", "सवा नौ" → "09:15". null when absent or not a time.
+ * @param {unknown} s
+ */
 export function parseTime(s) {
   if (typeof s !== 'string') return null;
   const m = /^(\d{1,2})(?::([0-5]\d))?$/.exec(s.trim());
-  if (!m || Number(m[1]) > 23) return null;
-  return `${m[1].padStart(2, '0')}:${m[2] ?? '00'}`;
+  if (m) return Number(m[1]) > 23 ? null : `${m[1].padStart(2, '0')}:${m[2] ?? '00'}`;
+  const said = s.normalize('NFC').trim().replace(/\s*(?:बजे|baje|बज|o'?clock)$/iu, '');
+  const h = said && !/\d/.test(said) ? parseQuantity(said) : null;
+  if (h === null || h < 100 || h >= 2400 || h % 25 !== 0) return null;
+  return `${String(Math.floor(h / 100)).padStart(2, '0')}:${String((h % 100) * 60 / 100).padStart(2, '0')}`;
 }
