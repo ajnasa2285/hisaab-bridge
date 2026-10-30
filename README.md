@@ -107,7 +107,7 @@ The figure that matters most is the "wrong but confident" column: across all rea
 
 Not yet measured: UPI on unseen screenshots and other UPI apps, the challan reader and the photo-kind reader on real challans. Sample sizes are small and stated as such.
 
-**Tests:** 632 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and answered with the same receipt), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, exact replies and clear photos that act at once, evidence exchange with hash checks, the site's signed copy, the explanation and answer checks, and the judge page's file serving.
+**Tests:** 690 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and answered with the same receipt), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, exact replies and clear photos that act at once, evidence exchange with hash checks, the site's signed copy, the explanation and answer checks, and the judge page's file serving.
 
 ## What works today, honestly
 
@@ -124,6 +124,7 @@ An independent audit found no critical or high issue. These are the limits it le
 - **One shared viewer key** for the judge page, not one key per viewer, and it does not expire by itself.
 - **Each WhatsApp message is handled at most once.** A crash in the middle of a message loses it. On an error the person is now told to send it again; a replay table comes later.
 - **Ledger text from the other party still sits in the model's instructions** (site and item names, now limited to plain name characters). It is guarded by the tool list, the checks in code and the read-back; moving it out of the instructions comes later.
+- **A supervisor can split one need into several orders under the approval limit.** The contractor is told of each order, but they are not added up against the limit.
 - **All three agents run in one process on one host.** They keep separate keys and ledgers and talk only over A2A, but a compromise of that host reaches all three.
 
 ## Roadmap: how the network grows

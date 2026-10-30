@@ -14,7 +14,7 @@ const REF_EXAMPLE = /\b[JP]-\d+\b/g;
 const CHASING = ['जल्दी', 'तुरंत', 'याद दिला', 'कब दोगे', 'कब देंगे', 'कब देंगी', 'चुकाएँ', 'चुकाओ', 'भुगतान करें', 'भुगतान कीजिए', 'पैसे दो', 'पैसे दें', 'देर हो', 'बकाया चुका', 'reminder', 'overdue'];
 
 /** A sample value for every parameter, so every key can be filled. @type {Record<string, string|number>} */
-const SAMPLE = {
+const SAMPLE = { word: 'नमूना-word', words: 'नमूना-words',
   message: 'बिल मिला।', pct: 30, n: 5, metric: 'दर', value: '₹380/बोरी', min: '₹350/बोरी', max: '₹400/बोरी',
   who: 'सप्लायर', recordKind: 'चालान',
   details: 'नकद, अग्रिम', due: '₹3,000', credit: '₹200', waiting: '₹1,000', denied: '₹500',
@@ -120,7 +120,7 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'office.status_with_receipt': ['ref', 'what', 'site', 'day', 'state', 'rate', 'payments', 'receipt', 'awaited'],
     'office.site_receipt': ['challanNo', 'count', 'signed'], 'office.signed_yes': [], 'office.signed_no': [], 'office.signed_unsure': [],
     'common.try_again': [], 'common.media_too_large': [], 'common.undelivered': ['ref', 'site'], 'common.delivery_unsure': ['ref', 'site'], 'common.question_waits': [],
-    'site.bill_changed': ['ref', 'site', 'bill'], 'site.bill_changed_check': ['ref', 'site', 'bill'], 'site.bill_is_material': ['lines', 'total'], 'site.bill_is_jcb': ['hours', 'rate', 'total'],
+    'site.bill_copy': ['ref', 'site', 'what'], 'site.bill_contractor_accepts': [], 'pay.payee': ['name'], 'jcb.meter_which_stale': [], 'learn.voice_replaced': ['words'], 'learn.forgot_word': ['word', 'n'], 'site.bill_changed': ['ref', 'site', 'bill'], 'site.bill_changed_check': ['ref', 'site', 'bill'], 'site.bill_is_material': ['lines', 'total'], 'site.bill_is_jcb': ['hours', 'rate', 'total'],
     'pay.seller.utr_seen': ['utr', 'before'], 'pay.seller.claim_waiting': ['ref', 'payment'], 'payment.forwarded': [],
     'payment.at_time': ['time'],'jcb.payment_claimed_at': ['ref', 'site', 'amount', 'day', 'time', 'utr'],
     'supplier.payment_claimed_at': ['ref', 'site', 'amount', 'day', 'time', 'utr'],

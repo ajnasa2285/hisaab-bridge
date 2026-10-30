@@ -109,7 +109,8 @@ test('usual quantity never holds an order; contractor sees ordered context below
     assert.equal(s.siteCore.ledger.orders().length, before, 'holding still only follows value limit');
     assert.equal(notices.length, 1);
     assert.equal(notices[0].role, 'contractor');
-    assert.match(textOf(notices[0]), /₹38,000/);
+    // ₹380 × 100 bags with the 28% GST this supplier last gave: the figure the approval limit compares.
+    assert.match(textOf(notices[0]), /₹48,640/);
     assert.match(textOf(notices[0]), /सामान्य मात्रा और दर पर अनुमान ₹3,800/);
     assert.match(textOf(notices[0]), /900% ज़्यादा/);
     const approved = await office.command(contractor, { cmd: 'ok', ref: String(held.params?.ref), note: null });

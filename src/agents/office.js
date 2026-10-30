@@ -178,8 +178,8 @@ export function createOffice(o) {
     const all = q.byRef.all(ref).map(toHeld);
     return all.findLast((h) => h.decision === null) ?? all.at(-1) ?? null;
   };
-  /** @param {Person} a @param {Person} b */
-  const same = (a, b) => a.agent === b.agent && a.line === b.line && a.phone === b.phone;
+  /** One person, on whichever line they write from. @param {Person} a @param {Person} b */
+  const same = (a, b) => a.agent === b.agent && a.phone === b.phone;
   /** @param {Person} p */
   const nameOf = (p) => p.name || t(`role.${p.role}`);
   /** @param {number | null} paise */

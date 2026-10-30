@@ -145,6 +145,11 @@ const NUMBER_WORDS = new RegExp('(?<![\\p{L}\\p{M}])(?:' + [
   'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty', 'thirty',
   'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety', 'hundred', 'thousand', 'million', 'billion',
   'lakh', 'crore', 'half', 'quarter', 'double', 'triple', 'dozen',
+  // The same in Latin letters: the common romanised spellings.
+  'ek', 'do', 'teen', 'tin', 'char', 'chaar', 'paanch', 'panch', 'chhe', 'chhah', 'saat', 'aath', 'nau', 'das', 'dus',
+  'gyarah', 'barah', 'baarah', 'terah', 'chaudah', 'pandrah', 'solah', 'satrah', 'atharah', 'unnis', 'bees', 'pachis', 'pachees',
+  'tees', 'chalis', 'chaalis', 'pachas', 'pachaas', 'saath', 'sattar', 'assi', 'nabbe', 'sau',
+  'hazar', 'hazaar', 'hajar', 'hajaar', 'lac', 'karod', 'karor', 'aadha', 'aadhe', 'aadhi', 'adha', 'dedh', 'dhai', 'sawa', 'saadhe', 'sadhe', 'paune', 'dugna', 'dugne',
 ].join('|') + ')(?![\\p{L}\\p{M}])', 'iu');
 
 /** Check every complete numeric token against only the code-built display-value whitelist.
@@ -215,19 +220,23 @@ const RULES = [
   // Never says or hints who is right.
   ['verdict', anyWord(['सही', 'ग़लत', 'गलत', 'ग़लती', 'गलती', 'झूठ', 'झूठा', 'झूठी', 'सच', 'सच्चा', 'सच्ची', 'दोष', 'दोषी',
     'फ़र्ज़ी', 'फर्जी', 'नकली', 'धोखा', 'धोखाधड़ी', 'बेईमान\\p{L}*', 'उचित', 'अनुचित', 'मान्य', 'अमान्य', 'ठीक',
-    'right', 'wrong', 'correct', 'incorrect', 'fault', 'false', 'true'])],
+    'right', 'wrong', 'correct', 'incorrect', 'fault', 'false', 'true',
+    'sahi', 'galat', 'ghalat', 'galti', 'ghalti', 'jhooth', 'jhuth', 'jhutha', 'jhootha', 'sach', 'sacha', 'dosh', 'doshi', 'farzi', 'nakli', 'dhokha', 'beimaan', 'theek', 'thik'])],
   // Never asks for payment, mentions dues, dates, deadlines or reminders.
   ['payment', anyWord(['भुगतान\\p{L}*', 'चुका\\p{L}*', 'चुकता', 'अदायगी', 'अदा', 'बकाया', 'देय', 'वसूल\\p{L}*', 'उधार',
     'क़र्ज़', 'कर्ज़', 'कर्ज', 'पैसा', 'पैसे', 'पेमेंट', 'रिमाइंडर', 'याद\\s+दिला\\p{L}*', 'समय\\s*-?\\s*सीमा', 'तारीख़?', 'तिथि',
-    'आज', 'कल', 'परसों', 'जमा', 'pay\\p{L}*', 'paid', 'due', 'overdue', 'remind\\p{L}*', 'deadline'])],
+    'आज', 'कल', 'परसों', 'जमा', 'रुपये', 'रुपए', 'रुपया', 'pay\\p{L}*', 'paid', 'due', 'overdue', 'remind\\p{L}*', 'deadline',
+    'bhugtan\\p{L}*', 'chuka\\p{L}*', 'baki', 'baaki', 'bakaya', 'udhar', 'karz', 'karj', 'paisa', 'paise', 'rupay\\p{L}*', 'rupe\\p{L}*', 'rupaye', 'tarikh', 'aaj', 'kal', 'jama'])],
   // Never tells anyone what to do.
   ['directive', anyWord(['करें', 'कीजिए', 'कीजिये', 'करिए', 'करिये', 'दीजिए', 'दीजिये', 'दें', 'भेजें', 'चाहिए', 'चाहिये',
     'जाँचें', 'जांचें', 'मिलाएँ', 'मिलाएं', 'बताएँ', 'बताएं', 'पूछें', 'देखें', 'संपर्क', 'कृपया', 'सुनिश्चित', 'ज़रूर', 'जरूर',
-    'अवश्य', 'तुरंत', 'जल्द\\p{L}*', 'शीघ्र', 'please', 'should', 'must', 'check', 'send', 'contact', 'confirm'])],
+    'अवश्य', 'तुरंत', 'जल्द\\p{L}*', 'शीघ्र', 'please', 'should', 'must', 'check', 'send', 'contact', 'confirm',
+    'bhej\\p{L}*', 'kar\\s+do', 'kar\\s+de\\p{L}*', 'de\\s+do', 'de\\s+de\\p{L}*', 'karo', 'karein', 'karen', 'kijiye', 'kijie', 'dijiye', 'dijie', 'dein', 'chahiye', 'chaahiye', 'jaldi', 'turant', 'zaroor', 'jaroor', 'jarur', 'kripya', 'dekh\\s+lo', 'dekhein'])],
   // Never offers its own cause or a guess.
   ['cause', anyWord(['क्योंकि', 'इसलिए', 'इसलिये', 'चूँकि', 'चूंकि', 'के\\s+कारण', 'की\\s+वजह', 'वजह\\s+से', 'के\\s+चलते',
     'नतीजतन', 'फलस्वरूप', 'परिणामस्वरूप', 'शायद', 'संभवतः', 'संभवत', 'हो\\s+सकत\\p{L}*', 'लगता', 'बारिश', 'ख़राब\\p{L}*',
-    'खराब\\p{L}*', 'चोरी', 'नुकसान', 'तकनीकी', 'गड़बड़\\p{L}*', 'because', 'due\\s+to', 'probably', 'maybe'])],
+    'खराब\\p{L}*', 'चोरी', 'नुकसान', 'तकनीकी', 'गड़बड़\\p{L}*', 'because', 'due\\s+to', 'probably', 'maybe',
+    'kyunki', 'kyonki', 'kyuki', 'isliye', 'isiliye', 'chunki', 'wajah', 'vajah', 'karan', 'kaaran', 'shayad', 'lagta', 'kharab\\p{L}*', 'chori', 'nuksan', 'gadbad\\p{L}*'])],
 ];
 /** The first of the named wording rules a text breaks, or null (for other display-only prose, e.g. answers in ask.js).
  * @param {string} text @param {string[]} names @returns {string|null} */

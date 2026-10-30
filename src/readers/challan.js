@@ -184,7 +184,7 @@ export function gstPercentFrom(cgst, sgst, igst) {
 /** @typedef {{name: string, qtyHundredths: number|null, unit: string|null, raw: string,
  *   ratePaise?: number|null, taxablePaise?: number|null, gstPercent?: number|null}} ChallanItem */
 /** @typedef {{ok:true,kind:'challan',challanNo:string|null,date:string|null,items:ChallanItem[],vehicle:string|null,
- * clear:boolean,signed:boolean|null,grandTotalPaise?:number|null,model:string,latencyMs:number}
+ * clear:boolean,onlyUnitMissing?:boolean,signed:boolean|null,grandTotalPaise?:number|null,model:string,latencyMs:number}
  * | {ok:true,kind:'not_challan',model:string,latencyMs:number}
  * | {ok:false,transient:boolean,reason:string}} ChallanReading */
 
@@ -220,13 +220,15 @@ export async function readChallan(image, opts) {
   /** @param {{raw: string|null, state: string} | undefined} field */
   const rateOf = (field) => parseRateHundredths(printed(field));
   const docGst = gstPercentFrom(rateOf(v.cgstRate), rateOf(v.sgstRate), rateOf(v.igstRate));
+  let unitMissing = false;
   /** @type {ChallanItem[]} */
   const items = v.items.map((/** @type {any} */ item) => {
     const qtyRaw = visible(item.qty), unitRaw = visible(item.unit);
     const qtyHundredths = qtyRaw !== null ? parseQtyHundredths(qtyRaw) : null;
     const unit = unitRaw !== null ? normaliseUnit(unitRaw) : null;
     const name = item.name.trim();
-    if (item.state === 'unclear' || name === '' || !plainText(name) || qtyHundredths === null || unit === null) clear = false;
+    if (item.state === 'unclear' || name === '' || !plainText(name) || qtyHundredths === null) clear = false;
+    else if (unit === null) unitMissing = true;
     // Printed on the line, else printed once for the invoice (only when the line prints no rate).
     const lineGst = gstPercentFrom(rateOf(item.cgstRate), rateOf(item.sgstRate), rateOf(item.igstRate));
     const anyLineRate = [item.cgstRate, item.sgstRate, item.igstRate].some((f) => f && f.state !== 'absent');
@@ -236,6 +238,8 @@ export async function readChallan(image, opts) {
   });
   if (items.length === 0) clear = false;
   // Whether the receiver signed says nothing about the figures, so it never changes `clear`.
-  return { ok: true, kind: 'challan', challanNo, date, items, vehicle, clear, signed: signedFrom(v.signature),
+  // Real cash memos have no unit column: the reading stays unclear, and says that this is its only gap
+  // (src/agents/material.js unitFromOrder decides).
+  return { ok: true, kind: 'challan', challanNo, date, items, vehicle, clear: clear && !unitMissing, ...(clear && unitMissing ? { onlyUnitMissing: true } : {}), signed: signedFrom(v.signature),
     grandTotalPaise: parseMoneyPaise(printed(v.grandTotal)), ...meta };
 }

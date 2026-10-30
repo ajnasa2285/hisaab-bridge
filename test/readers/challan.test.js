@@ -70,6 +70,21 @@ test('a clear challan returns the contract fields, with code-made hundredths and
   }
 });
 
+test('a printed-unit gap alone: not clear, and it says that is the only gap', async t => {
+  model(t, { ...inventedChallan(), items: [item('Cement', '50', null)] });
+  const only = await readChallan(image);
+  assert.ok(only.ok && only.kind === 'challan');
+  if (only.ok && only.kind === 'challan') assert.deepEqual([only.clear, only.onlyUnitMissing, only.items[0].unit], [false, true, null]);
+  model(t, { ...inventedChallan(), items: [item('Cement', null, null)] });
+  const more = await readChallan(image);
+  assert.ok(more.ok && more.kind === 'challan');
+  if (more.ok && more.kind === 'challan') assert.deepEqual([more.clear, more.onlyUnitMissing], [false, undefined]);
+  model(t, inventedChallan());
+  const full = await readChallan(image);
+  assert.ok(full.ok && full.kind === 'challan');
+  if (full.ok && full.kind === 'challan') assert.deepEqual([full.clear, full.onlyUnitMissing], [true, undefined]);
+});
+
 test('an item with an unreadable or invalid quantity disables clear but keeps the other items', async t => {
   for (const qty of [field(null, 'unclear'), field('2O0'), field('1.234')]) {
     model(t, { ...inventedChallan(), items: [{ ...item('Cement', null, 'bags'), qty }, item('Sand', '12.25', 'cft')] });

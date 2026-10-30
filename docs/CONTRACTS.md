@@ -101,6 +101,8 @@ export async function readChallan(image) {}
 
 **Tax invoice figures (added 30 Oct, `challan-v2`).** Each item may also carry `ratePaise`, `taxablePaise` and `gstPercent`, and the reading `grandTotalPaise`, all `number|null`: what a GST tax invoice prints (rate before tax, the line's taxable value, the invoice's final total payable), raw text parsed by code to paise (`parseMoneyPaise`). `gstPercent` is code's: IGST alone, or CGST and SGST that are equal halves, from the line, else from a tax summary printed once for the invoice (only when the line prints no rate), and only a slab (0, 5, 12, 18, 28, 40); anything else is `null`. These never change `clear` and are never copied as quantities. A plain challan has them all `null`.
 
+`onlyUnitMissing` (added 31 Oct): `clear` is false only because an item printed no unit (real cash memos have no unit column); the conversation counts the reading as clear when it is the order's one item with the order's quantity (`unitFromOrder` in `src/agents/material.js`), else it asks as for any unclear reading.
+
 `signed` (added 29 Oct): whether a handwritten signature or receiver's mark is visible on this copy: `true` visible, `false` the receiver's place is clearly empty, `null` unsure (the model's `signature` field: `visible` / `absent` / `unclear`). A printed name or the supplier's stamp is not a signature. It says nothing about the figures and never changes `clear`.
 
 ### 3.4 Photo kind
@@ -253,7 +255,7 @@ becomes a list of payments per order with a balance worked out by code. Old mess
 
 | Type | From → to | Body |
 |---|---|---|
-| `PAYMENT_CLAIM` (extended) | buyer → seller | `bill: msg_id \| null` (the bill in force; `null` = an advance, before any bill), `method?: 'upi' \| 'cash'` (absent = `upi`), `amountPaise` (> 0; any amount: part, full or more), `paidOn`, `paidAt?`; `upi`: `utr` and `screenshot: {sha256}` as before; `cash`: no `utr`, `screenshot?: {sha256}` (photo of a handwritten cash receipt, optional) |
+| `PAYMENT_CLAIM` (extended) | buyer → seller | `bill: msg_id \| null` (the bill in force; `null` = an advance, before any bill), `method?: 'upi' \| 'cash'` (absent = `upi`), `amountPaise` (> 0; any amount: part, full or more), `paidOn`, `paidAt?`; `upi`: `utr` and `screenshot: {sha256}` as before; `cash`: no `utr`, `screenshot?: {sha256}` (photo of a handwritten cash receipt, optional); `payeeName?` (31 Oct, `upi`: the payee the reader saw, at most 80 characters; only shown to the seller, code decides nothing from it) |
 | `PAYMENT_ACK` (new) | seller → buyer | `payment: msg_id` (one claim of this order not yet answered), `received: boolean`, `amountPaise` (the claim's amount) — only on the seller's own हाँ/नहीं |
 | `PAYMENT_RECEIVED` (new) | seller → buyer | the seller records money he received himself: `method: 'cash' \| 'upi'`, `amountPaise`, `receivedOn`, `bill: msg_id \| null`, `note?`; counts as confirmed at once |
 | `SETTLED` (extended) | seller → buyer | new form `{bill, amountPaise (all confirmed), payments: msg_id[] (every confirmed payment counted)}`; the old form `{bill, payment, amountPaise}` stays valid. Sent by the seller's agent itself (code) as soon as the bill is accepted and confirmed ≥ the bill total in force with no claim waiting |

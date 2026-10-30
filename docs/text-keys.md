@@ -33,6 +33,7 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `jcb.job_booked` | ref, site, day, time | to operator: a job is booked |
 | `jcb.meter_start_saved` | reading | to operator: start reading saved |
 | `jcb.meter_end_saved` | reading, hours | to operator: end reading saved, hours worked |
+| `jcb.meter_which_stale` | — | a start reading when the start is already recorded (a slow photo or an old read-back); nothing recorded |
 | `jcb.start_first` | — | to operator: send the start photo first |
 | `jcb.end_not_after_start` | start | to operator: the end reading must be more than the start |
 | `jcb.meter_hours_impossible` | start, end, hours | to operator/owner: more than 24 h between the readings, so not this job (another machine or a misread); nothing recorded; send the right photo or type the digits (Claude drafted, Fable polished 29 Oct) |
@@ -88,6 +89,8 @@ Contractor side (contractor, supervisor):
 | `site.delivery_matches_count` | ref, site, count, siteNo, challan, challanNo | a DELIVERY arrived for an order the site already counted from its challan, and it agrees; nobody is asked again (Claude drafted, Fable polished 29 Oct) |
 | `site.material_bill_received` | ref, site, lines, total, photos | a material bill that follows from the delivery, the agreed rates and the site's count; "हाँ" accepts |
 | `site.material_correction_received` | ref, site, lines, total, photos | a corrected material bill; "हाँ" accepts |
+| `site.bill_copy` | ref, site, what | to the supervisor: a copy of a bill, nothing to answer |
+| `site.bill_contractor_accepts` | — | a supervisor's हाँ while a bill is open: the contractor accepts bills |
 | `site.bill_changed` | ref, site, bill, total | the contractor's yes was for a bill no longer in force: nothing accepted, the new bill shown, "हाँ" accepts it |
 | `site.bill_changed_check` | ref, site, bill, total | the same when the new bill does not follow from the delivery (no "हाँ" offered) |
 | `site.bill_is_material` / `site.bill_is_jcb` | lines, total / hours, rate, total | the bill in force as one text, for the two above |
@@ -429,6 +432,7 @@ times, UTRs and screenshots add no placeholder. Group references link to each or
 | `step.claim_payment_cash` | site, amount | read-back of a cash payment from free words (model route) |
 | `step.claim_group` / `step.claim_group_cash` | amount, to, lines | read-back of the split of one payment among orders |
 | `pay.seller.claimed` / `_advance` | ref, site, payment, balance | to the seller: a reported payment; "हाँ" confirms, "नहीं" denies |
+| `pay.payee` | name | added to a claim notice: the payee the UPI reader saw |
 | `pay.seller.utr_seen` | utr, before | added to a claim notice: this UTR was told before on another of this seller's orders |
 | `pay.seller.claim_waiting` | ref, payment | the seller records money while a claim of that amount waits: "हाँ" answers the claim, "नहीं" records it as separate |
 | `pay.seller.group_claimed` | payment, lines | to the seller: a clubbed payment, once, when all shares are in; one हाँ/नहीं for all |
@@ -469,6 +473,8 @@ No longer used by the agents (kept for the old texts): `site.payment_claimed`, `
 | `learn.read_back_meter` | reading | a meter photo read with past corrections gave another figure than without them: read back once ("हाँ", "नहीं" or the right digits) |
 | `learn.read_back_challan` | items | the same for the supplier's challan photo (the quantities, in the order's order) |
 | `learn.read_back_site` | ref, items | the same for the site's copy of the challan |
+| `learn.forgot_word` | word, n | "भूल जाओ <शब्द>": this person's own voice word is no longer replaced |
+| `learn.voice_replaced` | words | a voice note had words replaced from this person's corrections: "heard → used" |
 | `learn.forgot` | ref, n | "भूल जाओ P-1": n corrections from that order are no longer used |
 | `learn.forgot_none` | ref | "भूल जाओ P-1" on an order nothing was learnt from |
 | `learn.forget_which` | — | "भूल जाओ" without a known reference |

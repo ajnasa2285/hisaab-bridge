@@ -54,7 +54,8 @@ export function clean(v, key = '', depth = 0) {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
   if (typeof v === 'boolean') return v;
   if (v instanceof Uint8Array || ArrayBuffer.isView(v) || v instanceof ArrayBuffer) return null;
-  if (depth > 4) return null;
+  // Deep enough for a tool call's arguments: detail → calls → call → args → items → item → its fields.
+  if (depth > 7) return null;
   if (Array.isArray(v)) return v.slice(0, 20).map((x) => clean(x, key, depth + 1));
   if (typeof v === 'object') {
     /** @type {Record<string, unknown>} */

@@ -34,6 +34,11 @@ Each builder adds a dated entry (IST) at the end of every work session: **done, 
 
 - 2026-10-29 (IST) — Claude session, branch `claude/learn-corrections` (brief `CLAUDE-learn-corrections.md`). Done: per-agent correction memory (`src/learn/corrections.js`), wired into the meter, supplier challan and site challan paths and voice (`src/agents/conversation.js`, `src/app.js`); readers take optional `{memory}`; texts `learn.*`; judge learning card (`web/learning-view.js`, added to `JUDGE_FILES`); export carries optional `learning` counts; eval 30/39 → 36/39 (docs/BUILD2.md "Learning from corrections"). Local: only touched tests run. Lead to do: full suite + typecheck on AWS; CONTRACTS section 10 could list the optional `learning` field and section 3 the readers' optional `{memory}`. Not done: UPI and "सुधार" are not learnt from (no corrected figure / not a misread).
 
+### 31 Oct: Muse Wonder review fixes (branch `claude/wonder-fixes`, worktree `hb-wonder`; not merged)
+- Done: items 1 to 22 of `docs/briefs/CLAUDE-wonder-fixes.md`, failing test first. New tests: `test/protocol/answers.test.js`, `test/agents/money-review.test.js`, `test/agents/open-question.test.js`, `test/agents/review-small.test.js`, plus cases in the learning, payments, reader and app tests. README says 690 tests (632 + 58 new `test(` calls): lead confirms on AWS with tsc.
+- Contract changes written in `docs/CONTRACTS.md`: order of checks (repeats before expiry, 64 KiB cap), unsigned `ERROR`, which refusals count, `delivery_unsure` note, `onlyUnitMissing`, `payeeName`.
+- Next: lead runs the full suite and tsc, replays the live ledgers, merges and deploys.
+
 ## Astra
 
 - 2026-10-29 (IST), `astra/usual-figures`: Done: own-ledger usual figures (last 10 accepted orders,

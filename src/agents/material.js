@@ -295,6 +295,18 @@ export function challanMatches(orderItems, seen) {
 }
 
 /**
+ * A reading whose only gap is a missing unit counts as clear when it is the order's one item with the
+ * order's quantity: the unit is the order's. Real cash memos have no unit column. Anything else is asked.
+ * @param {{name: string, qtyHundredths: number}[]} ordered
+ * @param {{onlyUnitMissing?: boolean, items: {name: string, qtyHundredths: number | null}[]}} read
+ */
+export function unitFromOrder(ordered, read) {
+  if (read.onlyUnitMissing !== true || ordered.length !== 1 || read.items.length !== 1) return false;
+  const seen = read.items[0];
+  return typeof seen.name === 'string' && norm(seen.name) === norm(ordered[0].name) && seen.qtyHundredths === ordered[0].qtyHundredths;
+}
+
+/**
  * What a tax invoice printed for the order's items (GST rate, rate, taxable value per item, in the
  * order's order) and its grand total, from a challan reading; null when it printed none of these.
  * Carried on the DELIVERY as read; the bill is still computed by code and compared with the total.

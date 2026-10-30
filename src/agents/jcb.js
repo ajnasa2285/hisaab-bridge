@@ -145,6 +145,8 @@ export function createJcbAgent(o) {
         if ((a.which !== 'start' && a.which !== 'end') || !nonNegInt(a.valueTenths) || !isSha256(a.sha256)) return no('common.bad_args');
         if (a.takenAt !== undefined && a.takenAt !== null && !isIso(a.takenAt)) return no('common.bad_args');
         const r = meterReadings(ledger.events(a.orderId));
+        // Asked or read before another reading arrived: the start is already there, nothing is overwritten.
+        if (a.which === 'start' && r.start) return no('jcb.meter_which_stale');
         if (a.which === 'end') {
           if (!r.start) return no('jcb.start_first');
           traceCheck(`meter end above start ${a.valueTenths > r.start.valueTenths ? '✓' : '✗'} ${hours(a.valueTenths)} > ${hours(r.start.valueTenths)}`,

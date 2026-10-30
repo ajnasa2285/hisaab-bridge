@@ -136,6 +136,29 @@ test('the same when the window is closed: told once when the person next writes'
   assert.equal(d.sent.filter((s) => s.text === notice).length, 1);
 });
 
+test('whatsapp1: an expectation stands only on a notice that really went; with a question open the notice says what a bare yes answers', async (tc) => {
+  const d = await desk(tc);
+  const entry = d.app.agent('agent:contractor-1');
+  const person = /** @type {any} */ ({ line: 'line-site', phone: CONTRACTOR, agent: 'agent:contractor-1', role: 'contractor', name: 'Contractor' });
+  /** @param {string} msgId */
+  const bill = (msgId) => ({ type: 'BILL', msg_id: msgId, order_id: '11111111-1111-4111-8111-111111111111', body: { lines: [{ what: 'JCB', hoursTenths: 10, ratePaise: 100000, amountPaise: 100000 }], totalPaise: 100000, evidence: [] } });
+  // Outside the 24-hour window nothing goes, so no yes can mean it.
+  await entry.agent.onApplied(bill('22222222-2222-4222-8222-222222222222'));
+  assert.equal(d.sent.length, 0);
+  assert.equal(entry.talk.pending(person), null);
+  // Window open, nothing open: the notice as it is, and its yes means it.
+  await d.say({ type: 'text', text: { body: 'मदद' } });
+  const before = d.sent.length;
+  await entry.agent.onApplied(bill('33333333-3333-4333-8333-333333333333'));
+  assert.equal(d.sent.slice(before).length, 1);
+  assert.equal(d.sent.at(-1)?.text.includes(t('common.question_waits')), false);
+  assert.equal(entry.talk.pending(person).args.bill, '33333333-3333-4333-8333-333333333333');
+  // A second one while that question is open keeps that question and says so.
+  await entry.agent.onApplied(bill('44444444-4444-4444-8444-444444444444'));
+  assert.equal(d.sent.at(-1)?.text.includes(t('common.question_waits')), true);
+  assert.equal(entry.talk.pending(person).args.bill, '33333333-3333-4333-8333-333333333333');
+});
+
 test('the retry timer never overlaps itself: a slow pass makes the next tick wait', async (tc) => {
   let calls = 0;
   /** @type {() => void} */

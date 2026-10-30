@@ -9,7 +9,7 @@ import { billUsualNotes, requestUsualNotes, withUsual } from './usual.js';
 import { tenths as hours, rupees, day as dayName, qty } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
 import { safeName } from '../protocol/names.js';
-import { agreedRates, billFollows, countDifferences, delivery, invoiceCheck, itemsText, itemsTotalPaise, lineAmountPaise, linesText, materialBillBody, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, validItems } from './material.js';
+import { agreedRates, billFollows, countDifferences, delivery, gstPaise, invoiceCheck, isGstPercent, itemsText, itemsTotalPaise, lineAmountPaise, linesText, materialBillBody, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, validItems } from './material.js';
 import { openRefs } from '../ledger/refs.js';
 import { t, variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
@@ -136,6 +136,22 @@ export function createContractorAgent(o) {
     return null;
   };
 
+  /**
+   * The last GST percent known for this supplier, item and unit (the supplier's yes, else the tax
+   * invoice carried on that delivery), or null.
+   * @param {string | undefined} seller @param {{name: string, unit: string}} it
+   */
+  const lastMaterialGst = (seller, it) => {
+    const same = (/** @type {{name: string, unit: string}} */ x) => x.name.trim().toLowerCase() === it.name.trim().toLowerCase() && x.unit.trim().toLowerCase() === it.unit.trim().toLowerCase();
+    for (const e of yesReplies('material', seller).reverse()) {
+      const said = (e.body.body.rates ?? []).find(same)?.gstPercent;
+      if (isGstPercent(said)) return said;
+      const read = delivery(ledger.events(e.orderId))?.items.find(same)?.gstPercent;
+      if (isGstPercent(read)) return read;
+    }
+    return null;
+  };
+
   /** Only context for the contractor; these comparisons never take part in the approval gate.
    * @param {Record<string, any>} a @param {'jcb_hours'|'material'} kind @param {boolean} estimate
    */
@@ -216,6 +232,8 @@ export function createContractorAgent(o) {
       Object.assign(body, { utr: a.utr, screenshot: { sha256: a.screenshotSha256 } });
     }
     if (typeof a.paidAt === 'string') body.paidAt = a.paidAt;
+    // The payee the UPI reader saw, as read: only shown to the seller, code decides nothing from it.
+    if (method === 'upi' && typeof a.payeeName === 'string' && a.payeeName) body.payeeName = a.payeeName;
     return body;
   };
   /**
@@ -264,7 +282,7 @@ export function createContractorAgent(o) {
       roles: ['contractor', 'supervisor'],
       commits: true,
       // The value an approval limit compares: each quantity × the last rate this supplier agreed for
-      // that item and unit; any item without a known rate → null.
+      // that item and unit, with its last GST percent when known; any item without a known rate → null.
       hold: {
         limit: 'procurement',
         usualNote: (a, estimate = true) => requestNotes(a, 'material', estimate),
@@ -276,7 +294,8 @@ export function createContractorAgent(o) {
             const rate = lastMaterialRate(seller, it);
             const amount = rate === null ? null : lineAmountPaise(it.qtyHundredths, rate);
             if (amount === null) return null;
-            total += amount;
+            const gst = lastMaterialGst(seller, it);
+            total += amount + (gst === null ? 0 : gstPaise(amount, gst) ?? 0);
           }
           return total;
         },
@@ -637,7 +656,7 @@ export function createContractorAgent(o) {
       ...(check === 'differs' ? { invoiceTotal: rupees(/** @type {number} */ (d.grandTotalPaise)) } : {}) };
     const key = variant(m.type === 'BILL' ? 'site.material_bill_received' : 'site.material_correction_received', { invoice_match: check === 'match', invoice_differs: check === 'differs' });
     await tellBill(m.order_id, b, key, params, { tool: 'accept_bill', args: { orderId: m.order_id, bill: m.msg_id } });
-    await tell('supervisor', key, params);
+    await tell('supervisor', 'site.bill_copy', { ref, site, what: billText(m.order_id, b) });
   }
 
   /**
@@ -728,7 +747,7 @@ export function createContractorAgent(o) {
         };
         const key = m.type === 'BILL' ? 'site.bill_received' : 'site.correction_received';
         await tellBill(m.order_id, b, key, params, { tool: 'accept_bill', args: { orderId: m.order_id, bill: m.msg_id } });
-        await tell('supervisor', key, params);
+        await tell('supervisor', 'site.bill_copy', { ref, site, what: billText(m.order_id, b) });
         break;
       }
       case 'SETTLED': {

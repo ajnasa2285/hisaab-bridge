@@ -11,6 +11,7 @@ import { rupees, day as dayName } from '../i18n/format.js';
 import { t, variant } from '../i18n/index.js';
 import { deliveryResult, isDay, isUuid, no, ofType, ok, posInt } from './common.js';
 import { traceCheck } from '../trace/trace.js';
+import { plain } from '../learn/corrections.js';
 
 /** @typedef {import('../ledger/store.js').Ledger} Ledger */
 /** @typedef {import('../ledger/store.js').LedgerEvent} LedgerEvent */
@@ -323,6 +324,9 @@ export function createSellerPayments(o) {
     const b = m.body;
     const expect = { tool: 'confirm_payment', args: { orderId: m.order_id, payment: m.msg_id }, no: { tool: 'confirm_payment', args: { orderId: m.order_id, payment: m.msg_id, received: false } } };
     const seen = utrSeen(m);
+    // Who the receipt says was paid, when the reader saw it: for the seller to look at.
+    const name = plain(b.payeeName, 60);
+    const payee = name ? `, ${t('pay.payee', { name })}` : '';
     if (b.group) {
       /** @type {[string, number][]} */
       const parts = [];
@@ -332,11 +336,11 @@ export function createSellerPayments(o) {
         parts.push([id, share.body.body.amountPaise]);
       }
       const lines = groupLines(parts);
-      return { key: 'pay.seller.group_claimed', params: { payment: paymentLine({ ...b, amountPaise: b.group.totalPaise }), lines: seen ? `${lines}\n${seen}` : lines }, expect };
+      return { key: 'pay.seller.group_claimed', params: { payment: `${paymentLine({ ...b, amountPaise: b.group.totalPaise })}${payee}`, lines: seen ? `${lines}\n${seen}` : lines }, expect };
     }
     const key = variant('pay.seller.claimed', { advance: b.bill === null });
     const balance = balanceText(summaryOf(ledger, m.order_id));
-    return { key, params: { ref: o.refOf(m.order_id), site: o.siteOf(m.order_id), payment: paymentLine(b), balance: seen ? `${balance}। ${seen}` : balance }, expect };
+    return { key, params: { ref: o.refOf(m.order_id), site: o.siteOf(m.order_id), payment: `${paymentLine(b)}${payee}`, balance: seen ? `${balance}। ${seen}` : balance }, expect };
   }
 
   /**

@@ -147,6 +147,7 @@ const BODY_OK = {
     && (b.method === 'cash'
       ? b.utr === undefined && (b.screenshot === undefined || shot(b.screenshot))
       : text(b.utr) && shot(b.screenshot))
+    && (b.payeeName === undefined || (text(b.payeeName) && b.payeeName.length <= 80))
     && (b.group === undefined || paymentGroup(b.group, b.amountPaise)),
   PAYMENT_ACK: (b) => only(b, ['payment', 'received', 'amountPaise']) && isUuid(b.payment) && typeof b.received === 'boolean' && pos(b.amountPaise),
   PAYMENT_RECEIVED: (b) => only(b, ['method', 'amountPaise', 'receivedOn', 'bill', 'note', 'group'])

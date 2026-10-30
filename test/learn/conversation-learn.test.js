@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createConversation } from '../../src/agents/conversation.js';
 import { runTool } from '../../src/agents/common.js';
-import { openLearn } from '../../src/learn/corrections.js';
+import { openLearn, voiceParty } from '../../src/learn/corrections.js';
 import { openTrace, withTrace } from '../../src/trace/trace.js';
 import { t } from '../../src/i18n/index.js';
 import { setup, person, seesPhoto } from '../agents/helpers.js';
@@ -191,7 +191,8 @@ test('challan: quantities the supplier types for a misread photo are kept; the n
   assert.equal(f.last()?.[1], 'supplier.delivery_sent');
   const [row] = f.supLearn.past({ kind: 'challan', party: 'supplier' });
   assert.deepEqual([row.field, row.read, row.corrected], ['qty सीमेंट', '30', '50']);
-  assert.match(String(row.layout), /1 line\(s\); line as read: सीमेंट 380 30 बोरी/);
+  assert.equal(String(row.layout).includes('line as read'), false, 'raw line text is never kept');
+  assert.match(String(row.layout), /1 line\(s\)/);
   assert.equal(f.siteLearn.stats().recorded, 0, 'memory is per agent: nothing reaches the contractor\'s agent');
 });
 
@@ -253,6 +254,65 @@ test('"कितनी बार ग़लत पढ़ा गया?" is answer
   assert.equal(f.last()?.[2], t('learn.misreads', { n: 2, lines: [t('learn.misreads_line', { kind: t('learn.kind.challan'), n: 2 }), t('learn.memory_line', { reads: 1, again: 1 })].join('\n') }));
   await f.supTalk.onText(supplier, 'मीटर ग़लत पढ़ा, 5 घंटे');
   assert.notEqual(f.last()?.[1], 'learn.misreads');
+});
+
+test('model2: a figure memory changed that is not a quantity (GST, rate, total, signed) is read back too', async (tc) => {
+  const learn = openLearn();
+  learn.record({ kind: 'challan', party: 'supplier', field: 'qty सीमेंट', read: '30', corrected: '50', layout: '1 line(s)' });
+  learn.record({ kind: 'site_challan', party: 'agent:supplier-1', field: 'qty सीमेंट', read: '30', corrected: '50', layout: '1 line(s)' });
+  const s = await setup();
+  tc.after(() => s.close());
+  await runTool(s.site.tools, contractor, { tool: 'request_material', args: { site: 'Invented Site', day: '2026-10-29', items: ITEMS } });
+  await settle();
+  const orderId = String(/** @type {any} */ (s.siteCore.ledger.orders()[0]).order_id);
+  await runTool(s.sup.tools, supplier, { tool: 'reply_order', args: { orderId, answer: 'yes', ratesPaise: [38000] } });
+  await settle();
+  /** @type {string[]} */
+  const said = [];
+  const line = { name: 'सीमेंट', qtyHundredths: 5000, unit: 'बोरी', raw: 'सीमेंट 50 बोरी', ratePaise: 38000, taxablePaise: 1900000, gstPercent: 28 };
+  const read = (/** @type {any} */ over, /** @type {any} */ itemOver = {}) => ({ ok: true, kind: 'challan', challanNo: '412', date: null, vehicle: null, clear: true, signed: true, grandTotalPaise: 2432000, items: [{ ...line, ...itemOver }], ...over });
+  /** @type {any} */
+  let withMemory = null;
+  const supTalk = createConversation({ ledger: s.supCore.ledger, tools: s.sup.tools, spark: async () => ({ ok: /** @type {const} */ (true), toolCalls: [] }),
+    reply: (_p, key) => { said.push(key); }, now: s.supCore.now, classifyPhoto: seesPhoto('challan'), learn,
+    readChallan: /** @type {any} */ (async (/** @type {any} */ _i, /** @type {any} */ opts) => (opts?.memory ? withMemory : read({}))) });
+  for (const [n, changed] of /** @type {[number, any][]} */ ([[1, read({ grandTotalPaise: 1 })], [2, read({}, { gstPercent: 0 })], [3, read({}, { ratePaise: 1 })], [4, read({}, { taxablePaise: 1 })]])) {
+    withMemory = changed;
+    await supTalk.onImage(supplier, photo(n));
+    assert.equal(said.at(-1), 'learn.read_back_challan', `changed figure ${n}`);
+    assert.equal(s.supCore.ledger.view(orderId).state, 'booked', 'nothing recorded silently');
+  }
+  // The same figures with and without memory go on at once.
+  withMemory = read({});
+  await supTalk.onImage(supplier, photo(5));
+  assert.equal(s.supCore.ledger.view(orderId).state, 'delivered');
+  /** @type {string[]} */
+  const siteSaid = [];
+  const siteRead = (/** @type {boolean} */ signed) => ({ ok: true, kind: 'challan', challanNo: '412', date: null, vehicle: null, clear: true, signed, items: [{ name: 'सीमेंट', qtyHundredths: 5000, unit: 'बोरी', raw: 'सीमेंट 50' }] });
+  const siteTalk = createConversation({ ledger: s.siteCore.ledger, tools: s.site.tools, spark: async () => ({ ok: /** @type {const} */ (true), toolCalls: [] }),
+    reply: (_p, key) => { siteSaid.push(key); }, now: s.siteCore.now, classifyPhoto: seesPhoto('challan'), learn,
+    readChallan: /** @type {any} */ (async (/** @type {any} */ _i, /** @type {any} */ opts) => siteRead(opts?.memory ? true : false)) });
+  await siteTalk.onImage(supervisor, photo(6));
+  assert.equal(siteSaid.at(-1), 'learn.read_back_site', 'only "signed" changed: read back');
+});
+
+test('model1: a replaced voice word is shown to the person, and "भूल जाओ <शब्द>" forgets it', async (tc) => {
+  const learn = openLearn();
+  const s = await setup();
+  tc.after(() => s.close());
+  /** @type {[string, any][]} */
+  const said = [];
+  const talk = createConversation({ ledger: s.siteCore.ledger, tools: s.site.tools, spark: async () => ({ ok: /** @type {const} */ (true), toolCalls: [] }),
+    reply: (_p, key, params) => { said.push([key, params]); }, now: s.siteCore.now, learn });
+  const party = voiceParty(contractor);
+  for (let i = 0; i < 2; i++) learn.record({ kind: 'voice', party, field: 'site', read: 'शिवपुरी', corrected: 'रामपुर' });
+  await talk.onText(contractor, 'मदद', { voice: 'शिवपुरी मदद', replaced: [['शिवपुरी', 'रामपुर']] });
+  assert.deepEqual(said[0], ['learn.voice_replaced', { words: 'शिवपुरी → रामपुर' }]);
+  await talk.onText(contractor, 'भूल जाओ शिवपुरी');
+  assert.deepEqual(said.at(-1), ['learn.forgot_word', { word: 'शिवपुरी', n: 2 }]);
+  assert.equal(learn.glossary(party).size, 0);
+  await talk.onText(contractor, 'भूल जाओ शिवपुरी');
+  assert.deepEqual(said.at(-1), ['learn.forget_which', undefined]);
 });
 
 test('voice: a site word the person corrects twice is learnt, and only then replaced by code', async (tc) => {

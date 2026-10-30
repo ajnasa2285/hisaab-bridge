@@ -31,7 +31,7 @@ import { traceLedger, traceLink, traceReader, traceReceived, traceSpark, traceTo
 import { join } from 'node:path';
 import { createEvidenceService, forwardEvidence } from './agents/evidence.js';
 import { openMediaStore } from './media/store.js';
-import { normaliseVoice, openLearn } from './learn/corrections.js';
+import { normaliseVoice, openLearn, voiceParty, voiceReplacements } from './learn/corrections.js';
 import { traceCheck } from './trace/trace.js';
 import { createDirectory } from './wa/directory.js';
 import { openWaStore } from './wa/store.js';
@@ -299,12 +299,12 @@ export function createApp(cfg) {
           if (!said.ok || !said.text.trim()) { await sendTo(person, t('voice.not_understood')); return; }
           const c = currentTrace();
           if (c) c.text = said.text;
-          // Words people corrected at least twice are replaced first (src/learn/corrections.js), then
-          // "पीवन" → "P-1" before anything reads it (live, 30 Oct).
-          const glossary = entry.learn.glossary();
+          // Words this person corrected at least twice are replaced first and shown to them
+          // (src/learn/corrections.js), then "पीवन" → "P-1" before anything reads it (live, 30 Oct).
+          const glossary = entry.learn.glossary(voiceParty(person));
           const heard = normaliseVoice(said.text, glossary);
           if (heard !== said.text.normalize('NFC')) traceCheck('voice: words replaced from corrections people confirmed twice', true, { name: 'learn_glossary', words: glossary.size });
-          return entry.talk.onText(person, spokenRefs(heard), { voice: said.text, atMs: msg.atMs });
+          return entry.talk.onText(person, spokenRefs(heard), { voice: said.text, atMs: msg.atMs, replaced: voiceReplacements(said.text, glossary) });
         }
         // Documents are not handled yet.
         { await sendTo(person, t('common.unknown_step')); return; }

@@ -26,7 +26,7 @@ import { fillStep, proposeStep, orderRefs, pickOrder } from '../orchestrator/orc
 import { parseHundredthsList } from '../orchestrator/units.js';
 import { impossible, meterReadings, MAX_JOB_TENTHS } from './jcb.js';
 import { displayDateWrong, jobDay } from './meter-guard.js';
-import { challanMatches, challanQuantities, countDifferences, delivery, invoiceFromReading, requestedItems, sameChallanNo, siteCount } from './material.js';
+import { challanQuantities, countDifferences, delivery, invoiceFromReading, requestedItems, sameChallanNo, siteCount, unitFromOrder } from './material.js';
 import { exactReply, saysCash, yesNo } from './replies.js';
 import { balanceText, owedPaise, payableOrders, paymentLine, shares, summaryOf, todayIst, utrUses } from './pay.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
@@ -36,7 +36,7 @@ import { traceCheck } from '../trace/trace.js';
 import { answerQuestion } from './ask.js';
 import { day as dayName, qty as qtyText, rupees, tenths } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
-import { promptBlock } from '../learn/corrections.js';
+import { plain, promptBlock, voiceParty } from '../learn/corrections.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('./common.js').Tool} Tool */
@@ -66,10 +66,10 @@ import { promptBlock } from '../learn/corrections.js';
  *   Promise<import('../readers/photo.js').PhotoClassification>} PhotoClassifier */
 /** `memory`: past corrections the reading had; `differs`: its figures differ from the reading without them.
  * @typedef {{challanNo: string | null, items: {name: string, qtyHundredths: number | null, raw: string}[], clear: boolean,
- *   memory?: number, differs?: boolean}} SiteReading */
+ *   onlyUnitMissing?: boolean, memory?: number, differs?: boolean}} SiteReading */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) => Promise<
  *   {ok: true, kind: 'challan', challanNo: string | null, date: string | null,
- *     items: {name: string, qtyHundredths: number | null, unit: string | null, raw: string}[], clear: boolean, signed?: boolean | null} |
+ *     items: {name: string, qtyHundredths: number | null, unit: string | null, raw: string}[], clear: boolean, onlyUnitMissing?: boolean, signed?: boolean | null} |
  *   {ok: true, kind: 'not_challan'} | {ok: false, transient: boolean, reason: string}>} ChallanReader */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) => Promise<
  *   {ok: true, kind: 'hour_meter', raw: string, valueTenths: number | null, clear: boolean, displayDate?: string | null} | {ok: true, kind: 'not_meter'} |
@@ -78,7 +78,7 @@ import { promptBlock } from '../learn/corrections.js';
  *   Promise<import('../readers/same-meter.js').SameMeter>} SameMeterCheck */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) => Promise<
  *   {ok: true, kind: 'upi_payment', amountPaise: number | null, date: string | null, utr: string | null,
- *     clock?: string | null, status: 'success' | 'pending' | 'failed' | null, clear: boolean} | {ok: true, kind: 'not_upi'} |
+ *     clock?: string | null, status: 'success' | 'pending' | 'failed' | null, clear: boolean, payeeName?: string | null} | {ok: true, kind: 'not_upi'} |
  *   {ok: false, transient: boolean, reason: string}>} UpiReader */
 /** @typedef {typeof import('../readers/cash-receipt.js').readCashReceipt} CashReceiptReader */
 
@@ -217,13 +217,10 @@ export function createConversation(o) {
    * @param {Person} person @param {string | null} orderId @param {boolean} site @returns {string} */
   const partyOf = (person, orderId, site) =>
     (site && orderId ? /** @type {{counterparty: string} | null} */ (o.ledger.order(orderId))?.counterparty : null) ?? person.role;
-  /** A short note of the document's layout, made by code from the reading.
-   * @param {{items: {raw: string, ratePaise?: number | null}[]}} read @param {({raw?: string} | undefined)[]} matched */
-  const layoutOf = (read, matched) => (/** @type {number} */ i) => {
-    const tax = read.items.some((it) => typeof it.ratePaise === 'number');
-    const raw = typeof matched[i]?.raw === 'string' ? matched[i]?.raw : null;
-    return `${read.items.length} line(s)${tax ? '; tax invoice' : ''}${raw ? `; line as read: ${raw}` : ''}`;
-  };
+  /** A short note of the document's layout, made by code from the reading: its shape only, never its
+   * words (printed text must not reach a later prompt).
+   * @param {{items: {raw: string, ratePaise?: number | null}[]}} read */
+  const layoutOf = (read) => () => `${read.items.length} line(s)${read.items.some((it) => typeof it.ratePaise === 'number') ? '; tax invoice' : ''}`;
   /**
    * Voice: the step understood from a voice note that the person did not commit as it was. When the
    * same tool is committed soon after with other words (site, item names) and the replaced word was
@@ -246,7 +243,7 @@ export function createConversation(o) {
     let n = 0;
     for (const [field, heard, said] of pairs) {
       if (typeof heard !== 'string' || typeof said !== 'string' || heard === said || !v.heard.normalize('NFC').includes(heard.normalize('NFC'))) continue;
-      if (o.learn.record({ kind: 'voice', party: person.role, field, read: heard, corrected: said, orderId: typeof args.orderId === 'string' ? args.orderId : null })) n++;
+      if (o.learn.record({ kind: 'voice', party: voiceParty(person), field, read: heard, corrected: said, orderId: typeof args.orderId === 'string' ? args.orderId : null })) n++;
     }
     if (n) traceCheck(`${n} voice word(s) corrected by the person, kept (used once confirmed twice)`, true, { name: 'learn_voice', corrections: n });
   }
@@ -364,11 +361,13 @@ export function createConversation(o) {
   /**
    * @param {Person} person
    * @param {string} text
-   * @param {{voice?: string, atMs?: number}} [how] `voice`: the text is a voice note's transcript (as heard,
+   * @param {{voice?: string, atMs?: number, replaced?: [string, string][]}} [how] `voice`: the text is a voice note's transcript (as heard,
    *   before any normalising), so a step understood from it that the person then corrects teaches its
-   *   words; `atMs`: when WhatsApp says the message was sent
+   *   words; `atMs`: when WhatsApp says the message was sent; `replaced`: words code replaced in the
+   *   transcript from this person's own corrections, shown to them
    */
   async function onText(person, text, how) {
+    if (how?.replaced?.length) await o.reply(person, 'learn.voice_replaced', { words: how.replaced.map(([heard, to]) => `${heard} → ${to}`).join(', ') });
     // The open question lapsed and another waits: a bare yes/no is not its answer, it has to be asked first.
     const said = norm(text);
     if (!current(person) && (YES.has(said) || NO.has(said)) && await askNext(person)) return;
@@ -390,10 +389,15 @@ export function createConversation(o) {
     if (!o.learn) return null;
     const f = FORGET.exec(said);
     if (f) {
-      if (!FORGET_ROLES.has(person.role)) return { key: 'learn.forget_not_allowed' };
       const ref = parseRef(f[1]);
+      // Not a reference: one of this person's own voice words, which anyone may drop for themselves.
+      if (ref === null) {
+        const n = o.learn.forgetVoice(voiceParty(person), f[1]);
+        return n > 0 ? { key: 'learn.forgot_word', params: { word: f[1].trim(), n } } : { key: 'learn.forget_which' };
+      }
+      if (!FORGET_ROLES.has(person.role)) return { key: 'learn.forget_not_allowed' };
       const r = ref === null ? undefined : orderRefs(o.ledger).find((x) => x.ref === ref);
-      if (!r || ref === null) return { key: 'learn.forget_which' };
+      if (!r) return { key: 'learn.forget_which' };
       const n = o.learn.forget(r.orderId, person.role);
       traceCheck(`forgot ${n} correction(s) learnt from ${ref} (asked by ${person.role})`, true, { name: 'learn_forget', corrections: n }, r.orderId);
       return n > 0 ? { key: 'learn.forgot', params: { ref, n } } : { key: 'learn.forgot_none', params: { ref } };
@@ -561,6 +565,9 @@ export function createConversation(o) {
     if (exact && exact.kind === 'pay') return payTyped(person, exact);
     if (exact) return exact.confirm ? propose(person, exact.tool, exact.args) : commitNow(person, exact.tool, exact.args);
 
+    // The supervisor saw a copy of a bill; accepting it is the contractor's.
+    if (person.role === 'supervisor' && YES.has(said) && orderRefs(o.ledger).some((r) => r.state === 'billed' || r.state === 'disputed')) return o.reply(person, 'site.bill_contractor_accepts');
+
     const proposal = await proposeStep({ spark: o.spark, person, text, orders: orderRefs(o.ledger), nowMs: o.now(), ask: true });
     if (proposal.kind === 'ask') {
       // Read-only: the answer is only said; it never becomes a step, a pending question or a ledger entry.
@@ -715,18 +722,27 @@ export function createConversation(o) {
     if (image.forwarded) return o.reply(person, 'meter.forwarded');
     const picked = pickOrder(orderRefs(o.ledger), null, ['booked', 'working']);
     if (typeof picked === 'string') return o.reply(person, picked === 'common.wrong_state' ? 'orchestrator.no_job_for_photo' : picked);
-    const events = o.ledger.events(picked.orderId);
-    const r = meterReadings(events);
-    const which = r.start ? 'end' : 'start';
+    let events = o.ledger.events(picked.orderId);
+    let r = meterReadings(events);
+    /** @type {'start' | 'end'} */
+    let which = r.start ? 'end' : 'start';
     const other = which === 'end' ? r.start : r.end;
     const sha256 = createHash('sha256').update(image.bytes).digest('hex');
     const takenAt = image.takenAt ?? null;
     /** @type {{mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}} */
     const photo = { mime: image.mime, bytes: image.bytes };
     // Reading and comparing run together: one wait for the person.
-    const [learnt, same] = await Promise.all([
+    const [learnt, compared] = await Promise.all([
       readLearned('meter', person.role, picked.orderId, o.readMeter, photo, (r) => (r.ok && r.kind === 'hour_meter' ? String(r.valueTenths) : 'none')),
       other && other.sha256 !== sha256 ? sameMachine(other.sha256, photo) : null]);
+    let same = compared;
+    // The readers are slow: another photo of this job may have been recorded meanwhile. Everything
+    // below works from the ledger as it is now, and is compared with the reading that came in.
+    events = o.ledger.events(picked.orderId);
+    r = meterReadings(events);
+    which = r.start ? 'end' : 'start';
+    const otherNow = which === 'end' ? r.start : r.end;
+    if (otherNow && otherNow.sha256 !== other?.sha256) same = otherNow.sha256 !== sha256 ? await sameMachine(otherNow.sha256, photo) : null;
     const read = learnt.read;
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
     if (read.kind === 'not_meter') return o.reply(person, 'meter.not_meter');
@@ -747,22 +763,23 @@ export function createConversation(o) {
       return o.reply(person, read.raw ? 'meter.ask_person' : 'meter.ask_person_blank', { raw: read.raw });
     }
     const args = { orderId: picked.orderId, which, valueTenths: read.valueTenths, sha256, takenAt };
+    const { start: startNow, end: endNow } = r;
     // Code's check: an end reading must be above the start (and a start below an end). A reading that
     // fails it is read back, so the person can type the right digits; a clear one is recorded at once.
-    const mismatch = which === 'end' ? r.start !== null && read.valueTenths <= r.start.valueTenths : r.end !== null && read.valueTenths >= r.end.valueTenths;
+    const mismatch = which === 'end' ? startNow !== null && read.valueTenths <= startNow.valueTenths : endNow !== null && read.valueTenths >= endNow.valueTenths;
     // More than a day's work between the two readings: not this job (another machine, or a misread).
     // Nothing is recorded; the person sends the right photo or types the digits.
-    const worked = which === 'end' && r.start !== null ? read.valueTenths - r.start.valueTenths : null;
+    const worked = which === 'end' && startNow !== null ? read.valueTenths - startNow.valueTenths : null;
     if (worked !== null && worked > MAX_JOB_TENTHS) {
       traceCheck('more than 24 h between the two meter readings ✗ → not this job, nothing recorded', false,
-        { name: 'meter_day_limit', startTenths: r.start?.valueTenths ?? null, endTenths: read.valueTenths }, picked.orderId);
+        { name: 'meter_day_limit', startTenths: startNow?.valueTenths ?? null, endTenths: read.valueTenths }, picked.orderId);
       pending.set(keyOf(person), { kind: 'meter_digits', orderId: picked.orderId, which, sha256, takenAt, at: o.now() });
-      return o.reply(person, 'jcb.meter_hours_impossible', impossible(/** @type {{valueTenths: number}} */ (r.start).valueTenths, read.valueTenths));
+      return o.reply(person, 'jcb.meter_hours_impossible', impossible(/** @type {{valueTenths: number}} */ (startNow).valueTenths, read.valueTenths));
     }
     // Muse Spark could not tell whether it is the same machine: read back once, "हाँ" records it.
     if (same && same.same === 'unsure') return propose(person, 'record_meter', args, { key: 'meter.same_unsure', params: { reading: tenths(read.valueTenths) } });
     traceCheck(mismatch ? `meter reading not consistent with the ${which === 'end' ? 'start' : 'end'} ✗ → read back` : `meter reading clear and consistent ✓ → recorded at once`,
-      !mismatch, { name: 'meter_photo', which, valueTenths: read.valueTenths, startTenths: r.start?.valueTenths ?? null, endTenths: r.end?.valueTenths ?? null }, picked.orderId);
+      !mismatch, { name: 'meter_photo', which, valueTenths: read.valueTenths, startTenths: startNow?.valueTenths ?? null, endTenths: endNow?.valueTenths ?? null }, picked.orderId);
     // A long day (more than LONG_JOB_TENTHS) is possible but unusual: read back once before it counts.
     const long = worked !== null && worked > LONG_JOB_TENTHS;
     if (mismatch || long) return propose(person, 'record_meter', args);
@@ -806,7 +823,8 @@ export function createConversation(o) {
     const items = requestedItems(o.ledger.events(picked.orderId));
     const sha256 = createHash('sha256').update(image.bytes).digest('hex');
     const learnt = await readLearned('challan', person.role, picked.orderId, o.readChallan, { mime: image.mime, bytes: image.bytes },
-      (r) => (r.ok && r.kind === 'challan' ? JSON.stringify([challanQuantities(items, r.items), r.challanNo]) : 'none'));
+      // Every figure used from the reading: a tax invoice's rate, taxable value, GST and grand total too.
+      (r) => (r.ok && r.kind === 'challan' ? JSON.stringify([challanQuantities(items, r.items), r.challanNo, invoiceFromReading(items, r)]) : 'none'));
     const read = learnt.read;
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
     if (read.kind === 'not_challan') return o.reply(person, 'challan.not_challan');
@@ -814,10 +832,10 @@ export function createConversation(o) {
     const challanNo = typeof read.challanNo === 'string' && read.challanNo.trim() ? read.challanNo.trim().slice(0, 40) : null;
     const qtys = challanQuantities(items, read.items);
     rememberRead(sha256, { kind: 'challan', party: person.role, orderId: picked.orderId, fields: items.map((i) => `qty ${i.name}`),
-      read: qtys.map((q) => (q === null ? null : hundredthsText(q))), scale: 'hundredths', layout: layoutOf(read, challanMatches(items, read.items)), memory: learnt.memory });
+      read: qtys.map((q) => (q === null ? null : hundredthsText(q))), scale: 'hundredths', layout: layoutOf(read), memory: learnt.memory });
     // A tax invoice's GST rates, rates and grand total, as read, go with the delivery (never as quantities).
     const invoice = invoiceFromReading(items, read);
-    if (!read.clear || qtys.some((q) => q === null)) {
+    if (!(read.clear || unitFromOrder(items, read)) || qtys.some((q) => q === null)) {
       pending.set(keyOf(person), { kind: 'challan_figures', orderId: picked.orderId, sha256, challanNo, invoice, at: o.now() });
       return askQuantities(person, picked.orderId, read.items.map((i) => i.raw).filter(Boolean).join(', '));
     }
@@ -891,7 +909,7 @@ export function createConversation(o) {
     const photo = { mime: /** @type {'image/jpeg'} */ (image.mime), bytes: image.bytes };
     const learnt = seller
       ? await readLearned('site_challan', seller, open.length === 1 ? open[0].orderId : null, o.readChallan, photo,
-        (r) => (r.ok && r.kind === 'challan' ? JSON.stringify([r.items.map((i) => i.qtyHundredths), r.challanNo]) : 'none'))
+        (r) => (r.ok && r.kind === 'challan' ? JSON.stringify([r.items.map((i) => i.qtyHundredths), r.challanNo, r.signed ?? null]) : 'none'))
       : { read: await o.readChallan(photo), memory: 0, differs: false };
     const read = learnt.read;
     if (!read.ok) return o.reply(person, 'orchestrator.try_again');
@@ -900,7 +918,7 @@ export function createConversation(o) {
     const challanNo = typeof read.challanNo === 'string' && read.challanNo.trim() ? read.challanNo.trim().slice(0, 40) : null;
     rememberSigned(sha256, read.signed);
     /** @type {SiteReading} */
-    const reading = { challanNo, items: read.items, clear: read.clear, memory: learnt.memory, differs: learnt.differs };
+    const reading = { challanNo, items: read.items, clear: read.clear, onlyUnitMissing: read.onlyUnitMissing, memory: learnt.memory, differs: learnt.differs };
     if (open.length > 1) {
       pending.set(keyOf(person), { kind: 'site_challan_order', orderIds: open.map((r) => r.orderId), sha256, reading, at: o.now() });
       return askOrder(person, open.map((r) => r.orderId));
@@ -941,8 +959,8 @@ export function createConversation(o) {
     const ordered = requestedItems(o.ledger.events(orderId));
     const qtys = challanQuantities(ordered, reading.items);
     rememberRead(sha256, { kind: 'site_challan', party: partyOf(person, orderId, true), orderId, fields: ordered.map((i) => `qty ${i.name}`),
-      read: qtys.map((q) => (q === null ? null : hundredthsText(q))), scale: 'hundredths', layout: layoutOf(reading, challanMatches(ordered, reading.items)), memory: reading.memory ?? 0 });
-    if (!reading.clear || qtys.some((q) => q === null)) {
+      read: qtys.map((q) => (q === null ? null : hundredthsText(q))), scale: 'hundredths', layout: layoutOf(reading), memory: reading.memory ?? 0 });
+    if (!(reading.clear || unitFromOrder(ordered, reading)) || qtys.some((q) => q === null)) {
       pending.set(keyOf(person), { kind: 'site_challan_figures', orderId, sha256, challanNo: reading.challanNo, at: o.now() });
       const raw = reading.items.map((i) => i.raw).filter(Boolean).join(', ');
       return o.reply(person, raw ? 'site.challan_ask_person' : 'site.challan_ask_person_blank', { ref: refOf(orderId), raw, names: namesOf(orderId) });
@@ -1012,6 +1030,8 @@ export function createConversation(o) {
     const base = { method: 'upi', utr: read.utr, paidOn: day, screenshotSha256: createHash('sha256').update(image.bytes).digest('hex') };
     // The receipt's clock (HH:MM) goes with the claim only when it was printed and read.
     if (typeof read.clock === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(read.clock)) base.paidAt = read.clock;
+    const payee = plain(read.payeeName, 60);
+    if (payee) base.payeeName = payee;
     rememberPhoto(person, image);
     if (typed && typed.amountPaise !== read.amountPaise) {
       traceCheck(`UPI amount ✗ ≠ typed: ${rupees(read.amountPaise)} / ${rupees(typed.amountPaise)}`, false, { name: 'upi_amount_typed', paidPaise: read.amountPaise, typedPaise: typed.amountPaise, utr: read.utr });

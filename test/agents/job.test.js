@@ -48,7 +48,7 @@ test('a whole JCB job, from booking to settled, leaves both ledgers in agreement
     assert.ok(bill);
     assert.deepEqual(bill.body.body.evidence.map((/** @type {any} */ e) => [e.sha256, e.readValue]), [[SHA_A, '1234.5'], [SHA_B, '1240.6']]);
     await new Promise((res) => setImmediate(res));
-    assert.ok(s.told.some(([a, role, key, p]) => a === 'site' && role === 'supervisor' && key === 'site.bill_received' && p.total === '₹7,320' && p.photos === 2));
+    assert.ok(s.told.some(([a, role, key, p]) => a === 'site' && role === 'supervisor' && key === 'site.bill_copy' && p.what === '6.1 घंटे × ₹1,200 = ₹7,320'));
 
     // The supervisor cannot accept or dispute; the contractor disputes with the site's figure.
     r = await runTool(s.site.tools, supervisor, { tool: 'accept_bill', args: { orderId } });
