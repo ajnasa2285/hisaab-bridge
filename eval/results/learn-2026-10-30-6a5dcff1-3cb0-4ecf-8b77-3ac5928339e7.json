@@ -1,0 +1,158 @@
+{
+  "v": "hb-learn-eval/0.1",
+  "reader": "learn",
+  "model": "muse-spark-1.3",
+  "data": "invented documents (eval/learn/answers.json)",
+  "pairs": 10,
+  "fieldsPerReading": "each item qty + challanNo",
+  "docA": {
+    "fields": 39,
+    "accuracy": {
+      "numerator": 36,
+      "denominator": 39,
+      "basisPoints": 9231
+    },
+    "wrongButConfident": 0
+  },
+  "docB": {
+    "fields": 39,
+    "accuracyMemoryOff": {
+      "numerator": 30,
+      "denominator": 39,
+      "basisPoints": 7692
+    },
+    "accuracyMemoryOn": {
+      "numerator": 33,
+      "denominator": 39,
+      "basisPoints": 8462
+    },
+    "wrongButConfidentMemoryOff": 6,
+    "wrongButConfidentMemoryOn": 3
+  },
+  "correctionsRecorded": 3,
+  "readerCalls": 21,
+  "httpAttempts": 21,
+  "p50LatencyMs": 16991,
+  "perPair": [
+    {
+      "pair": "p1",
+      "layout": "rate-left",
+      "fields": 4,
+      "aCorrect": 4,
+      "correctionsRecorded": 0,
+      "memoryUsed": false,
+      "bCorrectOff": 4,
+      "bCorrectOn": 4,
+      "bConfidentWrongOff": 0,
+      "bConfidentWrongOn": 0
+    },
+    {
+      "pair": "p2",
+      "layout": "rate-times-qty",
+      "fields": 4,
+      "aCorrect": 4,
+      "correctionsRecorded": 0,
+      "memoryUsed": false,
+      "bCorrectOff": 1,
+      "bCorrectOn": 1,
+      "bConfidentWrongOff": 3,
+      "bConfidentWrongOn": 3
+    },
+    {
+      "pair": "p3",
+      "layout": "handwritten-overwrite",
+      "fields": 4,
+      "aCorrect": 4,
+      "correctionsRecorded": 0,
+      "memoryUsed": false,
+      "bCorrectOff": 4,
+      "bCorrectOn": 4,
+      "bConfidentWrongOff": 0,
+      "bConfidentWrongOn": 0
+    },
+    {
+      "pair": "p4",
+      "layout": "weight-beside-qty",
+      "fields": 4,
+      "aCorrect": 4,
+      "correctionsRecorded": 0,
+      "memoryUsed": false,
+      "bCorrectOff": 4,
+      "bCorrectOn": 4,
+      "bConfidentWrongOff": 0,
+      "bConfidentWrongOn": 0
+    },
+    {
+      "pair": "p5",
+      "layout": "ordered-vs-supplied",
+      "fields": 4,
+      "aCorrect": 4,
+      "correctionsRecorded": 0,
+      "memoryUsed": false,
+      "bCorrectOff": 4,
+      "bCorrectOn": 4,
+      "bConfidentWrongOff": 0,
+      "bConfidentWrongOn": 0
+    },
+    {
+      "pair": "p6",
+      "layout": "rate-x-qty-compact",
+      "fields": 4,
+      "aCorrect": 4,
+      "correctionsRecorded": 0,
+      "memoryUsed": false,
+      "bCorrectOff": 4,
+      "bCorrectOn": 4,
+      "bConfidentWrongOff": 0,
+      "bConfidentWrongOn": 0
+    },
+    {
+      "pair": "p7",
+      "layout": "weighbridge-net",
+      "fields": 3,
+      "aCorrect": 3,
+      "correctionsRecorded": 0,
+      "memoryUsed": false,
+      "bCorrectOff": 3,
+      "bCorrectOn": 3,
+      "bConfidentWrongOff": 0,
+      "bConfidentWrongOn": 0
+    },
+    {
+      "pair": "p8",
+      "layout": "qty-after-amount",
+      "fields": 4,
+      "aCorrect": 4,
+      "correctionsRecorded": 0,
+      "memoryUsed": false,
+      "bCorrectOff": 4,
+      "bCorrectOn": 4,
+      "bConfidentWrongOff": 0,
+      "bConfidentWrongOn": 0
+    },
+    {
+      "pair": "p9",
+      "layout": "rate-times-qty",
+      "fields": 4,
+      "aCorrect": 4,
+      "correctionsRecorded": 0,
+      "memoryUsed": false,
+      "bCorrectOff": 1,
+      "bCorrectOn": 1,
+      "bConfidentWrongOff": 0,
+      "bConfidentWrongOn": 0
+    },
+    {
+      "pair": "p10",
+      "layout": "rate-times-qty",
+      "fields": 4,
+      "aCorrect": 1,
+      "correctionsRecorded": 3,
+      "memoryUsed": true,
+      "bCorrectOff": 1,
+      "bCorrectOn": 4,
+      "bConfidentWrongOff": 3,
+      "bConfidentWrongOn": 0
+    }
+  ]
+}

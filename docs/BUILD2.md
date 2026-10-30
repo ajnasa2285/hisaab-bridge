@@ -604,6 +604,11 @@ layout, where doc A happened to be read right, so nothing was learnt. Six other 
 right without memory (controls: no memory used). Muse varies between runs by a few fields; the
 sample is small; harm on another supplier's layout was not measured.
 
+Second run (30 Oct, after raw line text left the layout note, 21 live reads;
+`eval/results/learn-2026-10-30-*.json`): **30/39 off → 33/39 on**; wrong-but-confident 6 → 3. Doc A of p2 and
+p9 happened to be read right, so memory was used on one pair only, p10, which went from 1/4 to 4/4. With so few
+pairs the two runs do not show whether removing the raw text changed the gain.
+
 ## Usual figures (Build 6, 29 Oct 2026)
 
 `src/ledger/usual.js` remembers the latest 10 accepted or settled orders from one agent's own
