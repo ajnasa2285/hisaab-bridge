@@ -128,7 +128,7 @@ test('the same when the window is closed: told once when the person next writes'
   await d.request();
   d.advance(25 * HOUR);
   await d.tick();
-  assert.deepEqual(d.sent, [], 'nothing may be sent outside the window');
+  assert.equal(d.sent.length, 0, 'nothing may be sent outside the window');
   await d.say({ type: 'text', text: { body: 'मदद' } });
   const notice = t('common.undelivered', { ref: 'J-1', site: 'Rampur' });
   assert.equal(d.sent[0].text, notice);

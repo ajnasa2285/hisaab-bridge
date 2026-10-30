@@ -57,10 +57,10 @@ const namesBill = (v, bill) => (v.currentBill === null ? bill === null : bill ==
  * be delivered before they expired (our local `undelivered` NOTE; src/agents/link.js stops there).
  * They stay in history and do not count.
  * @param {{direction: string, type: string, body: any}[]} events
- * @returns {Set<string>}
+ * @returns {Set<string | null>}
  */
 export function refusedIds(events) {
-  /** @type {Set<string>} */
+  /** @type {Set<string | null>} */
   const ids = new Set();
   for (const e of events) {
     if (e.direction === 'in' && e.type === 'REFUSE') ids.add(e.body.body?.refers_to);
