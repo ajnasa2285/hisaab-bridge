@@ -326,7 +326,7 @@ the conversation's expiring memory. No image bytes enter order events or exports
 
 ## 6. Orchestrator (`src/orchestrator/`)
 
-Muse Spark with tool calling turns a person's text (or transcript) into **one** proposed step: `{tool: string, args: object}`. Tools are plain functions in code; code validates every argument and the person's permission before anything happens, then reads the step back for confirmation when it commits anything. The model never chooses who may do what, never computes, never sends.
+Muse Spark with tool calling turns a person's text (or transcript) into **one** proposed step: `{tool: string, args: object}`. The one exception: a message asking for material and the JCB together may propose one `request_material` and one `request_jcb`, with one read-back and one yes, then two orders, each through the office's gate on its own; any other several-call answer is refused. Tools are plain functions in code; code validates every argument and the person's permission before anything happens, then reads the step back for confirmation when it commits anything. The model never chooses who may do what, never computes, never sends.
 
 ## 7. WhatsApp (`src/wa/`)
 
