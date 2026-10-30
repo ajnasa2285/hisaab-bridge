@@ -371,7 +371,7 @@ export const hi = Object.freeze({
 
   // --- Payment: received, confirm, settled -------------------------------------------------
   'payment.forwarded': 'भुगतान की फ़ॉरवर्ड की हुई फ़ोटो नहीं चलेगी। अपने UPI ऐप से स्क्रीनशॉट लेकर या रसीद की अपनी फ़ोटो खींचकर भेजें।',
-  'payment.how_to_report':'भुगतान की UPI फ़ोटो भेजें, या लिखें: रक़म, UTR, तारीख़।',
+  'payment.how_to_report': 'भुगतान की UPI फ़ोटो भेजें, या लिखें: रक़म, UTR, तारीख़।',
   'payment.read': 'UPI फ़ोटो पढ़ी: {amount}, UTR {utr}, {day}, {status}।',
   'payment.status.success': 'सफल',
   'payment.status.pending': 'अटका',
