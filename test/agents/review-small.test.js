@@ -89,7 +89,7 @@ test('whatsapp4: the same phone on another line cannot approve its own held step
     const onOtherLine = { ...contractor, line: 'other-line', phone: '919000000095' };
     const held = await office.commit(onSiteLine, 'request_jcb', { site: 'Rampur', day: '2026-10-29', hoursTenths: 60 });
     assert.equal(held.key, 'office.held_step');
-    const r = await office.command(onOtherLine, { cmd: 'ok', ref: String(held.params?.ref) });
+    const r = await office.command(onOtherLine, { cmd: 'ok', ref: String(held.params?.ref), note: null });
     assert.deepEqual([r?.ok, r?.key], [false, 'office.own_entry']);
     assert.equal(s.siteCore.ledger.orders().length, 0, 'nothing ran');
   } finally {
