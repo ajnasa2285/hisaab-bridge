@@ -61,7 +61,7 @@ flowchart LR
   C -. "understand, read photos, explain" .-> M
 ```
 
-- **Signed messages** (`src/protocol/`): every message between agents is RFC 8785 canonical JSON signed with Ed25519, names its sender and addressee, expires, and carries a unique id. A forged, altered, misaddressed, expired, repeated or out-of-order message is refused with a signed `REFUSE` and writes nothing.
+- **Signed messages** (`src/protocol/`): every message between agents is RFC 8785 canonical JSON signed with Ed25519, names its sender and addressee, expires, and carries a unique id. A misaddressed, expired or out-of-order message is refused with a signed `REFUSE` and writes nothing; a forged or altered one gets an unsigned error, never our signature; a repeat gets its original receipt and writes nothing.
 - **Ledgers** (`src/ledger/`): each agent has its own append-only SQLite ledger, hash-chained, so a forced edit is detected. Order states are enforced by code: no bill before work or delivery, settlement only for the payment in force on the bill in force, a correction names the bill it replaces.
 - **A2A** (`src/transport/a2a.js`): the official `@a2a-js/sdk`, A2A 1.0 JSON-RPC. Each agent publishes an Agent Card with its id and public key; our signed message travels as a `data` part and the signed receipt comes back the same way. A2A is the envelope only; whether a message is genuine is decided by the protocol layer, never by the transport.
 - **WhatsApp** (`src/wa/`): one webhook per line, `X-Hub-Signature-256` checked on the raw bytes before parsing, each message handled once, replies only inside the 24-hour window. A line is only transport: people are routed by `{line, phone}` to `{agent, role}`, so one phone can be a JCB owner on one number and a contractor on another.

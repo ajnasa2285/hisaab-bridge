@@ -97,7 +97,7 @@ test('a booking request travels over A2A (official SDK) and comes back with a si
   }
 });
 
-test('a tampered message over A2A gets a signed refusal and changes nothing', async () => {
+test('a tampered message over A2A gets an unsigned error and changes nothing', async () => {
   const { jcb, contractor } = agents();
   const s = await serve(jcb, 'JCB Hisaab');
   try {
@@ -106,7 +106,7 @@ test('a tampered message over A2A gets a signed refusal and changes nothing', as
     assert.ok(req);
     const tampered = { ...req, body: { ...req.body, site: 'Elsewhere' } };
     const answer = /** @type {any} */ (await sendToAgent(s.baseUrl, tampered));
-    assert.deepEqual([answer.type, answer.body.code], ['REFUSE', 'BAD_SIGNATURE']);
+    assert.deepEqual([answer.type, answer.code, answer.sig], ['ERROR', 'BAD_SIGNATURE', undefined]);
     assert.equal(jcb.ledger.events(orderId).length, 0);
   } finally {
     await s.close();

@@ -1,7 +1,8 @@
 // Agent-to-agent messages (docs/CONTRACTS.md section 4): their shape, how they are built and
 // signed, and the checks a receiver runs, always in the same order, before anything is applied:
-// version -> known sender -> signature -> addressed to me -> not expired -> not a repeat ->
-// type allowed from this sender -> body well formed. The order state is the ledger's check.
+// version -> known sender -> signature -> addressed to me -> a repeat is answered as before, whatever
+// its expiry -> not expired -> not too large -> type allowed from this sender -> body well formed.
+// The order state is the ledger's check.
 
 import { randomUUID } from 'node:crypto';
 import { signMessage, verifyMessage } from './keys.js';
@@ -52,6 +53,8 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const MAX_TEXT = 500;
+// A message without a photo in it has no reason to be larger; only EVIDENCE carries bytes.
+export const MAX_MESSAGE_BYTES = 64 * 1024;
 
 /** @param {unknown} n */
 const nat = (n) => Number.isSafeInteger(n) && /** @type {number} */ (n) >= 0;
@@ -233,11 +236,15 @@ export function checkIncoming(raw, ctx) {
   if (!peer) return refuse('NOT_CONNECTED');
   if (!verifyMessage(m, peer.publicKey)) return refuse('BAD_SIGNATURE');
   if (m.to !== ctx.selfId) return refuse('NOT_FOR_ME');
+  // Expiry gates the first application only: a message already applied keeps its answer, or the two
+  // ledgers would split when its receipt was lost. Repeats still validate their shape: a reused id must
+  // not bypass the evidence guards. The caller also binds it to the exact stored inbound message
+  // before rebuilding an answer.
+  const repeat = ctx.seen(msgId);
   const expires = Date.parse(m.expires_at);
-  if (!isIso(m.created_at) || Number.isNaN(expires) || expires <= ctx.nowMs) return refuse('EXPIRED');
-  // Repeats still validate their shape: a reused id must not bypass the evidence guards.
-  // The caller also binds it to the exact stored inbound message before rebuilding an answer.
-  if (!ctx.seen(msgId) && !peer.mayReceiveFrom.has(m.type)) return refuse('NOT_CONNECTED');
+  if (!repeat && (!isIso(m.created_at) || Number.isNaN(expires) || expires <= ctx.nowMs)) return refuse('EXPIRED');
+  if (!repeat && m.type !== 'EVIDENCE' && Buffer.byteLength(JSON.stringify(m)) > MAX_MESSAGE_BYTES) return refuse('BAD_BODY');
+  if (!repeat && !peer.mayReceiveFrom.has(m.type)) return refuse('NOT_CONNECTED');
   if (!isUuid(m.order_id) || !pos(m.rev) || !bodyIsValid(m.type, m.body)) return refuse('BAD_BODY');
   if ((m.type === 'EVIDENCE_REQUEST' || m.type === 'EVIDENCE')
     && !only(m, ['v', 'msg_id', 'type', 'from', 'to', 'order_id', 'rev', 'created_at', 'expires_at', 'body', 'sig'])) return refuse('BAD_BODY');

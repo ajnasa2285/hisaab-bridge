@@ -18,7 +18,7 @@ import { openLedger } from './ledger/store.js';
 import { openRefs, spokenRefs } from './ledger/refs.js';
 import { agentCardJson, createA2AHandler, sendToAgent } from './transport/a2a.js';
 import { publicKeyText } from './protocol/keys.js';
-import { createLink, undeliveredNotice, undeliveredNotices } from './agents/link.js';
+import { createLink, undeliveredNotice, undeliveredNotices, unsureNotice, unsureNotices } from './agents/link.js';
 import { createJcbAgent } from './agents/jcb.js';
 import { createContractorAgent } from './agents/contractor.js';
 import { createSupplierAgent } from './agents/supplier.js';
@@ -147,7 +147,7 @@ export function createApp(cfg) {
   async function tellWaiting(person, entry) {
     const missed = store.takeMissed(person.line, person.phone);
     if (!missed.length) return;
-    const open = [...(entry.agent.waiting?.(person.role) ?? []), ...undeliveredNotices(entry.core.ledger)];
+    const open = [...(entry.agent.waiting?.(person.role) ?? []), ...undeliveredNotices(entry.core.ledger), ...unsureNotices(entry.core.ledger)];
     for (const n of missedWaiting(missed, open)) await sendTo(person, t(n.key, n.params));
   }
 
@@ -185,6 +185,11 @@ export function createApp(cfg) {
       onUndelivered: async (m) => {
         log(`${a.name}: ${m.type} expired undelivered`);
         const notice = undeliveredNotice(core.ledger, m.order_id);
+        for (const role of senderRoles(a.kind)) await tell(role, notice.key, notice.params);
+      },
+      onUnsure: async (m) => {
+        log(`${a.name}: ${m.type} past its expiry, no answer yet`);
+        const notice = unsureNotice(core.ledger, m.order_id);
         for (const role of senderRoles(a.kind)) await tell(role, notice.key, notice.params);
       } }), trace, trips);
     /** @param {string} key @param {string} to @param {number} people */

@@ -1,5 +1,5 @@
 // The whole app on what the audit found silent or overlapping: a failed handling gets one reply, a
-// message that expired undelivered is told (now, or when the person next writes), and the retry timer
+// message past its expiry with no answer is told (now, or when the person next writes), and the retry timer
 // never runs over itself. Graph API and the peer are stand-ins; invented data only.
 
 import { test } from 'node:test';
@@ -109,7 +109,7 @@ test('any other failure while handling a message gets the try-again reply, once'
   assert.deepEqual(d.sent.map((s) => s.text), [t('common.try_again')]);
 });
 
-test('a message that expires undelivered while the person\'s window is open: told at once, once', async (tc) => {
+test('a message past its expiry with no answer while the person\'s window is open: told at once, once', async (tc) => {
   const d = await desk(tc);
   await d.request();
   d.advance(23 * HOUR);
@@ -117,8 +117,8 @@ test('a message that expires undelivered while the person\'s window is open: tol
   const before = d.sent.length;
   d.advance(2 * HOUR);
   await d.tick();
-  assert.deepEqual(d.sent.slice(before).map((s) => s.text), [t('common.undelivered', { ref: 'J-1', site: 'Rampur' })]);
-  assert.ok(d.logs.some((l) => l.includes('BOOKING_REQUEST expired undelivered')));
+  assert.deepEqual(d.sent.slice(before).map((s) => s.text), [t('common.delivery_unsure', { ref: 'J-1', site: 'Rampur' })]);
+  assert.ok(d.logs.some((l) => l.includes('BOOKING_REQUEST past its expiry')));
   await d.tick();
   assert.equal(d.sent.length, before + 1, 'once');
 });
@@ -130,7 +130,7 @@ test('the same when the window is closed: told once when the person next writes'
   await d.tick();
   assert.equal(d.sent.length, 0, 'nothing may be sent outside the window');
   await d.say({ type: 'text', text: { body: 'मदद' } });
-  const notice = t('common.undelivered', { ref: 'J-1', site: 'Rampur' });
+  const notice = t('common.delivery_unsure', { ref: 'J-1', site: 'Rampur' });
   assert.equal(d.sent[0].text, notice);
   await d.say({ type: 'text', text: { body: 'मदद' } });
   assert.equal(d.sent.filter((s) => s.text === notice).length, 1);

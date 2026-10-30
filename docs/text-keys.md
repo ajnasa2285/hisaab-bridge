@@ -17,6 +17,7 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `common.try_again` | — | handling this message failed; it is not handled again, so send it again (src/wa/wa.js) |
 | `common.media_too_large` | — | a photo or voice note too large to fetch; send a smaller one |
 | `common.undelivered` | ref, site | a message of ours expired before it reached the other side; it does not count, send it again if still needed (src/agents/link.js) |
+| `common.delivery_unsure` | ref, site | a message of ours is past its expiry with no answer; it may have arrived, so it still counts and goes on being sent until a signed answer decides (src/agents/link.js) |
 | `payment.forwarded` | — | a forwarded UPI screenshot or cash receipt; nothing read, nothing recorded |
 | `wa.unknown_sender` | — | someone not registered wrote to the number |
 

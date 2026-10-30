@@ -116,13 +116,13 @@ test('delivered twice after a crash: written once, answered with the same receip
   assert.deepEqual(recordAnswer(contractor, second.answer), { ok: true, kind: 'receipt' });
 });
 
-test('an outsider, a forged message and a step out of order are refused with a signed REFUSE', () => {
+test('a forged message gets an unsigned error; a step out of order a signed REFUSE', () => {
   const { jcb, contractor } = pair();
   const orderId = randomUUID();
   const outsider = generateKeys();
   const forged = buildMessage({ type: 'BOOKING_REQUEST', from: 'agent:contractor-1', to: 'agent:jcb-1', orderId, body: { kind: 'jcb_hours', site: 'X', day: '2026-10-29' }, privateKey: outsider.privateKey, nowMs: T0 });
   const r1 = receive(jcb, forged);
-  assert.deepEqual([r1.answer.type, r1.answer.body.code, r1.applied], ['REFUSE', 'BAD_SIGNATURE', false]);
+  assert.deepEqual([/** @type {any} */ (r1.answer).type, /** @type {any} */ (r1.answer).code, r1.applied], ['ERROR', 'BAD_SIGNATURE', false]);
 
   const early = buildMessage({ type: 'ACCEPT', from: 'agent:contractor-1', to: 'agent:jcb-1', orderId, body: { bill: randomUUID() }, privateKey: contractor.self.privateKey, nowMs: T0 });
   const r2 = receive(jcb, early);

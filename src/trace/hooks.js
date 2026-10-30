@@ -289,8 +289,9 @@ export function traceReceived(rec) {
   return (incoming, r, took) => {
     try {
       const m = r.message ?? incoming;
-      const refused = r.answer?.type === 'REFUSE';
-      const code = refused ? r.answer?.body?.code ?? null : null;
+      // A request failing sender authentication gets an unsigned error instead of a REFUSE.
+      const refused = r.answer?.type === 'REFUSE' || r.answer?.type === 'ERROR';
+      const code = refused ? r.answer?.body?.code ?? r.answer?.code ?? null : null;
       rec.add('signed_in', `${m?.type ?? '?'} ← ${m?.from ?? '?'} · ${refused ? `refused (${code})` : r.applied ? 'signature verified ✓' : 'repeat, same receipt'}`,
         { type: m?.type ?? null, msg: short(m?.msg_id), from: m?.from ?? null, verified: !refused, applied: r.applied, answer: r.answer?.type ?? null, code },
         { orderId: typeof m?.order_id === 'string' ? m.order_id : null, ms: took });

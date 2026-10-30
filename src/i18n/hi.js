@@ -29,6 +29,7 @@ export const hi = Object.freeze({
   'common.try_again': 'कुछ गड़बड़ हुई, यह संदेश दोबारा भेजें।',
   'common.media_too_large': 'यह फ़ाइल बहुत बड़ी है। छोटी फ़ोटो या छोटा वॉइस नोट भेजें।',
   'common.undelivered': '{ref} ({site}): पिछला संदेश तय समय में दूसरी तरफ़ नहीं पहुँचा, इसलिए गिना नहीं गया। ज़रूरत हो तो दोबारा भेजें।',
+  'common.delivery_unsure': '{ref} ({site}): पिछले संदेश का जवाब तय समय में नहीं आया। हो सकता है वह पहुँच गया हो, इसलिए दोबारा न भेजें। हम भेजते रहेंगे, जवाब आने पर ही तय होगा।',
   // The one reply to a number not in the list (CONTRACTS section 7); nothing is stored.
   'wa.unknown_sender': 'नमस्ते। यह नंबर सिर्फ़ दर्ज साइट और JCB वालों के लिए है, इसलिए यहाँ कुछ दर्ज नहीं हो सका।',
 

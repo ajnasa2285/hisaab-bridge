@@ -114,7 +114,7 @@ test('signed byte tampering, unsigned tampering, unsolicited evidence and extra 
   assert.equal(!rejected.ok && verifyMessage(/** @type {any} */ (rejected.answer), f.keys[0].publicKey), true);
   const forged = structuredClone(response); forged.body.items[0].bytes = Buffer.from('tampered').toString('base64');
   const unsigned = recordAnswer(f.buyer, forged);
-  assert.equal(!unsigned.ok && unsigned.answer?.body.code, 'BAD_SIGNATURE');
+  assert.deepEqual(!unsigned.ok && [unsigned.reason, unsigned.answer], ['BAD_SIGNATURE', undefined], 'no signature for what failed authentication');
   const unsolicited = buildMessage({ type: 'EVIDENCE', from: f.seller.self.id, to: f.buyer.self.id, orderId,
     body: { refers_to: randomUUID(), items: response.body.items }, privateKey: f.seller.self.privateKey, nowMs: NOW });
   assert.equal(receive(f.buyer, unsolicited).answer.body.code, 'BAD_BODY');
@@ -190,7 +190,7 @@ test('signed BILL and DISPUTE commitments make local record ids discoverable wit
   assert.ok(req); assert.equal(recordAnswer(f.seller, receive(f.buyer, req).answer).ok, true);
 });
 
-test('link shows only accepted evidence once and records a signed refusal for a tampered response', async (t) => {
+test('link shows only accepted evidence once; a response with a broken signature earns nothing signed', async (t) => {
   const f = fixture(t); const { orderId, delivery } = f.order();
   let shown = 0;
   const link = createLink(f.buyer, { peerUrls: new Map([[f.seller.self.id, 'memory:seller']]), onEvidence: async () => { shown += 1; },
@@ -215,7 +215,7 @@ test('link shows only accepted evidence once and records a signed refusal for a 
   f.consent(second.message);
   const rejected = await evil.deliver(second.message);
   assert.equal(rejected.ok, false); assert.equal(shown, 1);
-  assert.equal(f.seller.ledger.events(orderId).some((e) => e.type === 'REFUSE' && e.direction === 'in' && e.body.body.code === 'BAD_SIGNATURE'), true);
+  assert.equal(f.seller.ledger.events(orderId).some((e) => e.type === 'REFUSE' && e.direction === 'in' && e.body.body.code === 'BAD_SIGNATURE'), false);
 });
 
 test('a signed reply to an older request never completes or displays evidence for a new request', async (t) => {

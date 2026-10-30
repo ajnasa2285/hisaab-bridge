@@ -104,12 +104,13 @@ export function openLedger(file) {
     return q.byOrder.all(orderId).map(toEvent);
   }
 
-  /** @param {string} orderId */
-  function view(orderId) {
+  /** @param {string} orderId @param {string} [without] a message of ours to count as refused too */
+  function view(orderId, without) {
     const all = events(orderId);
     // A message we sent that the other side refused, or that expired undelivered, never happened for
     // either ledger: it stays in our history (with the refusal) but does not count in our state.
     const refused = refusedIds(all);
+    if (without !== undefined) refused.add(without);
     let v = emptyView();
     for (const e of all) {
       if (e.direction === 'out' && refused.has(e.msgId)) continue;
@@ -142,7 +143,21 @@ export function openLedger(file) {
     },
 
     events,
-    view,
+    view: (/** @type {string} */ orderId) => view(orderId),
+
+    /**
+     * Would the order's history still fit if this message of ours had never happened? A refusal
+     * that later events depend on is not taken (it would freeze the order).
+     * @param {string} orderId @param {string} msgId
+     */
+    fitsWithout(orderId, msgId) {
+      try {
+        view(orderId, msgId);
+        return true;
+      } catch {
+        return false;
+      }
+    },
 
     /**
      * Would this event fit the order's current state? (Checked before signing or accepting.)

@@ -3,6 +3,9 @@
 // Receiving: checkIncoming (identity, signature, expiry, type) -> repeat? answer as before ->
 // register the order -> the ledger checks the state and appends -> signed RECEIPT (or REFUSE).
 // The answer to a repeat is rebuilt from the stored event, so a retry never changes anything.
+// A request that failed sender authentication gets an unsigned error, never our signature. A refusal
+// counts only as the direct answer to a message just delivered (recordAnswer); posted in on its own
+// (receive) only an evidence refusal is taken, and those never change an order's state.
 // An EVIDENCE_REQUEST is only recorded and acknowledged: the photo's owner decides (a local NOTE
 // `evidence_consent`), and only then does the EVIDENCE (or a REFUSE `declined_by_owner`) leave.
 
@@ -24,6 +27,22 @@ import { canonicalize } from './canonical.js';
  * @property {import('node:crypto').KeyObject} privateKey
  */
 
+// Failing these says nothing about who sent the request, so the answer carries no signature.
+const UNAUTHENTICATED = ['UNSUPPORTED', 'NOT_CONNECTED', 'BAD_SIGNATURE'];
+// What the other side may answer later about an evidence request of ours, as its own signed REFUSE.
+const REQUEST_REFUSALS = ['declined_by_owner', 'not_kept', 'no_such_record'];
+
+/**
+ * A REFUSE posted to us on its own: only about an evidence message of ours on this order, to this
+ * sender. Evidence never changes the order's state, so such a refusal cannot rewind anything.
+ * @param {Ledger} ledger @param {Message} m
+ */
+function evidenceRefusal(ledger, m) {
+  const sent = ledger.eventOfMessage(m.body.refers_to);
+  if (!sent || sent.direction !== 'out' || sent.orderId !== m.order_id || sent.body.to !== m.from) return false;
+  return sent.type === 'EVIDENCE' || (sent.type === 'EVIDENCE_REQUEST' && REQUEST_REFUSALS.includes(m.body.code));
+}
+
 /**
  * The order's site and kind come from the first message about it (a booking request).
  * @param {Message} m
@@ -36,7 +55,9 @@ function orderIdentity(m) {
  * @param {Agent} agent
  * @param {unknown} raw
  * @returns {{answer: Message, applied: boolean, message: Message|null}}
- *   answer: the signed RECEIPT or REFUSE to return; applied: true only the first time a message is written
+ *   answer: the signed RECEIPT or REFUSE to return, or for a request failing sender authentication the
+ *   unsigned `{type: 'ERROR', code}` (typed as a Message so callers read `.type` first; see isError);
+ *   applied: true only the first time a message is written
  */
 export function receive(agent, raw) {
   const { self, peers, ledger, now } = agent;
@@ -55,6 +76,7 @@ export function receive(agent, raw) {
   });
 
   if (!checked.ok) {
+    if (UNAUTHENTICATED.includes(checked.code)) return { answer: /** @type {any} */ ({ type: 'ERROR', code: checked.code }), applied: false, message: null };
     const m = /** @type {any} */ (raw);
     const orderId = m && typeof m.order_id === 'string' && /^[0-9a-f-]{36}$/.test(m.order_id) ? m.order_id : null;
     return { answer: refusal(checked.code, checked.msgId, checked.from, orderId), applied: false, message: null };
@@ -91,6 +113,10 @@ export function receive(agent, raw) {
     // An order belongs to the two agents that opened it; a third agent cannot write into it.
     return { answer: refusal(m.type === 'EVIDENCE_REQUEST' || m.type === 'EVIDENCE' ? 'not_party' : 'NOT_CONNECTED', m.msg_id, m.from, m.order_id), applied: false, message: m };
   }
+
+  // Ordinary refusals arrive only as direct answers. A receipt names a message of this order.
+  if (m.type === 'REFUSE' && !evidenceRefusal(ledger, m)) return { answer: refusal('WRONG_STATE', m.msg_id, m.from, m.order_id), applied: false, message: m };
+  if (m.type === 'RECEIPT' && ledger.eventOfMessage(m.body.receipt_for)?.orderId !== m.order_id) return { answer: refusal('BAD_BODY', m.msg_id, m.from, m.order_id), applied: false, message: m };
 
   if (m.type === 'EVIDENCE_REQUEST') {
     // Checked now, so an impossible request is refused at once; the owner is asked only about a
@@ -215,6 +241,7 @@ export function prepare(agent, o) {
 export function recordAnswer(agent, raw) {
   if (raw && typeof raw === 'object' && /** @type {any} */ (raw).type === 'EVIDENCE') {
     const r = receive(agent, raw);
+    if (isError(r.answer)) return { ok: false, reason: /** @type {any} */ (r.answer).code };
     return r.answer.type === 'REFUSE' ? { ok: false, reason: r.answer.body.code, answer: r.answer }
       : { ok: true, kind: 'evidence', message: r.message ?? undefined, applied: r.applied };
   }
@@ -227,9 +254,25 @@ export function recordAnswer(agent, raw) {
   const refersTo = m.type === 'RECEIPT' ? m.body.receipt_for : m.body.refers_to;
   const sent = agent.ledger.eventOfMessage(refersTo);
   if (sent === null || sent.direction !== 'out' || sent.orderId !== m.order_id || sent.body.to !== m.from) return { ok: false, reason: 'answer to nothing we sent' };
+  if (m.type === 'REFUSE' && !refusalFits(agent.ledger, sent, m)) return { ok: false, reason: 'refusal comes too late' };
   agent.ledger.append({ orderId: m.order_id, direction: 'in', type: m.type, msgId: m.msg_id, body: m, at: new Date(nowMs).toISOString() });
   return m.type === 'RECEIPT' ? { ok: true, kind: 'receipt' } : { ok: true, kind: 'refuse', code: m.body.code };
 }
+
+/**
+ * A refusal of a message the other side already gave a receipt for, or one that later events depend
+ * on, cannot be taken back: nothing is recorded. An evidence request gets a receipt first and the
+ * owner's refusal afterwards; evidence never changes the state.
+ * @param {Ledger} ledger @param {import('../ledger/store.js').LedgerEvent} sent @param {Message} m
+ */
+function refusalFits(ledger, sent, m) {
+  if (sent.type === 'EVIDENCE_REQUEST' || sent.type === 'EVIDENCE') return true;
+  const receipted = ledger.events(m.order_id).some((e) => e.direction === 'in' && e.type === 'RECEIPT' && e.body.body.receipt_for === sent.msgId);
+  return !receipted && ledger.fitsWithout(m.order_id, /** @type {string} */ (sent.msgId));
+}
+
+/** The unsigned answer to a request failing sender authentication. @param {unknown} answer */
+export const isError = (answer) => /** @type {any} */ (answer)?.type === 'ERROR';
 
 /** Reconstitute an already signed metadata reply for transport, without retaining bytes in history.
  * @param {Agent} agent @param {Message} stored @returns {Message|null} */
