@@ -51,7 +51,7 @@ sudo bash /opt/hisaab-bridge/deploy/aws/setup.sh <version>
 sudo systemctl restart hisaab
 ```
 
-Your settings, people list, keys and ledgers are kept.
+Your settings, people list, keys and ledgers are kept. The script also installs the proxy settings (`deploy/aws/Caddyfile`) and restarts Caddy; updating with `git` alone does not, so the proxy would keep its old limits.
 
 ## Stopping
 

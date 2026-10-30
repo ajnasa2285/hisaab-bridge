@@ -15,7 +15,7 @@ import { receive } from '../protocol/exchange.js';
 export const EXTENSION_URI = 'https://github.com/ajnasa2285/hisaab-bridge/blob/main/docs/CONTRACTS.md#4-messages-srcprotocol';
 const MEDIA_TYPE = 'application/json';
 // One 5 MiB photo encoded as base64, plus the bounded signed/A2A envelopes.
-const MAX_BODY_BYTES = 7 * 1024 * 1024;
+export const MAX_BODY_BYTES = 7 * 1024 * 1024;
 
 /**
  * @param {{id: string, name: string, description: string, baseUrl: string, publicKeyText: string}} o

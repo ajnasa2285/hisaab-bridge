@@ -3,13 +3,22 @@
 {$HB_DOMAIN} {
 	encode zstd gzip
 
-	# Webhooks and agent messages are small; refuse anything bigger than 1 MB.
-	request_body {
-		max_size 1MB
+	# A message between agents can carry one evidence photo; the app takes up to 7 MiB
+	# (MAX_BODY_BYTES in src/transport/a2a.js), so this cap is just above that.
+	@a2a path /agents/*/a2a
+	handle @a2a {
+		request_body {
+			max_size 8MB
+		}
+		reverse_proxy 127.0.0.1:{$HB_PORT:8080}
 	}
 
+	# Webhooks and everything else are small; refuse anything bigger than 1 MB.
 	@app path /wa/* /agents/* /health /judge /judge/*
 	handle @app {
+		request_body {
+			max_size 1MB
+		}
 		reverse_proxy 127.0.0.1:{$HB_PORT:8080}
 	}
 

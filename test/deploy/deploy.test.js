@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../../src/main.js';
+import { MAX_BODY_BYTES } from '../../src/transport/a2a.js';
 
 const aws = new URL('../../deploy/aws/', import.meta.url);
 const read = (/** @type {string} */ f) => readFileSync(new URL(f, aws), 'utf8');
@@ -51,13 +52,28 @@ test('the env example lists every variable src/ reads, and holds no secret', () 
 
 test('the Caddyfile proxies only /wa/*, /agents/*, /health and the judge page, and answers 404 to the rest', () => {
   const c = read('Caddyfile');
-  const matcher = /^\s*@\w+\s+path\s+(.+)$/m.exec(c);
-  assert.deepEqual(matcher?.[1].trim().split(/\s+/).sort(), ['/agents/*', '/health', '/judge', '/judge/*', '/wa/*']);
-  assert.equal(c.match(/reverse_proxy/g)?.length, 1, 'one proxy only');
-  assert.match(c, /reverse_proxy 127\.0\.0\.1:\{\$HB_PORT:8080\}/);
+  const matchers = [...c.matchAll(/^\s*@(\w+)\s+path\s+(.+)$/gm)].map((m) => [m[1], m[2].trim().split(/\s+/).sort()]);
+  assert.deepEqual(matchers, [['a2a', ['/agents/*/a2a']], ['app', ['/agents/*', '/health', '/judge', '/judge/*', '/wa/*']]], 'a2a first: Caddy tries named handles in order');
+  assert.equal(c.match(/reverse_proxy 127\.0\.0\.1:\{\$HB_PORT:8080\}/g)?.length, 2, 'both go to the app');
+  assert.equal(c.match(/reverse_proxy/g)?.length, 2, 'and nowhere else');
   assert.match(c, /respond "Not found" 404/);
-  assert.match(c, /max_size 1MB/);
   assert.doesNotMatch(c, /file_server|browse/);
+});
+
+test('the proxy lets a whole evidence photo through to the agents, keeps the rest at 1 MB, and setup.sh installs it', () => {
+  const c = read('Caddyfile');
+  /** The cap inside one handle block, in bytes (Caddy's MB is 1000 x 1000). @param {string} name */
+  const capOf = (name) => {
+    const m = new RegExp(`handle @${name} \\{\\s*request_body \\{\\s*max_size (\\d+)MB\\s*\\}`).exec(c);
+    assert.ok(m, `${name} has its own cap`);
+    return Number(m[1]) * 1000 * 1000;
+  };
+  assert.ok(capOf('a2a') >= MAX_BODY_BYTES, 'the a2a path takes what src/transport/a2a.js takes');
+  assert.equal(capOf('app'), 1000 * 1000, 'the webhook path stays at 1 MB');
+  assert.equal(c.match(/request_body/g)?.length, 2, 'no site-wide cap above the two');
+  const setup = read('setup.sh');
+  assert.match(setup, /install -m 0644 "\$APP_DIR\/deploy\/aws\/Caddyfile" \/etc\/caddy\/Caddyfile/);
+  assert.match(setup, /systemctl restart caddy/);
 });
 
 test('people.json.example is accepted by loadConfig', () => {
