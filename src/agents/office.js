@@ -8,6 +8,7 @@
 
 import { runTool, ok, no, ofType, posInt, nonNegInt } from './common.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
+import { refusedIds } from '../ledger/states.js';
 import { day as dayName, qty, rupees, tenths } from '../i18n/format.js';
 import { t, variant } from '../i18n/index.js';
 import { itemsText, signedWord, siteReceipt } from './material.js';
@@ -20,7 +21,7 @@ import { withUsual } from './usual.js';
 /** @typedef {import('./common.js').Said} Said */
 /** @typedef {import('./conversation.js').Reply} Reply */
 /** @typedef {import('../ledger/store.js').LedgerEvent} LedgerEvent */
-/** @typedef {{procurementPaise?: number, paymentPaise?: number}} Limits */
+/** @typedef {{procurementPaise?: number}} Limits */
 /**
  * @typedef {{cmd: 'status' | 'evidence', ref: string} | {cmd: 'pending'} | {cmd: 'stock', item: string | null} |
  *   {cmd: 'ok', ref: string, note: string | null} | {cmd: 'no', ref: string, reason: string | null}} Command
@@ -130,7 +131,7 @@ export function stockOf(orders) {
   /** @param {unknown} items @returns {any[]} */
   const valid = (items) => (Array.isArray(items) ? items.filter((i) => i && typeof i.name === 'string' && i.name.trim() && typeof i.unit === 'string' && nonNegInt(i.qtyHundredths)) : []);
   for (const o of orders) {
-    const refused = new Set(o.events.filter((e) => e.direction === 'in' && e.type === 'REFUSE').map((e) => e.body.body?.refers_to));
+    const refused = refusedIds(o.events);
     const delivery = o.events.filter((e) => e.type === 'DELIVERY' && !(e.direction === 'out' && refused.has(e.msgId))).at(-1);
     const challan = delivery ? valid((delivery.direction === 'local' ? delivery.body : delivery.body.body)?.items) : [];
     const count = ofType(o.events, 'NOTE', 'local').filter((e) => e.body.kind === 'site_count').at(-1);
@@ -223,7 +224,7 @@ export function createOffice(o) {
   function holds(person, tool, args) {
     const step = Object.hasOwn(o.tools, tool) ? o.tools[tool] : undefined;
     if (!step?.hold || o.kind !== 'contractor' || person.role !== 'supervisor' || !step.roles.includes(person.role)) return false;
-    const limit = step.hold.limit === 'procurement' ? o.limits?.procurementPaise : o.limits?.paymentPaise;
+    const limit = o.limits?.procurementPaise;
     const estimate = step.hold.estimatePaise(args);
     return limit === undefined || estimate === null || estimate > limit;
   }

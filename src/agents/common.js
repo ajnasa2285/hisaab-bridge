@@ -19,7 +19,7 @@ import { t } from '../i18n/index.js';
  *   describe?: (args: Record<string, any>) => {key: string, params?: Record<string, string | number>},
  *   summary?: (args: Record<string, any>) => {key: string, params?: Record<string, string | number>}, hold?: Hold}} Tool
  */
-/** @typedef {{limit: 'procurement' | 'payment', estimatePaise: (args: Record<string, any>) => number | null,
+/** @typedef {{limit: 'procurement', estimatePaise: (args: Record<string, any>) => number | null,
  *   usualNote?: (args: Record<string, any>, estimate?: boolean) => string}} Hold */
 /**
  * Tells everyone in a role. `expect` is the step a plain "yes" from them will mean (the text asks a

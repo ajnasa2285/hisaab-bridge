@@ -8,6 +8,7 @@ import { agreedRates, billLine, billLines, delivery, requestedItems, siteChallan
 import { cleanEvidenceReading, hasReceivedEvidence } from './evidence-readings.js';
 import { paymentSummary } from '../ledger/payments.js';
 import { openRefs } from '../ledger/refs.js';
+import { refusedIds } from '../ledger/states.js';
 import { billFigures, unusual, usualFigures, usualKey } from '../ledger/usual.js';
 
 /** @typedef {import('./explain.js').Facts} Facts */
@@ -23,7 +24,7 @@ export function differenceFacts(ledger, orderId, ref) {
   if (!order) throw new Error('explanation: unknown order');
   const history = ledger.events(orderId);
   // Match ledger.view: refused outgoing messages remain history but are not evidence in force.
-  const refused = new Set(ofType(history, 'REFUSE', 'in').map((e) => e.body.body.refers_to));
+  const refused = refusedIds(history);
   const events = history.filter((e) => e.direction !== 'out' || !refused.has(e.msgId));
   const currentBillId = ledger.view(orderId).currentBill;
   const current = events.find((e) => e.msgId === currentBillId);

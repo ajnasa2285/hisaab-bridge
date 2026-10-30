@@ -181,7 +181,7 @@ test('the webhook carries the forwarded flag; a forwarded challan photo is still
   assert.equal(inbound(null).forwarded, undefined);
   assert.equal(inbound({ forwarded: false }).forwarded, undefined);
 
-  // Challans are often forwarded by the supplier's staff: only meter photos are refused.
+  // Challans are often forwarded by the supplier's staff: meter and payment photos are refused, they are not.
   const s = await setup();
   tc.after(() => s.close());
   const items = [{ name: 'सीमेंट', qtyHundredths: 5000, unit: 'बोरी' }];

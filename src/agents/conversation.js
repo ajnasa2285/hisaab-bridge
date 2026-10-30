@@ -630,6 +630,7 @@ export function createConversation(o) {
    * @param {Person} person @param {Photo} image */
   async function onCashReceiptImage(person, image) {
     if (!o.readCashReceipt) return o.reply(person, 'cash_receipt.unavailable');
+    if (image.forwarded) return o.reply(person, 'payment.forwarded');
     let read;
     try {
       read = await o.readCashReceipt({ mime: /** @type {'image/jpeg'} */ (image.mime), bytes: image.bytes });
@@ -936,11 +937,14 @@ export function createConversation(o) {
    * successful payment for one order is sent at once with the balance (the seller's हाँ is the check);
    * several orders owed are asked: which one, or the split of one payment among them.
    * @param {Person} person
-   * @param {{mime: string, bytes: Uint8Array}} image
+   * @param {Photo} image
    */
   async function onPaymentImage(person, image) {
     if (!o.readUpi) return o.reply(person, 'orchestrator.try_again');
     if (image.mime !== 'image/jpeg' && image.mime !== 'image/png' && image.mime !== 'image/webp') return o.reply(person, 'payment.not_upi');
+    // A forwarded receipt can be someone else's payment (a sub-contractor paying this person): only
+    // a screenshot from their own UPI app becomes a signed claim. Challans stay exempt (CONTRACTS 7).
+    if (image.forwarded) return o.reply(person, 'payment.forwarded');
     const typed = payWait(person);
     if (!typed && payableOrders(o.ledger).length === 0) return o.reply(person, 'common.wrong_state');
     const read = await o.readUpi({ mime: image.mime, bytes: image.bytes });

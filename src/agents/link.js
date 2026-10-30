@@ -2,6 +2,8 @@
 // to our ledger before it leaves (prepare); if the other side cannot be reached it stays pending and
 // is delivered again later, unchanged: the receiver answers a repeat with the same receipt.
 
+import { randomUUID } from 'node:crypto';
+import { openRefs } from '../ledger/refs.js';
 import { consentOf, prepare, recordAnswer, restoreEvidence } from '../protocol/exchange.js';
 import { sendToAgent } from '../transport/a2a.js';
 
@@ -13,12 +15,48 @@ import { sendToAgent } from '../transport/a2a.js';
  *   {ok: false, reason: 'refused', code: string, message: Message}} Delivery
  */
 
+/** @param {{direction: string, type: string, body: any}} e */
+const isUndelivered = (e) => e.direction === 'local' && e.type === 'NOTE' && e.body.kind === 'undelivered';
+
+/**
+ * What the person is told about an order with a message that expired undelivered.
+ * @param {Agent['ledger']} ledger @param {string} orderId
+ * @returns {{key: string, params: Record<string, string | number>}}
+ */
+export function undeliveredNotice(ledger, orderId) {
+  return { key: 'common.undelivered', params: { ref: openRefs(ledger).refOf(orderId) ?? '—', site: String(ledger.order(orderId)?.site ?? '') } };
+}
+
+/**
+ * The same notices for every such order, for someone whose 24-hour window was closed when it happened.
+ * @param {Agent['ledger']} ledger
+ */
+export function undeliveredNotices(ledger) {
+  return /** @type {{order_id: string}[]} */ (ledger.orders())
+    .filter((order) => ledger.events(order.order_id).some(isUndelivered))
+    .map((order) => undeliveredNotice(ledger, order.order_id));
+}
+
 /**
  * @param {Agent} agent
- * @param {{peerUrls: Map<string, string>, transport?: (baseUrl: string, m: Message) => Promise<unknown>, onEvidence?: (m: Message) => Promise<void>}} o
+ * @param {{peerUrls: Map<string, string>, transport?: (baseUrl: string, m: Message) => Promise<unknown>, onEvidence?: (m: Message) => Promise<void>,
+ *   onUndelivered?: (m: Message) => Promise<void>}} o
  */
 export function createLink(agent, o) {
   const transport = o.transport ?? sendToAgent;
+
+  /**
+   * A message that can no longer arrive: the other side refused it as expired, or it is past its
+   * expiry and still gets no answer. Our own note ends it (no more retries; it does not count, see
+   * refusedIds in src/ledger/states.js), and the people who may have asked are told.
+   * @param {Message} m
+   */
+  async function giveUp(m) {
+    if (agent.ledger.events(m.order_id).some((e) => isUndelivered(e) && e.body.msg_id === m.msg_id)) return;
+    agent.ledger.append({ orderId: m.order_id, direction: 'local', type: 'NOTE', msgId: randomUUID(), at: new Date(agent.now()).toISOString(),
+      body: { kind: 'undelivered', msg_id: m.msg_id, type: m.type } });
+    if (o.onUndelivered) { try { await o.onUndelivered(m); } catch { /* The note stands; the notice is best effort. */ } }
+  }
 
   /** @param {Message} m @returns {Promise<Delivery>} */
   async function deliver(m) {
@@ -48,10 +86,11 @@ export function createLink(agent, o) {
       if (r.applied && o.onEvidence) { try { await o.onEvidence(r.message); } catch { /* Notice failure does not undo verified evidence. */ } }
       return { ok: true, message: m, evidence: r.message };
     }
+    if (r.kind === 'refuse' && r.code === 'EXPIRED') await giveUp(m);
     return r.kind === 'receipt' ? { ok: true, message: m } : { ok: false, reason: 'refused', code: r.code ?? 'UNSUPPORTED', message: m };
   }
 
-  /** Our sent messages the other side has not answered yet, oldest first. @returns {Message[]} */
+  /** Our sent messages the other side has not answered yet and we have not given up on, oldest first. @returns {Message[]} */
   function pending() {
     /** @type {Message[]} */
     const out = [];
@@ -60,6 +99,7 @@ export function createLink(agent, o) {
       const answered = new Set(events
         .filter((e) => e.direction === 'in' && (e.type === 'RECEIPT' || e.type === 'REFUSE' || e.type === 'EVIDENCE'))
         .map((e) => (e.type === 'RECEIPT' ? e.body.body.receipt_for : e.body.body.refers_to)));
+      for (const e of events) if (isUndelivered(e)) answered.add(e.body.msg_id);
       // EVIDENCE sent after the owner's yes waits for its receipt like any message (an older one
       // was the direct answer to the request and is never sent again).
       const owed = (/** @type {any} */ e) => e.type !== 'EVIDENCE' || consentOf(agent.ledger, order.order_id, e.body.body.refers_to) === 'yes';
@@ -84,11 +124,19 @@ export function createLink(agent, o) {
       if (m === null) return { ok: false, reason: 'wrong_state' };
       return deliver(m);
     },
-    /** Delivers every pending message again. @returns {Promise<Delivery[]>} */
+    /**
+     * Delivers every pending message again. One past its expiry gets this last try (a reachable peer
+     * answers with a signed EXPIRED) and is then given up on.
+     * @returns {Promise<Delivery[]>}
+     */
     async retryPending() {
       /** @type {Delivery[]} */
       const results = [];
-      for (const m of pending()) results.push(await deliver(m));
+      for (const m of pending()) {
+        const d = await deliver(m);
+        results.push(d);
+        if (!d.ok && d.reason !== 'refused' && Date.parse(m.expires_at) <= agent.now()) await giveUp(m);
+      }
       return results;
     },
   };

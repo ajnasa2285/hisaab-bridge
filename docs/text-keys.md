@@ -14,6 +14,10 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `common.pending` | — | saved on our side; the other side is not reachable, will be sent again automatically |
 | `common.refused` | — | the other side's agent refused it |
 | `common.busy` | — | an earlier message on this job is still waiting to reach the other side; try after it goes |
+| `common.try_again` | — | handling this message failed; it is not handled again, so send it again (src/wa/wa.js) |
+| `common.media_too_large` | — | a photo or voice note too large to fetch; send a smaller one |
+| `common.undelivered` | ref, site | a message of ours expired before it reached the other side; it does not count, send it again if still needed (src/agents/link.js) |
+| `payment.forwarded` | — | a forwarded UPI screenshot or cash receipt; nothing read, nothing recorded |
 | `wa.unknown_sender` | — | someone not registered wrote to the number |
 
 ## JCB side (owner `jcb_owner`, operator)

@@ -4,9 +4,10 @@ import { paymentSummary } from '../src/ledger/payments.js';
 /** @typedef {import('../src/ledger/store.js').LedgerEvent} Ev */
 /** @typedef {typeof import('./texts.js').TEXTS['hi']} Texts */
 
-/** Sent messages refused by the other side remain in history but do not count. @param {Ev[]} events */
+/** Sent messages refused by the other side or expired undelivered remain in history but do not count. @param {Ev[]} events */
 export function countedEvents(events) {
   const refused = new Set(events.filter((e) => e.direction === 'in' && e.type === 'REFUSE').map((e) => e.body.body?.refers_to));
+  for (const e of events) if (e.direction === 'local' && e.type === 'NOTE' && e.body?.kind === 'undelivered') refused.add(e.body.msg_id);
   return events.filter((e) => !(e.direction === 'out' && refused.has(e.msgId)));
 }
 

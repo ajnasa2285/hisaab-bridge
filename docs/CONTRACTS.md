@@ -49,7 +49,7 @@ export async function transcribe(req) {}
 - Configuration from the environment only: `META_API_KEY`, `META_API_BASE`, `MUSE_SPARK_MODEL`, `MUSE_TRANSCRIBE_MODEL`. No defaults for the key or the model IDs.
 - Never logs the key, image bytes, audio or full prompts. Logs: model, latency, tokens, ok/reason.
 - `transient: true` for timeouts, 429, 5xx; `false` for 4xx other than 429 and schema failures. At most 2 retries for transient errors, with backoff; then return the failure.
-- Records every call's usage to `eval/` cost accounting when `META_COST_LOG` is set.
+- Records every call's usage to `eval/` cost accounting when `META_COST_LOG` is set; a log that cannot be written is said once and never changes the result.
 
 ## 3. Readers (`src/readers/`)
 
@@ -309,7 +309,7 @@ match exactly. (7) `PAYMENT_RECEIVED` has no `utr`; a UPI payment the seller rec
 
 One SQLite file per agent. Tables are append-only (triggers refuse UPDATE/DELETE on history):
 
-- `events(seq INTEGER PRIMARY KEY, order_id, direction 'in'|'out'|'local', type, msg_id UNIQUE, body_json, at, prev_hash, hash)` — every message sent or received (the whole signed message) and every local decision or evidence (`EVIDENCE`, `NOTE`); `hash = sha256(prev_hash + canonical(row))`. API: `src/ledger/store.js` (`openLedger`, `ensureOrder`, `append`, `view`, `fits`, `events`, `verifyChain`).
+- `events(seq INTEGER PRIMARY KEY, order_id, direction 'in'|'out'|'local', type, msg_id UNIQUE, body_json, at, prev_hash, hash)` — every message sent or received (the whole signed message) and every local decision or evidence (`EVIDENCE`, `NOTE`); `hash = sha256(prev_hash + canonical(row))`. API: `src/ledger/store.js` (`openLedger`, `ensureOrder`, `append`, `view`, `fits`, `events`, `verifyChain`). A sent message refused as `EXPIRED`, or past `expires_at` and still unanswered after a last try, gets a local `NOTE {kind: 'undelivered', msg_id, type}`: it is not retried, it counts like a refused one, and the person is told (`common.undelivered`).
 - `orders(order_id, kind, counterparty, site, created_at)` — identity only; the state is derived from events.
 
 Order states (derived): `requested → booked | declined → working (jcb) | delivered (material) → billed → accepted | disputed → billed (rev n+1) → payment_claimed ⇄ part_paid → settled` (payments: section 4.1). A message that does not fit the current state is refused with `WRONG_STATE`. A `yes` on a material order must carry `rates`, and a `yes` on a JCB order must not. The site's own count of a delivery is a local `NOTE {kind: 'site_count', items, challan?: {sha256, number}}` on the buyer's ledger only (`challan` when the count came from a photo of the site's copy of the challan; it may be recorded before the DELIVERY; `challan.signed` is kept when the reader reported it); it never changes the state. When such a count with a challan photo exists together with the DELIVERY, the contractor's agent sends it to the supplier as a `SITE_RECEIPT` (at the count if the DELIVERY is there, else when it arrives); the supplier's ledger keeps it as a received message. `SITE_RECEIPT` fits a material order from `delivered` on and never changes the state.
@@ -328,7 +328,7 @@ Muse Spark with tool calling turns a person's text (or transcript) into **one** 
 
 ## 7. WhatsApp (`src/wa/`)
 
-Two test numbers. Inbound: verify the `X-Hub-Signature-256` with that number's app secret; a message WhatsApp marks as forwarded (`context.forwarded` or `context.frequently_forwarded`) carries `forwarded: true` to the conversation, and a forwarded meter photo is refused before it is read (challans are often forwarded by a supplier's staff and are not); route by the receiving `phone_number_id` and the sender's phone to `{agent, role}`; unknown sender → one polite reply, nothing stored. Roles: `jcb_owner`, `operator`, `contractor`, `supervisor`, `supplier`. Outbound: text and verified evidence photos (JPEG/PNG media upload followed by an image message with a code caption); outside the 24-hour window nothing is sent. The image send rechecks the window after uploading. Upload/send failure or unsupported WebP image transport falls back to the same caption through the window-checked text path.
+Two test numbers. Inbound: verify the `X-Hub-Signature-256` with that number's app secret; a message WhatsApp marks as forwarded (`context.forwarded` or `context.frequently_forwarded`) carries `forwarded: true` to the conversation, and a forwarded meter photo, UPI screenshot or cash receipt is refused before it is read (challans are often forwarded by a supplier's staff and are not); route by the receiving `phone_number_id` and the sender's phone to `{agent, role}`; unknown sender → one polite reply, nothing stored. Roles: `jcb_owner`, `operator`, `contractor`, `supervisor`, `supplier`. Outbound: text and verified evidence photos (JPEG/PNG media upload followed by an image message with a code caption); outside the 24-hour window nothing is sent. The image send rechecks the window after uploading. Upload/send failure or unsupported WebP image transport falls back to the same caption through the window-checked text path.
 
 ## 8. Contractor features (`src/contractor/`)
 

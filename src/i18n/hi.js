@@ -26,6 +26,9 @@ export const hi = Object.freeze({
   'common.pending': 'हमारी ओर दर्ज हो गया। दूसरी ओर अभी पहुँच नहीं है, अपने आप फिर भेजा जाएगा।',
   'common.refused': 'दूसरी ओर ने इसे नहीं माना।',
   'common.busy': 'इस काम का पिछला संदेश अभी दूसरी तरफ़ नहीं पहुँचा है। उसके पहुँचने के बाद दोबारा लिखें।',
+  'common.try_again': 'कुछ गड़बड़ हुई, यह संदेश दोबारा भेजें।',
+  'common.media_too_large': 'यह फ़ाइल बहुत बड़ी है। छोटी फ़ोटो या छोटा वॉइस नोट भेजें।',
+  'common.undelivered': '{ref} ({site}): पिछला संदेश तय समय में दूसरी तरफ़ नहीं पहुँचा, इसलिए गिना नहीं गया। ज़रूरत हो तो दोबारा भेजें।',
   // The one reply to a number not in the list (CONTRACTS section 7); nothing is stored.
   'wa.unknown_sender': 'नमस्ते। यह नंबर सिर्फ़ दर्ज साइट और JCB वालों के लिए है, इसलिए यहाँ कुछ दर्ज नहीं हो सका।',
 
@@ -367,7 +370,8 @@ export const hi = Object.freeze({
   'explain.figures.payment': 'दर्ज भुगतान {amount}: {details}',
 
   // --- Payment: received, confirm, settled -------------------------------------------------
-  'payment.how_to_report': 'भुगतान की UPI फ़ोटो भेजें, या लिखें: रक़म, UTR, तारीख़।',
+  'payment.forwarded': 'भुगतान की फ़ॉरवर्ड की हुई फ़ोटो नहीं चलेगी। अपने UPI ऐप से स्क्रीनशॉट लेकर या रसीद की अपनी फ़ोटो खींचकर भेजें।',
+  'payment.how_to_report':'भुगतान की UPI फ़ोटो भेजें, या लिखें: रक़म, UTR, तारीख़।',
   'payment.read': 'UPI फ़ोटो पढ़ी: {amount}, UTR {utr}, {day}, {status}।',
   'payment.status.success': 'सफल',
   'payment.status.pending': 'अटका',

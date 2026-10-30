@@ -74,8 +74,8 @@ site's record of what arrived, with the photo as evidence.
 
 ## 3. Approvals with limits (contractor agent, local)
 
-* Limits (rupees, optional): `HB_LIMIT_PROCUREMENT_RUPEES` (material and JCB requests),
-  `HB_LIMIT_PAYMENT_RUPEES` (payment claims). Kept as integer paise.
+* Limit (rupees, optional): `HB_LIMIT_PROCUREMENT_RUPEES` (material and JCB requests). Kept as integer
+  paise. Payment claims are the contractor's own step, so they have no limit.
 * A committing step taken by a `supervisor` whose estimated value is above the limit, or whose value
   cannot be estimated, or when no limit is set, is held instead of sent: it gets a reference, the
   supervisor is told only that approval was requested, and every `contractor` gets one message with

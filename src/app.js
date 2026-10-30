@@ -18,7 +18,7 @@ import { openLedger } from './ledger/store.js';
 import { openRefs, spokenRefs } from './ledger/refs.js';
 import { agentCardJson, createA2AHandler, sendToAgent } from './transport/a2a.js';
 import { publicKeyText } from './protocol/keys.js';
-import { createLink } from './agents/link.js';
+import { createLink, undeliveredNotice, undeliveredNotices } from './agents/link.js';
 import { createJcbAgent } from './agents/jcb.js';
 import { createContractorAgent } from './agents/contractor.js';
 import { createSupplierAgent } from './agents/supplier.js';
@@ -71,6 +71,12 @@ const JUDGE_HEADERS = {
   'referrer-policy': 'no-referrer',
   'cache-control': 'no-cache',
 };
+
+/**
+ * The people on an agent whose steps send messages to the other agent.
+ * @param {AgentConfig['kind']} kind @returns {import('./wa/directory.js').Role[]}
+ */
+const senderRoles = (kind) => (kind === 'contractor' ? ['contractor', 'supervisor'] : kind === 'jcb' ? ['jcb_owner'] : ['supplier']);
 
 /** @typedef {import('./protocol/messages.js').Peer} Peer */
 /** @typedef {import('./wa/directory.js').Person} Person */
@@ -136,12 +142,12 @@ export function createApp(cfg) {
    * each notice once, as the agent rebuilds it from its ledger now (an order that moved on is not told
    * again; a notice that is not about an open request of theirs is dropped). Then their message is
    * handled as usual.
-   * @param {Person} person @param {{agent: {waiting?: (role: string) => {key: string, params: Record<string, string | number>}[]}}} entry
+   * @param {Person} person @param {{core: any, agent: {waiting?: (role: string) => {key: string, params: Record<string, string | number>}[]}}} entry
    */
   async function tellWaiting(person, entry) {
     const missed = store.takeMissed(person.line, person.phone);
-    if (!missed.length || !entry.agent.waiting) return;
-    const open = entry.agent.waiting(person.role);
+    if (!missed.length) return;
+    const open = [...(entry.agent.waiting?.(person.role) ?? []), ...undeliveredNotices(entry.core.ledger)];
     for (const n of missedWaiting(missed, open)) await sendTo(person, t(n.key, n.params));
   }
 
@@ -175,7 +181,12 @@ export function createApp(cfg) {
     };
     const trips = new Map();
     const link = traceLink(createLink(core, { peerUrls: new Map(Object.entries(a.peerUrls)), transport: traceTransport(cfg.transport ?? sendToAgent, trips),
-      onEvidence: (m) => evidence.onEvidence(m) }), trace, trips);
+      onEvidence: (m) => evidence.onEvidence(m),
+      onUndelivered: async (m) => {
+        log(`${a.name}: ${m.type} expired undelivered`);
+        const notice = undeliveredNotice(core.ledger, m.order_id);
+        for (const role of senderRoles(a.kind)) await tell(role, notice.key, notice.params);
+      } }), trace, trips);
     /** @param {string} key @param {string} to @param {number} people */
     const traceReply = (key, to, people) => trace.add('reply', `${key} → ${to}${people === 1 ? '' : ` (${people})`}`, { key, to, people }, { ms: trace.sinceStart() });
     /** @type {import('./agents/common.js').Tell} */
@@ -190,8 +201,7 @@ export function createApp(cfg) {
     const evidence = createEvidenceService({ agent: core, link, kind: a.kind, tell, spark,
       readMeter: readers.readMeter, readChallan: readers.readChallan, readUpi: readers.readUpi,
       show: async (image, caption) => {
-        const roles = a.kind === 'contractor' ? ['contractor', 'supervisor'] : a.kind === 'jcb' ? ['jcb_owner'] : ['supplier'];
-        for (const role of roles) for (const p of directory.people(a.id, /** @type {import('./wa/directory.js').Role} */ (role))) {
+        for (const role of senderRoles(a.kind)) for (const p of directory.people(a.id, role)) {
           await forwardEvidence({ image, caption,
             sendImage: (photo, text) => wa.sendImage(p.line, p.phone, { ...photo, caption: text }),
             sendText: (text) => sendTo(p, text) });
@@ -252,6 +262,7 @@ export function createApp(cfg) {
     directory,
     store,
     unknownReply: () => t('wa.unknown_sender'),
+    failureReply: (e) => t(e instanceof Error && /too large/.test(e.message) ? 'common.media_too_large' : 'common.try_again'),
     now,
     log,
     onMessage: async (msg, person) => {
@@ -293,12 +304,17 @@ export function createApp(cfg) {
     },
   });
 
-  // Messages that could not reach the other agent are delivered again, unchanged.
+  // Messages that could not reach the other agent are delivered again, unchanged. A pass over many
+  // unreachable messages can outlast the interval; the next one for that agent then waits its turn.
+  /** @type {Set<string>} */
+  const retrying = new Set();
   const timer = setInterval(() => {
     for (const { link, cfg: a } of agents.values()) {
+      if (retrying.has(a.name)) continue;
+      retrying.add(a.name);
       link.retryPending().then((rs) => {
         for (const r of rs) if (!r.ok && r.reason !== 'unreachable') log(`${a.name}: re-delivery ${r.reason}`);
-      }).catch(() => {});
+      }).catch(() => {}).finally(() => { retrying.delete(a.name); });
     }
   }, RETRY_MS);
   timer.unref();
@@ -482,7 +498,7 @@ function traceApprovals(office, tools, a, trace) {
     try {
       const step = Object.hasOwn(tools, tool) ? tools[tool] : undefined;
       if (step?.hold && a.kind === 'contractor' && person.role === 'supervisor') {
-        const limit = step.hold.limit === 'procurement' ? a.limits?.procurementPaise : a.limits?.paymentPaise;
+        const limit = a.limits?.procurementPaise;
         const estimate = step.hold.estimatePaise(args);
         held = office.holds(person, tool, args);
         const why = limit === undefined ? 'no limit set' : estimate === null ? 'value cannot be estimated' : estimate > limit ? `estimate ₹${estimate / 100} above limit ₹${limit / 100}` : `estimate ₹${estimate / 100} within limit ₹${limit / 100}`;

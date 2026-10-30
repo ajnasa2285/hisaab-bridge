@@ -89,7 +89,7 @@ export async function setup(o = {}) {
     servers.push(server);
   }
   return {
-    jcb, site, sup, jcbCore, siteCore, supCore, told, net, siteLink, jcbLink, supLink,
+    jcb, site, sup, jcbCore, siteCore, supCore, told, net, siteLink, jcbLink, supLink, peerUrls,
     advance: (/** @type {number} */ ms) => { nowMs += ms; },
     close: () => Promise.all(servers.map((s) => new Promise((r) => s.close(() => r(undefined))))),
   };

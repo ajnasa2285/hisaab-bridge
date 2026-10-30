@@ -12,9 +12,9 @@
 //                                       HB_WA_SUPPLIER_* is set, otherwise on a shared line)
 //   jcb.db, contractor.db, supplier.db, wa.db   the ledgers and the WhatsApp store
 //
-// Approval limits for the contractor's supervisor (docs/BUILD2.md section 3), whole rupees, optional:
-// HB_LIMIT_PROCUREMENT_RUPEES (JCB and material requests), HB_LIMIT_PAYMENT_RUPEES (payment claims).
-// Unset means every such step of a supervisor waits for the contractor.
+// Approval limit for the contractor's supervisor (docs/BUILD2.md section 3), whole rupees, optional:
+// HB_LIMIT_PROCUREMENT_RUPEES (JCB and material requests). Unset means every such step of a supervisor
+// waits for the contractor. Payments are the contractor's own step, so they have no limit.
 
 import { createServer } from 'node:http';
 import { createPublicKey } from 'node:crypto';
@@ -99,9 +99,7 @@ export function loadConfig(env) {
   /** @type {import('./agents/office.js').Limits} */
   const limits = {};
   const procurementPaise = limitPaise(env, 'HB_LIMIT_PROCUREMENT_RUPEES');
-  const paymentPaise = limitPaise(env, 'HB_LIMIT_PAYMENT_RUPEES');
   if (procurementPaise !== undefined) limits.procurementPaise = procurementPaise;
-  if (paymentPaise !== undefined) limits.paymentPaise = paymentPaise;
   /** @type {Record<string, string>} */
   const lineIds = Object.fromEntries(lines.map((l) => [l.name, l.phoneNumberId]));
   const agentIds = { jcb: jcbId, contractor: siteId, supplier: supId };

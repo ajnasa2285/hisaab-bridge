@@ -1,6 +1,7 @@
 // Read-only payment text for status and missed-window lists. The summary owns every balance.
 import { paymentSummary } from '../ledger/payments.js';
 import { openRefs } from '../ledger/refs.js';
+import { refusedIds } from '../ledger/states.js';
 import { rupees, day as dayName } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
 
@@ -10,7 +11,7 @@ import { t } from '../i18n/index.js';
 
 /** Refused outgoing records remain history, but never figures. @param {LedgerEvent[]} events */
 export function paymentEvents(events) {
-  const refused = new Set(events.filter((e) => e.direction === 'in' && e.type === 'REFUSE').map((e) => e.body.body?.refers_to));
+  const refused = refusedIds(events);
   return events.filter((e) => !(e.direction === 'out' && refused.has(e.msgId)));
 }
 

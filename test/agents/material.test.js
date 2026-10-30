@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runTool } from '../../src/agents/common.js';
 import { billFollows, challanQuantities, lineAmountPaise, materialBillBody } from '../../src/agents/material.js';
+import { createOffice } from '../../src/agents/office.js';
 import { prepare } from '../../src/protocol/exchange.js';
 import { setup, person, SHA_A, SHA_C } from './helpers.js';
 
@@ -222,18 +223,34 @@ test('a bill whose lines do not follow from the delivery and the agreed rates is
   }
 });
 
+test('every tool that declares a limit can really be held: a gated role may call it', async () => {
+  const s = await setup();
+  try {
+    const supervisor = person('supervisor', 'agent:contractor-1');
+    const office = createOffice({ ledger: s.siteCore.ledger, tools: s.site.tools, kind: 'contractor', limits: {}, tell: () => {}, reply: () => {}, now: s.siteCore.now });
+    const held = Object.entries(s.site.tools).filter(([, tool]) => tool.hold);
+    assert.deepEqual(held.map(([name]) => name).sort(), ['request_jcb', 'request_material']);
+    for (const [name, tool] of held) {
+      assert.ok(tool.roles.includes('supervisor'), `${name}: the gate only holds a supervisor`);
+      assert.equal(office.holds(supervisor, name, {}), true, `${name}: no limit set, so it waits`);
+    }
+    for (const tools of [s.jcb.tools, s.sup.tools]) assert.deepEqual(Object.values(tools).filter((tool) => tool.hold), [], 'the gate is the contractor\'s');
+  } finally {
+    await s.close();
+  }
+});
+
 test('the estimates an approval limit reads: last agreed rates from the ledger, null when unknown', async () => {
   const s = await setup();
   try {
     const req = s.site.tools.request_material.hold;
     const jcb = s.site.tools.request_jcb.hold;
-    const pay = s.site.tools.claim_payment.hold;
-    assert.deepEqual([req?.limit, jcb?.limit, pay?.limit], ['procurement', 'procurement', 'payment']);
+    assert.deepEqual([req?.limit, jcb?.limit], ['procurement', 'procurement']);
     assert.equal(req?.estimatePaise({ site: 'S', day: '2026-10-30', items: [{ name: 'सीमेंट', qtyHundredths: 1000, unit: 'बोरी' }] }), null, 'no rate agreed yet');
     assert.equal(jcb?.estimatePaise({ site: 'S', day: '2026-10-30', hoursTenths: 60 }), null);
-    assert.equal(pay?.estimatePaise({ amountPaise: 2550000 }), 2550000);
-    assert.equal(pay?.estimatePaise({}), null);
     assert.equal(s.site.tools.accept_bill.hold, undefined, 'accepting a bill is not held');
+    assert.equal(s.site.tools.claim_payment.hold, undefined, 'payments are the contractor\'s own step');
+    assert.equal(s.site.tools.claim_group.hold, undefined);
 
     await bookedOrder(s, [CEMENT, SAND]);
     assert.equal(req?.estimatePaise({ site: 'S', day: '2026-10-30', items: [{ name: 'सीमेंट', qtyHundredths: 1000, unit: 'बोरी' }] }), 350000, '10 bags × ₹350');

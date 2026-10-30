@@ -119,7 +119,8 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'supplier.site_receipt_signed_yes': [], 'supplier.site_receipt_signed_no': [], 'supplier.site_receipt_signed_unsure': [],
     'office.status_with_receipt': ['ref', 'what', 'site', 'day', 'state', 'rate', 'payments', 'receipt', 'awaited'],
     'office.site_receipt': ['challanNo', 'count', 'signed'], 'office.signed_yes': [], 'office.signed_no': [], 'office.signed_unsure': [],
-    'payment.at_time': ['time'], 'jcb.payment_claimed_at': ['ref', 'site', 'amount', 'day', 'time', 'utr'],
+    'common.try_again': [], 'common.media_too_large': [], 'common.undelivered': ['ref', 'site'], 'payment.forwarded': [],
+    'payment.at_time': ['time'],'jcb.payment_claimed_at': ['ref', 'site', 'amount', 'day', 'time', 'utr'],
     'supplier.payment_claimed_at': ['ref', 'site', 'amount', 'day', 'time', 'utr'],
     // Payments: part, cash, advance, clubbed (claude/payments, CONTRACTS 4.1).
     'payment.cash': [], 'pay.to.jcb': [], 'pay.to.supplier': [], 'pay.nothing': [], 'pay.nothing_waiting': [], 'pay.one_seller': [],

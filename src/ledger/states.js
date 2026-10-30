@@ -53,6 +53,23 @@ function withPayments(v, paid) {
 const namesBill = (v, bill) => (v.currentBill === null ? bill === null : bill === v.currentBill);
 
 /**
+ * Messages of ours that never happened for the order: the other side refused them, or they could not
+ * be delivered before they expired (our local `undelivered` NOTE; src/agents/link.js stops there).
+ * They stay in history and do not count.
+ * @param {{direction: string, type: string, body: any}[]} events
+ * @returns {Set<string>}
+ */
+export function refusedIds(events) {
+  /** @type {Set<string>} */
+  const ids = new Set();
+  for (const e of events) {
+    if (e.direction === 'in' && e.type === 'REFUSE') ids.add(e.body.body?.refers_to);
+    else if (e.direction === 'local' && e.type === 'NOTE' && e.body.kind === 'undelivered') ids.add(e.body.msg_id);
+  }
+  return ids;
+}
+
+/**
  * Applies one event to the view. Returns null when the event does not fit (the caller refuses it).
  * Local events (EVIDENCE, NOTE), RECEIPT/REFUSE and SITE_RECEIPT never change the state.
  * @param {OrderView} v

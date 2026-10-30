@@ -10,6 +10,7 @@ import { signedWord, siteCount, siteReceipt } from './material.js';
 import { stockOf } from './office.js';
 import { numbersSupported, wordingViolation } from './explain.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
+import { refusedIds } from '../ledger/states.js';
 import { paymentSummary } from '../ledger/payments.js';
 import { usualFigures, USUAL_RULES } from '../ledger/usual.js';
 import { blank, istDay } from '../orchestrator/units.js';
@@ -146,7 +147,7 @@ export function orderFacts(ledger) {
   const out = [];
   for (const o of /** @type {{order_id: string, kind: 'jcb_hours' | 'material', site: string, created_at: string}[]} */ (ledger.orders())) {
     const history = ledger.events(o.order_id);
-    const refused = new Set(ofType(history, 'REFUSE', 'in').map((e) => e.body.body?.refers_to));
+    const refused = refusedIds(history);
     const events = history.filter((e) => e.direction !== 'out' || !refused.has(e.msgId));
     const view = ledger.view(o.order_id);
     const req = bodyOf(ofType(events, 'BOOKING_REQUEST').at(-1) ?? /** @type {any} */ ({ direction: 'local', body: {} }));

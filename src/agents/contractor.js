@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { billUsualNotes, requestUsualNotes, withUsual } from './usual.js';
 import { tenths as hours, rupees, day as dayName, qty } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
+import { safeName } from '../protocol/names.js';
 import { agreedRates, billFollows, countDifferences, delivery, invoiceCheck, itemsText, itemsTotalPaise, lineAmountPaise, linesText, materialBillBody, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, validItems } from './material.js';
 import { openRefs } from '../ledger/refs.js';
 import { t, variant } from '../i18n/index.js';
@@ -245,7 +246,7 @@ export function createContractorAgent(o) {
       describe: (a) => ({ key: 'step.request_jcb', params: { what: said(jcbSummary(a)) } }),
       summary: jcbSummary,
       async run(_p, a) {
-        if (typeof a.site !== 'string' || !a.site.trim() || a.site.length > 80 || !isDay(a.day)) return no('common.bad_args');
+        if (!safeName(a.site) || !isDay(a.day)) return no('common.bad_args');
         if ((a.time !== undefined && !isTime(a.time)) || (a.hoursTenths !== undefined && !posInt(a.hoursTenths))) return no('common.bad_args');
         /** @type {Record<string, any>} */
         const body = { kind: 'jcb_hours', site: a.site.trim(), day: a.day };
@@ -283,7 +284,7 @@ export function createContractorAgent(o) {
       describe: (a) => ({ key: 'step.request_material', params: { what: said(materialSummary(a)) } }),
       summary: materialSummary,
       async run(_p, a) {
-        if (typeof a.site !== 'string' || !a.site.trim() || a.site.length > 80 || !isDay(a.day) || !validItems(a.items)) return no('common.bad_args');
+        if (!safeName(a.site) || !isDay(a.day) || !validItems(a.items)) return no('common.bad_args');
         if (a.time !== undefined && !isTime(a.time)) return no('common.bad_args');
         const again = a.orderId !== undefined && known(a.orderId);
         if (!again && !o.supplierAgentId) return no('site.no_supplier');
@@ -416,7 +417,6 @@ export function createContractorAgent(o) {
     claim_payment: {
       roles: ['contractor'],
       commits: true,
-      hold: { limit: 'payment', estimatePaise: (a) => (posInt(a.amountPaise) ? a.amountPaise : null) },
       describe: (a) => ({
         key: a.method === 'cash' ? 'step.claim_payment_cash' : 'step.claim_payment',
         params: { site: siteOf(a.orderId), amount: posInt(a.amountPaise) ? rupees(a.amountPaise) : '—', utr: typeof a.utr === 'string' ? a.utr : '—' },
@@ -443,7 +443,6 @@ export function createContractorAgent(o) {
     claim_group: {
       roles: ['contractor'],
       commits: true,
-      hold: { limit: 'payment', estimatePaise: (a) => (posInt(a.totalPaise) ? a.totalPaise : null) },
       describe: (a) => {
         const split = groupOk(a.orderIds) && posInt(a.totalPaise) ? shares(ledger, a.orderIds, a.totalPaise) : null;
         return {

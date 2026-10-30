@@ -30,6 +30,7 @@ export function usualKey(counterparty, item, unit, metric) {
 /** Refused outgoing records remain in the ledger but never become remembered figures. @param {LedgerEvent[]} events */
 function usable(events) {
   const refused = new Set(events.filter((e) => e.type === 'REFUSE' && e.direction === 'in').map((e) => bodyOf(e).refers_to));
+  for (const e of events) if (e.direction === 'local' && e.type === 'NOTE' && e.body?.kind === 'undelivered') refused.add(e.body.msg_id);
   return events.filter((e) => !(e.direction === 'out' && refused.has(e.msgId)));
 }
 

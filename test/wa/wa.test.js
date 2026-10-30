@@ -30,7 +30,7 @@ function fakeGraph(routes = {}) {
   return { fetch, calls };
 }
 
-/** @param {{now?: () => number, onMessage?: (m: any, p: any) => void}} [o] */
+/** @param {{now?: () => number, onMessage?: (m: any, p: any) => void, failureReply?: (e: unknown) => string}} [o] */
 async function setup(o = {}) {
   const jcbGraph = fakeGraph();
   const siteGraph = fakeGraph();
@@ -54,6 +54,7 @@ async function setup(o = {}) {
     store,
     onMessage: o.onMessage ?? ((m, p) => { got.push([m, p]); }),
     unknownReply: () => 'माफ़ कीजिए, यह नंबर आपके लिए नहीं है।',
+    failureReply: o.failureReply,
     now: o.now ?? (() => T0),
     log: (l) => logs.push(l),
   });
@@ -173,6 +174,21 @@ test('a failure inside an agent is logged and does not stop the next message', a
     await post(s.base, 'jcb', payload('line-jcb', [textMsg('919000000002', 'wamid.bad', 'a'), textMsg('919000000002', 'wamid.ok', 'b')]), 'secret-jcb');
     assert.deepEqual(seen, ['wamid.bad', 'wamid.ok']);
     assert.ok(s.logs.some((l) => l.includes('failed: boom') && l.includes('…0002')));
+  } finally {
+    await s.close();
+  }
+});
+
+test('a message whose handling throws gets exactly one reply, and the next message goes on as usual', async () => {
+  const s = await setup({
+    failureReply: (e) => `reply for ${e instanceof Error ? e.message : ''}`,
+    onMessage: (m) => { if (m.msgId === 'wamid.bad') throw new Error('boom'); },
+  });
+  try {
+    await post(s.base, 'jcb', payload('line-jcb', [textMsg('919000000002', 'wamid.bad', 'a'), textMsg('919000000002', 'wamid.ok', 'b')]), 'secret-jcb');
+    assert.equal(s.jcbGraph.calls.length, 1);
+    assert.equal(s.jcbGraph.calls[0].body.to, '919000000002');
+    assert.equal(s.jcbGraph.calls[0].body.text.body, 'reply for boom');
   } finally {
     await s.close();
   }

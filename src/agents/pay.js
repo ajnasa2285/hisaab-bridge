@@ -6,6 +6,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { allocate, paymentSummary } from '../ledger/payments.js';
+import { refusedIds } from '../ledger/states.js';
 import { rupees, day as dayName } from '../i18n/format.js';
 import { t, variant } from '../i18n/index.js';
 import { deliveryResult, isDay, isUuid, no, ofType, ok, posInt } from './common.js';
@@ -31,7 +32,7 @@ export const todayIst = (nowMs) => new Date(nowMs + 330 * 60 * 1000).toISOString
  */
 export function liveEvents(ledger, orderId) {
   const all = ledger.events(orderId);
-  const refused = new Set(all.filter((e) => e.direction === 'in' && e.type === 'REFUSE').map((e) => e.body.body.refers_to));
+  const refused = refusedIds(all);
   return all.filter((e) => !(e.direction === 'out' && refused.has(e.msgId)));
 }
 

@@ -5,7 +5,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../protocol/canonical.js';
-import { step, emptyView } from './states.js';
+import { refusedIds, step, emptyView } from './states.js';
 import { evidenceMetadata } from '../protocol/evidence.js';
 
 const GENESIS = '0'.repeat(64);
@@ -107,9 +107,9 @@ export function openLedger(file) {
   /** @param {string} orderId */
   function view(orderId) {
     const all = events(orderId);
-    // A message we sent that the other side refused never happened for either ledger: it stays in
-    // our history (with the refusal) but does not count in our state.
-    const refused = new Set(all.filter((e) => e.direction === 'in' && e.type === 'REFUSE').map((e) => e.body.body.refers_to));
+    // A message we sent that the other side refused, or that expired undelivered, never happened for
+    // either ledger: it stays in our history (with the refusal) but does not count in our state.
+    const refused = refusedIds(all);
     let v = emptyView();
     for (const e of all) {
       if (e.direction === 'out' && refused.has(e.msgId)) continue;

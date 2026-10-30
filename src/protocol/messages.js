@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { signMessage, verifyMessage } from './keys.js';
 import { evidenceBytes, evidenceMetadata, EVIDENCE_MIMES } from './evidence.js';
+import { MAX_UNIT, safeName } from './names.js';
 
 export const VERSION = 'hb/0.1';
 const DAY_MS = 24 * 3600 * 1000;
@@ -117,10 +118,10 @@ const billBody = (b) => Array.isArray(b.lines) && b.lines.length > 0 && b.lines.
 
 /** @type {Record<MessageType, (b: any) => boolean>} */
 const BODY_OK = {
-  BOOKING_REQUEST: (b) => (b.kind === 'jcb_hours' || b.kind === 'material') && text(b.site) && isDay(b.day)
+  BOOKING_REQUEST: (b) => (b.kind === 'jcb_hours' || b.kind === 'material') && safeName(b.site) && isDay(b.day)
     && (b.time === undefined || TIME_RE.test(b.time)) && optText(b.note)
     && (b.kind === 'jcb_hours' ? (b.hoursTenths === undefined || pos(b.hoursTenths)) && b.items === undefined
-      : items(b.items) && b.hoursTenths === undefined),
+      : items(b.items) && b.items.every((/** @type {any} */ it) => safeName(it.name) && safeName(it.unit, MAX_UNIT)) && b.hoursTenths === undefined),
   BOOKING_REPLY: (b) => ['yes', 'no', 'other_time'].includes(b.answer) && (b.day === undefined || isDay(b.day))
     && (b.time === undefined || TIME_RE.test(b.time)) && (b.ratePaise === undefined || nat(b.ratePaise)) && optText(b.note)
     && (b.rates === undefined || (b.answer === 'yes' && rates(b.rates)))

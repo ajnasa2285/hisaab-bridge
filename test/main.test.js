@@ -33,11 +33,11 @@ test('configuration comes from HB_ variables and the private data folder; keys a
     assert.throws(() => loadConfig({ ...env(dir), HB_WA_SITE_APP_SECRET: '' }), /HB_WA_SITE_APP_SECRET/);
     // Approval limits: whole rupees to paise on the contractor's agent only; unset means none; anything else stops the start.
     assert.deepEqual(a.agents[1].limits, {});
-    const limited = loadConfig({ ...env(dir), HB_LIMIT_PROCUREMENT_RUPEES: '10000', HB_LIMIT_PAYMENT_RUPEES: ' 0 ' });
-    assert.deepEqual(limited.agents[1].limits, { procurementPaise: 1000000, paymentPaise: 0 });
+    const limited = loadConfig({ ...env(dir), HB_LIMIT_PROCUREMENT_RUPEES: '10000' });
+    assert.deepEqual(limited.agents[1].limits, { procurementPaise: 1000000 });
+    assert.deepEqual(loadConfig({ ...env(dir), HB_LIMIT_PROCUREMENT_RUPEES: ' 0 ' }).agents[1].limits, { procurementPaise: 0 });
     assert.equal(/** @type {any} */ (limited.agents[0]).limits, undefined);
     for (const bad of ['10,000', '-5', '1.5', 'ten']) assert.throws(() => loadConfig({ ...env(dir), HB_LIMIT_PROCUREMENT_RUPEES: bad }), /HB_LIMIT_PROCUREMENT_RUPEES/, bad);
-    assert.throws(() => loadConfig({ ...env(dir), HB_LIMIT_PAYMENT_RUPEES: '5k' }), /HB_LIMIT_PAYMENT_RUPEES/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

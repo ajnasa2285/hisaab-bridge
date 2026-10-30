@@ -6,6 +6,8 @@
 import { qty, rupees } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
 import { ofType, posInt } from './common.js';
+import { refusedIds } from '../ledger/states.js';
+import { MAX_UNIT, safeName } from '../protocol/names.js';
 
 /** @typedef {import('../ledger/store.js').LedgerEvent} LedgerEvent */
 /** @typedef {{name: string, qtyHundredths: number, unit: string, gstPercent?: number}} Item */
@@ -244,7 +246,7 @@ export function countDifferences(count, delivered) {
  * @returns {{items: Item[], number: string | null, signed: boolean | null, delivery: string} | null}
  */
 export function siteReceipt(events) {
-  const refused = new Set(ofType(events, 'REFUSE', 'in').map((e) => e.body.body?.refers_to));
+  const refused = refusedIds(events);
   const r = ofType(events, 'SITE_RECEIPT').filter((e) => e.direction === 'in' || !refused.has(e.msgId)).at(-1);
   if (!r) return null;
   const b = r.body.body;
@@ -338,12 +340,11 @@ export function linesText(lines, units) {
 }
 
 /**
- * Items as a person confirmed them: 1 to 20, each a short name, a positive quantity and a unit.
+ * Items as a person confirmed them: 1 to 20, each a short safe name, a positive quantity and a unit.
  * @param {unknown} items
  * @returns {items is Item[]}
  */
 export function validItems(items) {
   return Array.isArray(items) && items.length > 0 && items.length <= 20 && items.every((it) => it && typeof it === 'object'
-    && typeof it.name === 'string' && it.name.trim().length > 0 && it.name.length <= 80
-    && posInt(it.qtyHundredths) && typeof it.unit === 'string' && it.unit.trim().length > 0 && it.unit.length <= 20);
+    && safeName(it.name) && posInt(it.qtyHundredths) && safeName(it.unit, MAX_UNIT));
 }

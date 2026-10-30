@@ -23,6 +23,7 @@ const MAX_BODY_BYTES = 1024 * 1024;
  *   store: ReturnType<typeof import('./store.js').openWaStore>,
  *   onMessage: (msg: Inbound, person: Person) => Promise<void> | void,
  *   unknownReply: () => string,
+ *   failureReply?: (error: unknown) => string,
  *   now?: () => number,
  *   log?: (line: string) => void,
  * }} o
@@ -92,6 +93,10 @@ export function createWa(o) {
       await o.onMessage(msg, person);
     } catch (e) {
       log(`wa ${line.name}: handling ${msg.kind} from ${person.role} ${maskPhone(msg.from)} failed: ${e instanceof Error ? e.message : 'error'}`);
+      // Never silent: the message is not handled again, so the person is told to send it again, once.
+      if (o.failureReply) {
+        try { await send(line.phoneNumberId, msg.from, o.failureReply(e)); } catch { log(`wa ${line.name}: failure reply to ${maskPhone(msg.from)} not sent`); }
+      }
     }
   }
 

@@ -7,6 +7,7 @@
 import { blank, dayWord, parseAmountPaise, parseHundredths, parsePaise, parseQuantity, parseTenths, parseTime, resolveDay } from './units.js';
 import { isGstPercent, itemsText } from '../agents/material.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
+import { MAX_UNIT, safeName } from '../protocol/names.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('../wa/directory.js').Role} Role */
@@ -74,7 +75,8 @@ const SITE_FILLER = new Set(['पर', 'पे', 'pe', 'par', 'में', 'me',
 
 /**
  * The site as written, without "site"/"pe" around it; a generic word alone is no name. A name that
- * matches a known site whatever its case is that site. No name: the default site, else null.
+ * matches a known site whatever its case is that site. No name: the default site, else null. A name
+ * with characters no name has (src/protocol/names.js): null, so it is asked again, not replaced.
  * @param {unknown} raw @param {Ctx} ctx
  * @returns {string | null}
  */
@@ -85,6 +87,7 @@ export function siteOf(raw, ctx) {
   while (tokens.length && drop(tokens[tokens.length - 1])) tokens.pop();
   const name = tokens.join(' ').replace(/^[,.।]+|[,.।]+$/gu, '').trim();
   if (!name || /^\d+$/.test(name) || name.length > 80) return ctx.defaultSite ?? null;
+  if (!safeName(name)) return null;
   return (ctx.sites ?? []).find((s) => s.toLowerCase() === name.toLowerCase()) ?? name;
 }
 
@@ -267,11 +270,11 @@ export const SPECS = [
       if (!Array.isArray(a.items) || a.items.length === 0 || a.items.length > 20) return null;
       const items = [];
       for (const [i, it] of a.items.entries()) {
-        if (typeof it?.name !== 'string' || !it.name.trim()) return null;
-        // A quantity that is not exactly a number (or is 0) and a missing unit are asked, never guessed.
+        if (typeof it?.name !== 'string' || !safeName(it.name.trim())) return null;
+        // A quantity that is not exactly a number (or is 0) and a missing or unsafe unit are asked, never guessed.
         const q = blank(it.quantity) ? null : parseQuantity(it.quantity);
         if (!q) r.missing.push(`qty:${i}`);
-        const unit = typeof it.unit === 'string' && !blank(it.unit) ? it.unit.trim() : null;
+        const unit = typeof it.unit === 'string' && !blank(it.unit) && safeName(it.unit.trim(), MAX_UNIT) ? it.unit.trim() : null;
         if (unit === null) r.missing.push(`unit:${i}`);
         items.push({ name: it.name.trim(), qtyHundredths: q || null, unit });
       }

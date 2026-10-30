@@ -4,6 +4,7 @@ import { paymentSummary } from '../src/ledger/payments.js';
 /** @param {Ev[]} events */
 export function stateOf(events) {
   const refused = new Set(events.filter((e) => e.direction === 'in' && e.type === 'REFUSE').map((e) => e.body.body?.refers_to));
+  for (const e of events) if (e.direction === 'local' && e.type === 'NOTE' && e.body?.kind === 'undelivered') refused.add(e.body.msg_id);
   let state = 'none';
   /** @type {string|null} */
   let kind = null;
