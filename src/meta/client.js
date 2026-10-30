@@ -10,6 +10,7 @@ const SPARK_MODELS = new Set(['muse-spark-1.1', 'muse-spark-1.2', 'muse-spark-1.
 const BASE = 'https://api.meta.ai/v1';
 // Documented Chat Completions levels (https://dev.meta.ai/docs/reasoning); "none" is a 400 for Spark.
 const REASONING_EFFORTS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+let costLogFailed = false;
 
 /** @param {string} reason @param {number} start @param {boolean} [transient] @returns {Failure} */
 function failure(reason, start, transient = false) {
@@ -83,7 +84,13 @@ async function request(cfg, endpoint, body, headers, timeoutMs, decode) {
     try {
       recordCost({ model: cfg.model, latencyMs: Math.round(performance.now() - attemptStart),
         ok: result.ok, reason: result.ok ? null : result.reason, usage, audioMs });
-    } catch { return failure('cost_log_failed', start); }
+    } catch (error) {
+      // Cost accounting never stops the product: said once, and the model's result stands.
+      if (!costLogFailed) {
+        costLogFailed = true;
+        console.error(`meta client: cost log not written (${isObject(error) && typeof error.code === 'string' ? error.code : 'error'})`);
+      }
+    }
     if (result.ok || !result.transient || attempt === 2) return result;
     await delay(250 * 2 ** attempt);
   }

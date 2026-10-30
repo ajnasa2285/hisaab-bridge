@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { museSpark, transcribe, listModels } from '../../src/meta/client.js';
@@ -189,6 +189,24 @@ test('cost log records every attempt and known token cost, without content', asy
   assert.equal(lines[0].costNanoUsd, null);
   assert.equal(lines[1].costNanoUsd, 199000);
   assert.ok(!/private|invented-unit-test-key|messages|content/.test(text));
+});
+
+test('a cost log that cannot be written is said once and never changes the model result', async t => {
+  environment(t);
+  const dir = mkdtempSync(fileURLToPath(new URL('./scratch-', import.meta.url)));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // Its folder would have to be inside a file, as a read-only path fails on the server.
+  writeFileSync(join(dir, 'file'), '');
+  process.env.META_COST_LOG = join(dir, 'file', 'cost.jsonl');
+  const said = t.mock.method(console, 'error', () => {});
+  t.mock.method(globalThis, 'fetch', async () => Response.json(body()));
+  for (let i = 0; i < 2; i += 1) {
+    const result = await museSpark({ text: 'invented', schema });
+    assert.ok(result.ok, 'the answer stands');
+    if (result.ok) assert.deepEqual(result.json, { value: 'invented' });
+  }
+  assert.equal(said.mock.callCount(), 1);
+  assert.doesNotMatch(String(said.mock.calls[0].arguments[0]), /cost\.jsonl|invented/);
 });
 
 test('catalog is single request and returns model IDs only', async t => {
