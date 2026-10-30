@@ -28,11 +28,27 @@ function groupOf(g) {
 }
 
 /**
- * Every payment on an order and the balance, from the order's events in sequence.
+ * Messages of ours that never happened for the order, as in the ledger's own view (refusedIds in
+ * src/ledger/states.js; a copy, because this file is also served to the browser alone).
+ * @param {LedgerEvent[]} events
+ */
+function refusedOf(events) {
+  const ids = new Set();
+  for (const e of events) {
+    if (e.direction === 'in' && e.type === 'REFUSE') ids.add(e.body?.body?.refers_to);
+    else if (e.direction === 'local' && e.type === 'NOTE' && e.body?.kind === 'undelivered') ids.add(e.body.msg_id);
+  }
+  return ids;
+}
+
+/**
+ * Every payment on an order and the balance, from the order's events in sequence. A message of ours
+ * that the other side refused, or that was noted undelivered, does not count.
  * @param {LedgerEvent[]} events
  * @returns {PaymentSummary}
  */
 export function paymentSummary(events) {
+  const refused = refusedOf(events);
   /** @type {Map<string, number>} bill or correction msg_id → its total */
   const totals = new Map();
   /** @type {string | null} */
@@ -43,6 +59,7 @@ export function paymentSummary(events) {
   const byId = new Map();
   let settled = false;
   for (const e of events) {
+    if (e.direction === 'out' && refused.has(e.msgId)) continue;
     const b = bodyOf(e);
     if ((e.type === 'BILL' || e.type === 'CORRECTION') && e.msgId && posInt(b.totalPaise)) {
       totals.set(e.msgId, b.totalPaise);

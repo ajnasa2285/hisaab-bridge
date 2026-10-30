@@ -199,8 +199,11 @@ export function createApp(cfg) {
       const people = directory.people(a.id, role);
       traceReply(key, role, people.length);
       for (const p of people) {
-        await sendTo(p, t(key, params), { ref: params?.ref, key });
-        if (expect) entry.talk.expect(p, expect.tool, expect.args, expect.no);
+        // With a question already open, this one waits (src/agents/conversation.js): the person is told
+        // what a bare "हाँ" answers now. An expectation stands only on a notice that really went.
+        const waits = expect && entry.talk.pending(p) !== null;
+        const sent = await sendTo(p, waits ? `${t(key, params)}\n\n${t('common.question_waits')}` : t(key, params), { ref: params?.ref, key });
+        if (expect && sent) entry.talk.expect(p, expect.tool, expect.args, expect.no, { key, params });
       }
     };
     const evidence = createEvidenceService({ agent: core, link, kind: a.kind, tell, spark,
@@ -279,7 +282,7 @@ export function createApp(cfg) {
       return withTrace(entry.trace, { convo: entry.trace.convoOf(person), role: person.role, text }, async () => {
         const channel = text !== null ? (parseCommand(text) ? 'command' : 'text') : msg.kind === 'image' ? 'photo' : msg.kind === 'audio' ? 'voice' : msg.kind;
         entry.trace.add('received', `${channel} from ${person.role}`, { channel, role: person.role, text: entry.trace.words(text) });
-        if (text !== null) return entry.talk.onText(person, text);
+        if (text !== null) return entry.talk.onText(person, text, { atMs: msg.atMs });
         if (msg.kind === 'image' && msg.mediaId) {
           const media = await /** @type {any} */ (clients.get(person.line)).fetchMedia(msg.mediaId, { expectedSha256: undefined });
           return entry.talk.onImage(person, { mime: media.mimeType, bytes: new Uint8Array(media.bytes), takenAt: null, forwarded: msg.forwarded === true });
@@ -301,7 +304,7 @@ export function createApp(cfg) {
           const glossary = entry.learn.glossary();
           const heard = normaliseVoice(said.text, glossary);
           if (heard !== said.text.normalize('NFC')) traceCheck('voice: words replaced from corrections people confirmed twice', true, { name: 'learn_glossary', words: glossary.size });
-          return entry.talk.onText(person, spokenRefs(heard), { voice: said.text });
+          return entry.talk.onText(person, spokenRefs(heard), { voice: said.text, atMs: msg.atMs });
         }
         // Documents are not handled yet.
         { await sendTo(person, t('common.unknown_step')); return; }

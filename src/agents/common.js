@@ -7,17 +7,21 @@ import { t } from '../i18n/index.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('../wa/directory.js').Role} Role */
-/** @typedef {{ok: boolean, key: string, params?: Record<string, string | number>}} Said */
+/** `expect`: what the person's plain yes (and no) to this answer will mean, when it asks them something.
+ * @typedef {{ok: boolean, key: string, params?: Record<string, string | number>,
+ *   expect?: {tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}}}} Said */
 /**
  * A step a person can take. `roles` is checked by code before `run`; the model never decides who may.
  * `describe` gives the read-back the person confirms before a committing step runs; `summary` (optional)
  * says what the step does as a plain statement, for a step held for approval. `hold` marks a
  * step a supervisor may take only within a limit (docs/BUILD2.md section 3): which limit, and the
  * step's estimated value in paise from the ledger (null when it cannot be estimated). The tool itself
- * never holds anything; the gate is src/agents/office.js.
+ * never holds anything; the gate is src/agents/office.js. `bind` (optional) ties a read-back's args to
+ * what the person is shown now; `stillOpen` (optional) says whether a question that waited still applies.
  * @typedef {{roles: Role[], commits: boolean, run: (person: Person, args: Record<string, any>) => Promise<Said> | Said,
  *   describe?: (args: Record<string, any>) => {key: string, params?: Record<string, string | number>},
- *   summary?: (args: Record<string, any>) => {key: string, params?: Record<string, string | number>}, hold?: Hold}} Tool
+ *   summary?: (args: Record<string, any>) => {key: string, params?: Record<string, string | number>}, hold?: Hold,
+ *   bind?: (args: Record<string, any>) => Record<string, any>, stillOpen?: (args: Record<string, any>) => boolean}} Tool
  */
 /** @typedef {{limit: 'procurement', estimatePaise: (args: Record<string, any>) => number | null,
  *   usualNote?: (args: Record<string, any>, estimate?: boolean) => string}} Hold */

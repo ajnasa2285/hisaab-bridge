@@ -214,6 +214,7 @@ export function createSellerPayments(o) {
     confirm_payment: {
       roles: [o.role],
       commits: true,
+      stillOpen: (a) => knownOrder(a.orderId) && waitingClaim(a.orderId, a.payment) !== null,
       describe: (a) => {
         const claim = knownOrder(a.orderId) ? waitingClaim(a.orderId, a.payment) : null;
         const unit = claim ? unitOf(a.orderId, claim) : [];
@@ -236,12 +237,14 @@ export function createSellerPayments(o) {
           done.push([orderId, amountPaise]);
         }
         const total = done.reduce((s, [, x]) => s + x, 0);
-        if (!received) {
-          if (done.length > 1) return ok('pay.seller.group_denied', { amount: rupees(total), lines: groupLines(done) });
-          return ok('pay.seller.denied', { ref: o.refOf(a.orderId), amount: rupees(total), balance: balanceText(summaryOf(ledger, a.orderId)) });
-        }
+        // Any answer can be the last one waiting, a denial too: the order may be fully paid now.
         const settled = [];
         for (const [orderId] of done) if (await settleIfDue(orderId)) settled.push(orderId);
+        if (!received) {
+          if (done.length > 1) return ok('pay.seller.group_denied', { amount: rupees(total), lines: groupLines(done) });
+          if (settled.length) return settledSaid(a.orderId);
+          return ok('pay.seller.denied', { ref: o.refOf(a.orderId), amount: rupees(total), balance: balanceText(summaryOf(ledger, a.orderId)) });
+        }
         if (done.length > 1) return ok('pay.seller.group_confirmed', { amount: rupees(total), lines: groupLines(done) });
         if (settled.length) return settledSaid(a.orderId);
         return ok('pay.seller.confirmed', { ref: o.refOf(a.orderId), amount: rupees(total), balance: balanceText(summaryOf(ledger, a.orderId)) });
@@ -264,6 +267,13 @@ export function createSellerPayments(o) {
         if (!isDay(receivedOn)) return no('common.bad_args');
         const view = ledger.view(a.orderId);
         if (!PAYABLE.includes(view.state)) return no('common.wrong_state');
+        // The same money reported by the contractor and still waiting: counting both would count one
+        // receipt twice. The seller answers that claim, or says it is a separate payment.
+        const same = a.separate === true ? undefined : view.pending.find((id) => view.paid[id].amountPaise === a.amountPaise);
+        if (same !== undefined) {
+          return { ...no('pay.seller.claim_waiting', { ref: o.refOf(a.orderId), payment: paymentLine(claimBody(same) ?? { amountPaise: a.amountPaise, receivedOn }) }),
+            expect: { tool: 'confirm_payment', args: { orderId: a.orderId, payment: same }, no: { tool: 'record_received', args: { ...a, separate: true } } } };
+        }
         const body = { method: a.method, amountPaise: a.amountPaise, receivedOn, bill: view.currentBill };
         const d = await link.send({ type: 'PAYMENT_RECEIVED', to: /** @type {string} */ (counterparty(a.orderId)), orderId: a.orderId, body });
         if (!d.ok) return deliveryResult(d, 'pay.seller.received');
@@ -280,6 +290,30 @@ export function createSellerPayments(o) {
   }
 
   /**
+   * Where this claim's UTR was told before on this seller's orders (a denied claim is not a use; the
+   * shares of one clubbed payment are one use), as one warning line for the notice, or ''.
+   * @param {Message} m
+   */
+  function utrSeen(m) {
+    const b = m.body;
+    if (typeof b.utr !== 'string') return '';
+    const want = b.utr.trim().toUpperCase();
+    /** @type {string[]} */
+    const before = [];
+    for (const order of /** @type {{order_id: string}[]} */ (ledger.orders())) {
+      const paid = ledger.view(order.order_id).paid;
+      for (const e of ofType(ledger.events(order.order_id), 'PAYMENT_CLAIM', 'in')) {
+        const c = e.body.body;
+        if (e.msgId === m.msg_id || typeof c.utr !== 'string' || c.utr.trim().toUpperCase() !== want) continue;
+        if (b.group && c.group?.id === b.group.id) continue;
+        if (paid[/** @type {string} */ (e.msgId)]?.status !== 'denied') before.push(`${o.refOf(order.order_id)}: ${paymentLine(c)}`);
+      }
+    }
+    traceCheck(`UTR ${b.utr} ${before.length ? '✗ used before on this seller\'s orders' : '✓ not used before'}`, before.length === 0, { name: 'utr_seller', utr: b.utr, uses: before.length }, m.order_id);
+    return before.length ? t('pay.seller.utr_seen', { utr: b.utr, before: before.join('; ') }) : '';
+  }
+
+  /**
    * The notice for a reported payment, or null while a clubbed payment's other shares are still on
    * their way (the group is told once, whole). Its हाँ confirms, its नहीं denies.
    * @param {Message} m a PAYMENT_CLAIM in our ledger
@@ -288,6 +322,7 @@ export function createSellerPayments(o) {
   function claimNotice(m) {
     const b = m.body;
     const expect = { tool: 'confirm_payment', args: { orderId: m.order_id, payment: m.msg_id }, no: { tool: 'confirm_payment', args: { orderId: m.order_id, payment: m.msg_id, received: false } } };
+    const seen = utrSeen(m);
     if (b.group) {
       /** @type {[string, number][]} */
       const parts = [];
@@ -296,10 +331,12 @@ export function createSellerPayments(o) {
         if (!share) return null;
         parts.push([id, share.body.body.amountPaise]);
       }
-      return { key: 'pay.seller.group_claimed', params: { payment: paymentLine({ ...b, amountPaise: b.group.totalPaise }), lines: groupLines(parts) }, expect };
+      const lines = groupLines(parts);
+      return { key: 'pay.seller.group_claimed', params: { payment: paymentLine({ ...b, amountPaise: b.group.totalPaise }), lines: seen ? `${lines}\n${seen}` : lines }, expect };
     }
     const key = variant('pay.seller.claimed', { advance: b.bill === null });
-    return { key, params: { ref: o.refOf(m.order_id), site: o.siteOf(m.order_id), payment: paymentLine(b), balance: balanceText(summaryOf(ledger, m.order_id)) }, expect };
+    const balance = balanceText(summaryOf(ledger, m.order_id));
+    return { key, params: { ref: o.refOf(m.order_id), site: o.siteOf(m.order_id), payment: paymentLine(b), balance: seen ? `${balance}। ${seen}` : balance }, expect };
   }
 
   /**

@@ -74,6 +74,34 @@ test('a clubbed payment keeps its group on each order\'s share', () => {
   assert.deepEqual(s.payments[0].group, group);
 });
 
+test('a2a4: a message of ours the other side refused, or noted undelivered, does not count in the balance', () => {
+  /** @param {string} type @param {Record<string, any>} body @param {string} id */
+  const out = (type, body, id) => ({ ...msg(type, body, id), direction: 'out' });
+  /** @param {string} refersTo */
+  const refuse = (refersTo) => msg('REFUSE', { refers_to: refersTo, code: 'WRONG_STATE' });
+  // A refused bill: no bill in force.
+  let s = paymentSummary([out('BILL', { totalPaise: 2000000 }, 'b-1'), refuse('b-1')]);
+  assert.deepEqual([s.billTotalPaise, s.duePaise], [null, null]);
+  // A refused correction: the bill before it stays in force.
+  s = paymentSummary([out('BILL', { totalPaise: 2000000 }, 'b-1'), out('CORRECTION', { totalPaise: 900000 }, 'b-2'), refuse('b-2')]);
+  assert.equal(s.billTotalPaise, 2000000);
+  // Refused money: not confirmed, not forever waiting.
+  s = paymentSummary([msg('BILL', { totalPaise: 2000000 }, 'b-1'), out('PAYMENT_RECEIVED', { amountPaise: 1000000, method: 'cash', receivedOn: '2026-10-30', bill: 'b-1' }, 'p-1'), refuse('p-1')]);
+  assert.equal(s.confirmedPaise, 0);
+  s = paymentSummary([msg('BILL', { totalPaise: 2000000 }, 'b-1'), out('PAYMENT_CLAIM', { bill: 'b-1', amountPaise: 1000000, utr: 'U', paidOn: '2026-10-30' }, 'p-1'), refuse('p-1')]);
+  assert.deepEqual([s.pending, s.payments.length], [[], 0]);
+  // A refused answer or settlement changes nothing.
+  s = paymentSummary([msg('BILL', { totalPaise: 1000 }, 'b-1'), msg('PAYMENT_CLAIM', { bill: 'b-1', amountPaise: 1000, utr: 'U', paidOn: '2026-10-30' }, 'p-1'),
+    out('PAYMENT_ACK', { payment: 'p-1', received: true, amountPaise: 1000 }, 'a-1'), refuse('a-1'), out('SETTLED', { bill: 'b-1', amountPaise: 1000, payments: ['p-1'] }, 's-1'), refuse('s-1')]);
+  assert.deepEqual([s.confirmedPaise, s.pending, s.settled], [0, ['p-1'], false]);
+  // Our own note that a message expired undelivered counts the same.
+  s = paymentSummary([out('BILL', { totalPaise: 2000000 }, 'b-1'), /** @type {any} */ ({ seq: 9, direction: 'local', type: 'NOTE', msgId: 'n-1', body: { kind: 'undelivered', msg_id: 'b-1', type: 'BILL' }, at: '2026-10-30T10:00:00.000Z' })]);
+  assert.equal(s.billTotalPaise, null);
+  // A refusal of something the other side sent us (direction in) is not about our message.
+  s = paymentSummary([msg('BILL', { totalPaise: 2000000 }, 'b-1'), refuse('b-1')]);
+  assert.equal(s.billTotalPaise, 2000000);
+});
+
 test('allocate: oldest first, each takes its due, the rest goes to the last; shares add up exactly', () => {
   assert.deepEqual(allocate(3965000, [{ orderId: 'P-1', duePaise: 1900000 }, { orderId: 'P-2', duePaise: 2065000 }]),
     [{ orderId: 'P-1', amountPaise: 1900000 }, { orderId: 'P-2', amountPaise: 2065000 }]);

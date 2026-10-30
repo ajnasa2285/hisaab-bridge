@@ -308,6 +308,7 @@ export function createContractorAgent(o) {
     confirm_count: {
       roles: ['supervisor', 'contractor'],
       commits: true,
+      stillOpen: (a) => a.sameAsChallan !== true || (known(a.orderId) && siteCount(ledger.events(a.orderId)) === null),
       /** @returns {{key: string, params: Record<string, string>}} */
       describe: (a) => {
         if (a.challan !== undefined) {
@@ -357,10 +358,19 @@ export function createContractorAgent(o) {
       roles: ['contractor'],
       commits: true,
       describe: (a) => ({ key: 'step.accept_bill', params: { site: siteOf(a.orderId), total: billTotal(a.orderId) } }),
+      // What the person says yes to is the bill in force when they are asked.
+      bind: (a) => (known(a.orderId) ? { ...a, bill: ledger.view(a.orderId).currentBill } : a),
+      stillOpen: (a) => {
+        if (!known(a.orderId)) return false;
+        const view = ledger.view(a.orderId);
+        return (view.state === 'billed' || view.state === 'disputed') && (a.bill === undefined || a.bill === view.currentBill);
+      },
       async run(_p, a) {
         if (!known(a.orderId)) return no('common.no_such_order');
         const view = ledger.view(a.orderId);
         if (view.currentBill === null) return no('common.wrong_state');
+        // The bill changed after this yes was asked for: nothing is accepted, the new bill is shown.
+        if (a.bill !== undefined && a.bill !== view.currentBill) return billChanged(a.orderId, view.currentBill);
         const d = await link.send({ type: 'ACCEPT', to: counterparty(a.orderId), orderId: a.orderId, body: { bill: view.currentBill } });
         return deliveryResult(d, keyFor(a.orderId, 'site.bill_accepted'), { ref: refOf(a.orderId), site: siteOf(a.orderId) });
       },
@@ -460,17 +470,76 @@ export function createContractorAgent(o) {
         const seller = counterparty(a.orderIds[0]);
         const used = typeof base.utr === 'string' && a.sameUtrOk !== true ? utrUses(ledger, seller, base.utr) : [];
         if (used.length) return no('pay.utr_used', utrParams(used, paymentLine(base)));
+        // Each order takes one message at a time: checked first, so the payment is never left half made.
+        const inFlight = new Set(link.pending().map((m) => m.order_id));
+        if (split.some((x) => inFlight.has(x.orderId))) return no('common.busy');
         // Only one order takes anything: a plain payment for it.
         const group = split.length > 1 ? { id: newGroupId(), totalPaise: a.totalPaise, orders: split.map((x) => x.orderId) } : undefined;
+        /** @type {import('./link.js').Delivery | null} */
+        let undelivered = null;
         for (const share of split) {
           const body = { ...base, amountPaise: share.amountPaise, bill: ledger.view(share.orderId).currentBill, ...(group ? { group } : {}) };
           const d = await link.send({ type: 'PAYMENT_CLAIM', to: seller, orderId: share.orderId, body });
-          if (!d.ok) return deliveryResult(d, 'pay.site.group_claimed');
+          // A share recorded but not delivered yet goes again by itself and does not stop the others.
+          if (!d.ok && (d.reason === 'unreachable' || d.reason === 'bad_answer' || d.reason === 'no_address')) undelivered = d;
+          else if (!d.ok) return deliveryResult(d, 'pay.site.group_claimed');
         }
+        if (undelivered) return deliveryResult(undelivered, 'pay.site.group_claimed');
         return ok('pay.site.group_claimed', { to: toWhom(a.orderIds[0]), payment: paymentLine(base), lines: shareLines(split, true) });
       },
     },
   };
+
+  /**
+   * The bill in force as one plain text, as the notices show it. @param {string} orderId @param {Record<string, any>} b
+   */
+  const billText = (orderId, b) => {
+    if (isMaterial(orderId)) return t('site.bill_is_material', { lines: linesText(b.lines, delivery(ledger.events(orderId))?.items ?? []), total: rupees(b.totalPaise) });
+    const line = b.lines[0];
+    return t('site.bill_is_jcb', { hours: line.hoursTenths !== undefined ? hours(line.hoursTenths) : '—', rate: rupees(line.ratePaise), total: rupees(b.totalPaise) });
+  };
+
+  /**
+   * A material bill against the signed delivery and the agreed rates, and a correction against what
+   * was delivered: a quantity above the delivery counts only when it is the site's own count.
+   * @param {Record<string, any>} b @param {string} type @param {string} orderId
+   */
+  function materialBillCheck(b, type, orderId) {
+    const events = ledger.events(orderId);
+    const d = delivery(events);
+    const rates = agreedRates(events);
+    const count = siteCount(events);
+    const above = !!d && type === 'CORRECTION' && b.lines.some((/** @type {any} */ l, /** @type {number} */ i) => l.qtyHundredths > d.items[i]?.qtyHundredths
+      && count?.find((c) => c.name === d.items[i].name && c.unit === d.items[i].unit)?.qtyHundredths !== l.qtyHundredths);
+    const follows = !!d && !!rates && !above && billFollows(/** @type {{lines: any[], totalPaise: number}} */ (b), d.items, rates, { sameQty: type === 'BILL' });
+    return { d, rates, count, above, follows };
+  }
+
+  /**
+   * Whether a plain "हाँ" may accept this bill: a JCB bill, or a material bill that follows from the
+   * delivery, the agreed rates and the site's count.
+   * @param {string} orderId @param {Record<string, any>} b @param {string} type
+   */
+  function mayAcceptOnYes(orderId, b, type) {
+    if (!isMaterial(orderId)) return true;
+    const c = materialBillCheck(b, type, orderId);
+    if (!c.follows || !c.d) return false;
+    const d = c.d;
+    return c.count === null || sameItems(c.count, b.lines.map((/** @type {any} */ l, /** @type {number} */ i) => ({ name: l.what, qtyHundredths: l.qtyHundredths, unit: d.items[i].unit })));
+  }
+
+  /**
+   * The person's yes was for a bill no longer in force: the new bill is shown, and asked again if a
+   * plain yes may accept it.
+   * @param {string} orderId @param {string} billId @returns {import('./common.js').Said}
+   */
+  function billChanged(orderId, billId) {
+    const e = /** @type {NonNullable<ReturnType<typeof ledger.eventOfMessage>>} */ (ledger.eventOfMessage(billId));
+    const b = e.body.body;
+    const armed = mayAcceptOnYes(orderId, b, e.type);
+    const params = { ref: refOf(orderId), site: siteOf(orderId), bill: billText(orderId, b), total: rupees(b.totalPaise) };
+    return armed ? { ...no('site.bill_changed', params), expect: { tool: 'accept_bill', args: { orderId, bill: billId } } } : no('site.bill_changed_check', params);
+  }
 
   /**
    * The site's count from its own copy of the challan, with the photo as evidence. Before the
@@ -536,13 +605,10 @@ export function createContractorAgent(o) {
     const b = m.body;
     const site = siteOf(m.order_id);
     const ref = refOf(m.order_id);
-    const events = ledger.events(m.order_id);
-    const d = delivery(events);
-    const rates = agreedRates(events);
+    const { d, rates, count, above, follows } = materialBillCheck(b, m.type, m.order_id);
     const total = rupees(b.totalPaise);
     const lines = linesText(b.lines, d?.items ?? []);
-    const follows = !!d && !!rates && billFollows(/** @type {{lines: any[], totalPaise: number}} */ (b), d.items, rates, { sameQty: m.type === 'BILL' });
-    traceCheck(`bill = delivered × agreed rate ${follows ? '✓' : '✗'} ${total}`, follows, { name: 'bill_follows', totalPaise: b.totalPaise, delivered: d?.items ?? null }, m.order_id);
+    traceCheck(`bill = delivered × agreed rate ${follows ? '✓' : '✗'} ${total}${above ? ' (above the signed delivery)' : ''}`, follows, { name: 'bill_follows', totalPaise: b.totalPaise, delivered: d?.items ?? null }, m.order_id);
     if (!follows || !d || !rates) {
       const want = d && rates ? materialBillBody(d.items, rates, { sha256: d.sha256, number: d.number, sentAt: d.at }) : null;
       await tellBill(m.order_id, b, 'site.material_bill_mismatch', { ref, site, lines, total, expected: want && d ? linesText(want.lines, d.items) : '—', expectedTotal: want ? rupees(want.totalPaise) : '—' });
@@ -550,7 +616,6 @@ export function createContractorAgent(o) {
       await tell('contractor', explanation.key, explanation.params);
       return;
     }
-    const count = siteCount(events);
     /** @type {Item[]} */
     const billed = b.lines.map((/** @type {any} */ l, /** @type {number} */ i) => ({ name: l.what, qtyHundredths: l.qtyHundredths, unit: d.items[i].unit }));
     if (count !== null && !sameItems(count, billed)) {
@@ -571,7 +636,7 @@ export function createContractorAgent(o) {
     const params = { ref, site, lines, total, photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
       ...(check === 'differs' ? { invoiceTotal: rupees(/** @type {number} */ (d.grandTotalPaise)) } : {}) };
     const key = variant(m.type === 'BILL' ? 'site.material_bill_received' : 'site.material_correction_received', { invoice_match: check === 'match', invoice_differs: check === 'differs' });
-    await tellBill(m.order_id, b, key, params, { tool: 'accept_bill', args: { orderId: m.order_id } });
+    await tellBill(m.order_id, b, key, params, { tool: 'accept_bill', args: { orderId: m.order_id, bill: m.msg_id } });
     await tell('supervisor', key, params);
   }
 
@@ -662,7 +727,7 @@ export function createContractorAgent(o) {
           photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
         };
         const key = m.type === 'BILL' ? 'site.bill_received' : 'site.correction_received';
-        await tellBill(m.order_id, b, key, params, { tool: 'accept_bill', args: { orderId: m.order_id } });
+        await tellBill(m.order_id, b, key, params, { tool: 'accept_bill', args: { orderId: m.order_id, bill: m.msg_id } });
         await tell('supervisor', key, params);
         break;
       }

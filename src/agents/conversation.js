@@ -16,6 +16,9 @@
 // src/agents/office.js). A request with a value left out (site, day, quantity, unit) is kept, and only
 // what is missing is asked; the reply fills it, nothing is guessed. A question about the person's own
 // records is answered read-only (src/agents/ask.js): no read-back, nothing committed.
+// One question is open per person: a notice that asks something while another question is open waits
+// in that person's queue and is asked when the open one is answered or lapses, so a bare हाँ always
+// answers what the person was last asked. A yes/no older than the question is not an answer to it.
 // People decide; the model only proposes.
 
 import { createHash } from 'node:crypto';
@@ -39,7 +42,7 @@ import { promptBlock } from '../learn/corrections.js';
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {(person: Person, key: string, params?: Record<string, string | number>) => Promise<void> | void} Reply */
 /**
- * @typedef {{kind: 'confirm', tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}, at: number} |
+ * @typedef {{kind: 'confirm', tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}, ask?: Asked, at: number} |
  *   {kind: 'meter_digits', orderId: string, which: 'start' | 'end', sha256: string, takenAt: string | null, at: number} |
  *   {kind: 'challan_figures', orderId: string, sha256: string, challanNo: string | null, invoice?: Invoice | null, at: number} |
  *   {kind: 'site_challan_order', orderIds: string[], sha256: string, reading: SiteReading, at: number} |
@@ -48,6 +51,8 @@ import { promptBlock } from '../learn/corrections.js';
  *   {kind: 'photo_kind', image: Photo, at: number} |
  *   {kind: 'pay_choice', orderIds: string[], group: boolean, amountPaise: number, base: Record<string, any>, at: number}} Pending
  */
+/** The words of a question. @typedef {{key: string, params?: Record<string, string | number>}} Asked */
+/** A question waiting for the open one to end. @typedef {{tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}, ask?: Asked}} Waiting */
 /**
  * A payment typed without its proof yet ("P-3 अग्रिम ₹5,000"): the UPI screenshot that follows, or
  * "नकद", completes it. Kept apart from the open question, so the photo flow does not end it.
@@ -78,6 +83,7 @@ import { promptBlock } from '../learn/corrections.js';
 /** @typedef {typeof import('../readers/cash-receipt.js').readCashReceipt} CashReceiptReader */
 
 const PENDING_MS = 30 * 60 * 1000;
+const MAX_WAITING = 20;
 /** A JCB day longer than this (12 h) is read back once before it counts. */
 const LONG_JOB_TENTHS = 120;
 // A short yes or no, typed or spoken ("हाँ जी", "ok bhej do", "नहीं चाहिए"; src/agents/replies.js).
@@ -131,6 +137,8 @@ const tenthsText = (/** @type {number} */ v) => `${Math.floor(v / 10)}.${v % 10}
 export function createConversation(o) {
   /** @type {Map<string, Pending>} */
   const pending = new Map();
+  /** Questions waiting behind the open one, per person, oldest first. @type {Map<string, Waiting[]>} */
+  const waiting = new Map();
   /** The receiver's mark on a site challan photo, by its sha256 (see rememberSigned). @type {Map<string, boolean | null>} */
   const signedOf = new Map();
   /** Bytes stay in memory until the person confirms the exact photo-based step. @type {Map<string, {image: Photo, sha256: string, at: number}>} */
@@ -293,12 +301,13 @@ export function createConversation(o) {
     // A supervisor's request that waits for the contractor's approval is not read back: the
     // contractor's OK is the check, and the supervisor is told what went for approval.
     if (o.office && o.office.holds(person, tool, args)) return commitNow(person, tool, args);
+    args = t.bind?.(args) ?? args;
     // A step understood from a voice note: kept until the person commits it, or another of the same tool.
     const heard = voiceNow.get(keyOf(person));
     const earlier = voiceSteps.get(keyOf(person));
     if (heard !== undefined && (!earlier || earlier.tool !== tool || o.now() - earlier.at > PENDING_MS)) voiceSteps.set(keyOf(person), { tool, args, heard, at: o.now() });
-    pending.set(keyOf(person), { kind: 'confirm', tool, args, at: o.now() });
     const d = readBack ?? t.describe(args);
+    pending.set(keyOf(person), { kind: 'confirm', tool, args, ask: d, at: o.now() });
     return o.reply(person, d.key, d.params);
   }
 
@@ -326,23 +335,50 @@ export function createConversation(o) {
         learnVoice(person, tool, args);
       } catch { o.log?.('learn: correction not kept'); }
     }
+    // The answer itself asks something (a new bill, a waiting claim): its yes/no means this.
+    if (r.expect) expect(person, r.expect.tool, r.expect.args, r.expect.no, { key: r.key, params: r.params });
     return o.reply(person, r.key, r.params);
+  }
+
+  /**
+   * The next waiting question that still applies becomes the open one and is asked, if nothing is open.
+   * @param {Person} person @returns {Promise<boolean>} asked
+   */
+  async function askNext(person) {
+    if (current(person)) return false;
+    const queue = waiting.get(keyOf(person));
+    while (queue?.length) {
+      const next = /** @type {Waiting} */ (queue.shift());
+      const step = Object.hasOwn(o.tools, next.tool) ? o.tools[next.tool] : undefined;
+      if (!step || (step.stillOpen && !step.stillOpen(next.args))) continue;
+      const d = next.ask ?? step.describe?.(next.args);
+      if (!d) continue;
+      pending.set(keyOf(person), { kind: 'confirm', tool: next.tool, args: next.args, ...(next.no ? { no: next.no } : {}), ask: d, at: o.now() });
+      await o.reply(person, d.key, d.params);
+      return true;
+    }
+    waiting.delete(keyOf(person));
+    return false;
   }
 
   /**
    * @param {Person} person
    * @param {string} text
-   * @param {{voice?: string}} [how] `voice`: the text is a voice note's transcript (as heard, before any
-   *   normalising), so a step understood from it that the person then corrects teaches its words
+   * @param {{voice?: string, atMs?: number}} [how] `voice`: the text is a voice note's transcript (as heard,
+   *   before any normalising), so a step understood from it that the person then corrects teaches its
+   *   words; `atMs`: when WhatsApp says the message was sent
    */
   async function onText(person, text, how) {
-    if (how?.voice === undefined) return handleText(person, text);
-    voiceNow.set(keyOf(person), how.voice);
+    // The open question lapsed and another waits: a bare yes/no is not its answer, it has to be asked first.
+    const said = norm(text);
+    if (!current(person) && (YES.has(said) || NO.has(said)) && await askNext(person)) return;
+    if (how?.voice !== undefined) voiceNow.set(keyOf(person), how.voice);
     try {
-      return await handleText(person, text);
+      await handleText(person, text, how?.atMs);
     } finally {
       voiceNow.delete(keyOf(person));
     }
+    await askNext(person);
   }
 
   /**
@@ -375,8 +411,9 @@ export function createConversation(o) {
   /**
    * @param {Person} person
    * @param {string} text
+   * @param {number} [atMs]
    */
-  async function handleText(person, text) {
+  async function handleText(person, text, atMs) {
     const said = norm(text);
     const learnt = learnCommand(person, said);
     // Like an exact command, it leaves any open question as it was.
@@ -416,6 +453,13 @@ export function createConversation(o) {
       if (NO.has(said)) return o.reply(person, 'step.cancelled');
     }
     if (p && p.kind === 'confirm') {
+      // Sent before the question was asked (a delayed message; WhatsApp's time is in whole seconds):
+      // not an answer to it. The question stays open and is asked again.
+      if ((YES.has(said) || NO.has(said)) && atMs && atMs + 1000 < p.at) {
+        traceCheck('a yes/no older than the question ✗ → asked again', false, { name: 'answer_older_than_question', tool: p.tool });
+        const d = p.ask ?? o.tools[p.tool]?.describe?.(p.args);
+        return d ? o.reply(person, d.key, d.params) : o.reply(person, 'step.cancelled');
+      }
       if (YES.has(said)) {
         pending.delete(keyOf(person));
         return commitNow(person, p.tool, p.args);
@@ -592,6 +636,12 @@ export function createConversation(o) {
    * @param {Person} person @param {Photo} image
    */
   async function onImage(person, image) {
+    await handleImage(person, image);
+    await askNext(person);
+  }
+
+  /** @param {Person} person @param {Photo} image */
+  async function handleImage(person, image) {
     pending.delete(keyOf(person));
     photos.delete(keyOf(person));
     const kinds = photoKinds(person);
@@ -1086,12 +1136,24 @@ export function createConversation(o) {
 
   /**
    * After a notice that asks this person a yes/no question: a plain "yes" runs this step, and a
-   * plain "no" runs `no` when given (otherwise nothing happens).
+   * plain "no" runs `no` when given (otherwise nothing happens). With another question open it never
+   * takes that one's place: it waits, and is asked when that one is answered or lapses.
    * @param {Person} person @param {string} tool @param {Record<string, any>} args
-   * @param {{tool: string, args: Record<string, any>}} [no]
+   * @param {{tool: string, args: Record<string, any>}} [no] @param {Asked} [ask] the notice's own words
    */
-  function expect(person, tool, args, no) {
-    pending.set(keyOf(person), { kind: 'confirm', tool, args, ...(no ? { no } : {}), at: o.now() });
+  function expect(person, tool, args, no, ask) {
+    const open = current(person);
+    if (!open) {
+      pending.set(keyOf(person), { kind: 'confirm', tool, args, ...(no ? { no } : {}), ...(ask ? { ask } : {}), at: o.now() });
+      return;
+    }
+    const same = (/** @type {{tool: string, args: Record<string, any>}} */ q) => q.tool === tool && JSON.stringify(q.args) === JSON.stringify(args);
+    if (open.kind === 'confirm' && same(open)) return;
+    const queue = waiting.get(keyOf(person)) ?? [];
+    if (queue.some(same)) return;
+    if (queue.length >= MAX_WAITING) queue.shift();
+    queue.push({ tool, args, ...(no ? { no } : {}), ...(ask ? { ask } : {}) });
+    waiting.set(keyOf(person), queue);
   }
 
   return { onText, onImage, expect, pending: (/** @type {Person} */ p) => current(p) };

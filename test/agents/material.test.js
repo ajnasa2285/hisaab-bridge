@@ -188,7 +188,7 @@ test('the site counts less than the challan: the contractor sees both figures, d
     assert.deepEqual([r.ok, r.params?.total], [true, '₹16,800']);
     await settle();
     const offer = expects.find(([a, role, key, e]) => a === 'site' && role === 'contractor' && key === 'site.material_correction_received' && e);
-    assert.deepEqual(offer?.[3], { tool: 'accept_bill', args: { orderId } });
+    assert.deepEqual(offer?.[3], { tool: 'accept_bill', args: { orderId, bill: s.siteCore.ledger.view(orderId).currentBill } });
     r = await runTool(s.site.tools, contractor, offer?.[3]);
     assert.equal(r.ok, true);
     for (const core of [s.supCore, s.siteCore]) {

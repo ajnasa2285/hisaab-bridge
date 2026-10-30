@@ -208,8 +208,8 @@ export function createEvidenceService(o) {
 
   /** The owner's yes / no to a request for their photos; asked only by askOwner's question. @type {Record<string, Tool>} */
   const tools = {
-    share_evidence: { roles: [ownerRole], commits: true, run: (person, a) => answerRequests(person, String(a.orderId), 'yes') },
-    decline_evidence: { roles: [ownerRole], commits: true, run: (person, a) => answerRequests(person, String(a.orderId), 'no') },
+    share_evidence: { roles: [ownerRole], commits: true, stillOpen: (a) => openRequests(String(a.orderId)).length > 0, run: (person, a) => answerRequests(person, String(a.orderId), 'yes') },
+    decline_evidence: { roles: [ownerRole], commits: true, stillOpen: (a) => openRequests(String(a.orderId)).length > 0, run: (person, a) => answerRequests(person, String(a.orderId), 'no') },
   };
 
   /** Runs only after protocol validation and persistence. Display failure never changes a bill.

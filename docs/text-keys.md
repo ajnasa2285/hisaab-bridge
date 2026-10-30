@@ -17,6 +17,7 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `common.try_again` | — | handling this message failed; it is not handled again, so send it again (src/wa/wa.js) |
 | `common.media_too_large` | — | a photo or voice note too large to fetch; send a smaller one |
 | `common.undelivered` | ref, site | a message of ours expired before it reached the other side; it does not count, send it again if still needed (src/agents/link.js) |
+| `common.question_waits` | — | added under a notice that asks something while another question is open: a bare हाँ/नहीं answers the open one, this one is asked after it (src/app.js) |
 | `common.delivery_unsure` | ref, site | a message of ours is past its expiry with no answer; it may have arrived, so it still counts and goes on being sent until a signed answer decides (src/agents/link.js) |
 | `payment.forwarded` | — | a forwarded UPI screenshot or cash receipt; nothing read, nothing recorded |
 | `wa.unknown_sender` | — | someone not registered wrote to the number |
@@ -87,6 +88,9 @@ Contractor side (contractor, supervisor):
 | `site.delivery_matches_count` | ref, site, count, siteNo, challan, challanNo | a DELIVERY arrived for an order the site already counted from its challan, and it agrees; nobody is asked again (Claude drafted, Fable polished 29 Oct) |
 | `site.material_bill_received` | ref, site, lines, total, photos | a material bill that follows from the delivery, the agreed rates and the site's count; "हाँ" accepts |
 | `site.material_correction_received` | ref, site, lines, total, photos | a corrected material bill; "हाँ" accepts |
+| `site.bill_changed` | ref, site, bill, total | the contractor's yes was for a bill no longer in force: nothing accepted, the new bill shown, "हाँ" accepts it |
+| `site.bill_changed_check` | ref, site, bill, total | the same when the new bill does not follow from the delivery (no "हाँ" offered) |
+| `site.bill_is_material` / `site.bill_is_jcb` | lines, total / hours, rate, total | the bill in force as one text, for the two above |
 | `site.material_bill_mismatch` | ref, site, lines, total, expected, expectedTotal | to the contractor: the bill does not equal delivered qty × agreed rates (no "हाँ" offered) |
 | `site.material_bill_count_differs` | ref, site, lines, total, count, siteTotal | to the contractor: the bill follows the challan but the site counted differently (no "हाँ" offered) |
 | `site.material_bill_accepted` / `site.material_bill_disputed` | ref, site | accepted / objection sent to the supplier |
@@ -425,6 +429,8 @@ times, UTRs and screenshots add no placeholder. Group references link to each or
 | `step.claim_payment_cash` | site, amount | read-back of a cash payment from free words (model route) |
 | `step.claim_group` / `step.claim_group_cash` | amount, to, lines | read-back of the split of one payment among orders |
 | `pay.seller.claimed` / `_advance` | ref, site, payment, balance | to the seller: a reported payment; "हाँ" confirms, "नहीं" denies |
+| `pay.seller.utr_seen` | utr, before | added to a claim notice: this UTR was told before on another of this seller's orders |
+| `pay.seller.claim_waiting` | ref, payment | the seller records money while a claim of that amount waits: "हाँ" answers the claim, "नहीं" records it as separate |
 | `pay.seller.group_claimed` | payment, lines | to the seller: a clubbed payment, once, when all shares are in; one हाँ/नहीं for all |
 | `pay.seller.confirmed` / `pay.seller.denied` | ref, amount, balance | seller's receipt of his answer |
 | `pay.seller.group_confirmed` / `pay.seller.group_denied` | amount, lines | the same for a group |
