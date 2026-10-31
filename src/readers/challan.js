@@ -12,7 +12,7 @@ const withMemory = (text, opts) => (typeof opts?.memory === 'string' && opts.mem
 export const CHALLAN_UNITS = /** @type {const} */ (['bag', 'ton', 'cft', 'brass', 'nos', 'kg', 'm3', 'trip']);
 /** @type {Record<string, typeof CHALLAN_UNITS[number]>} */
 const UNIT_ALIASES = {
-  bag: 'bag', bags: 'bag', 'बोरी': 'bag', 'बैग': 'bag', 'बोरा': 'bag',
+  bag: 'bag', bags: 'bag', bori: 'bag', bora: 'bag', 'बोरी': 'bag', 'बैग': 'bag', 'बोरा': 'bag',
   ton: 'ton', tons: 'ton', tonne: 'ton', tonnes: 'ton', mt: 'ton', 'टन': 'ton',
   cft: 'cft', 'cu ft': 'cft', 'cu.ft': 'cft', 'cu. ft': 'cft', 'cubic feet': 'cft', 'cubic foot': 'cft', 'घन फुट': 'cft', 'घनफुट': 'cft',
   brass: 'brass', 'ब्रास': 'brass',
@@ -129,6 +129,13 @@ export function parseChallanDate(raw) {
  * @param {unknown} state @returns {boolean|null} */
 export function signedFrom(state) {
   return state === 'visible' ? true : state === 'absent' ? false : null;
+}
+
+/** The canonical unit of a printed or ordered unit word, or null when it is not a known one. @param {unknown} unit @returns {string | null} */
+export function canonicalUnit(unit) {
+  if (typeof unit !== 'string') return null;
+  const key = unit.trim().toLowerCase().replace(/\s+/g, ' ');
+  return Object.hasOwn(UNIT_ALIASES, key) ? UNIT_ALIASES[key] : null;
 }
 
 /** Canonical unit, else the printed text if it is plain, else null.

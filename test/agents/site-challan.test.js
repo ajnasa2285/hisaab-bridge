@@ -89,7 +89,7 @@ async function start(opts = {}) {
 test('one open order: a clear photo is recorded at once with its reference; a later delivery that differs is told, with the dispute offered', async () => {
   const c = await start();
   try {
-    c.read(clearRead('96', [{ name: 'I', qtyHundredths: 28000, unit: 'cft' }]));
+    c.read(clearRead('96', [{ name: 'बालू', qtyHundredths: 28000, unit: 'cft' }]));
     await c.siteTalk.onImage(supervisor, photo);
     assert.equal(c.last()?.[1], 'site.challan_count_saved_challan');
     assert.ok(c.last()?.[2].includes('P-1') && c.last()?.[2].includes('96') && c.last()?.[2].includes('बालू 280 cft'), c.last()?.[2]);

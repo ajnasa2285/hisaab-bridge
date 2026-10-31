@@ -261,9 +261,10 @@ function sellerReply(o) {
     return { kind: 'step', tool: 'send_correction', args: { orderId: p.orderId, qtysHundredths: q }, confirm: true };
   }
 
-  // "P-2 ₹10,000 नकद मिले" / "₹5,000 UPI से मिले P-3": money the seller received himself, recorded at once.
+  // "P-2 ₹10,000 नकद मिले" / "₹5,000 UPI से मिले P-3": money the seller received himself, recorded at once,
+  // only when the words say received: "नकद दिए" from a seller is not (the model reads it, and it is read back).
   const got = moneyWords(o.text);
-  if (got !== null && (got.cash || got.upi) && !got.advance && got.refs.length <= 1) {
+  if (got !== null && got.got && (got.cash || got.upi) && !got.advance && got.refs.length <= 1) {
     const payable = orders.filter((r) => PAYABLE.includes(r.state) && (ref === null || r.ref === ref));
     if (payable.length > 1) return whichOrder(payable.map((r) => r.ref));
     if (payable.length === 0) return ref !== null && !orders.some((r) => r.ref === ref) ? { kind: 'ask', key: 'common.no_such_order' } : { kind: 'ask', key: 'common.wrong_state' };

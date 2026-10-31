@@ -9,6 +9,7 @@ import { ofType, posInt } from './common.js';
 import { refusedIds } from '../ledger/states.js';
 import { MAX_UNIT, safeName } from '../protocol/names.js';
 import { parseQuantity } from '../orchestrator/units.js';
+import { canonicalUnit } from '../readers/challan.js';
 
 /** @typedef {import('../ledger/store.js').LedgerEvent} LedgerEvent */
 /** @typedef {{name: string, qtyHundredths: number, unit: string, gstPercent?: number}} Item */
@@ -302,21 +303,26 @@ export function sameItems(a, b) {
 }
 
 /**
- * The quantity a challan shows for each of the order's items (null where unclear or not found):
- * matched by name, or by position when the challan lists exactly as many items as the order.
- * The person always sees the result read back before anything is sent.
+ * The quantity a challan shows for each of the order's items (null where unclear, not found, or in
+ * another unit): matched by name, never by position, and never carried across units.
  * @param {{name: string, unit: string}[]} orderItems
- * @param {{name: string, qtyHundredths: number | null}[]} seen
+ * @param {{name: string, qtyHundredths: number | null, unit?: string | null}[]} seen
  * @returns {(number | null)[]}
  */
 export function challanQuantities(orderItems, seen) {
-  return challanMatches(orderItems, seen).map((s) => (s && posInt(s.qtyHundredths) ? s.qtyHundredths : null));
+  return challanMatches(orderItems, seen).map((s, i) => (s && posInt(s.qtyHundredths) && !unitsDiffer(s.unit, orderItems[i].unit) ? s.qtyHundredths : null));
+}
+
+/** The challan's unit and the order's are both known and not the same: 40 cft is not 40 tons. @param {unknown} a @param {unknown} b */
+function unitsDiffer(a, b) {
+  const [x, y] = [canonicalUnit(a), canonicalUnit(b)];
+  return x !== null && y !== null && x !== y;
 }
 
 // Orders are often in Hindi and printed challans in English: the same material under its usual names.
 /** @type {Record<string, string>} */
 const SAME_MATERIAL = {
-  'सीमेंट': 'cement', 'रेत': 'sand', 'बालू': 'sand', 'रेता': 'sand', balu: 'sand', baalu: 'sand', ret: 'sand', reta: 'sand',
+  'सीमेंट': 'cement', opc: 'cement', ppc: 'cement', 'रेत': 'sand', 'बालू': 'sand', 'रेता': 'sand', balu: 'sand', baalu: 'sand', ret: 'sand', reta: 'sand',
   'गिट्टी': 'gitti', 'ईंट': 'brick', 'ईंटें': 'brick', bricks: 'brick', 'सरिया': 'steel', sariya: 'steel',
 };
 
@@ -340,10 +346,9 @@ export function billLineNamed(lines, name) {
 
 /**
  * The challan line read for each of the order's items (undefined where none), each line used once: by
- * name, then by the words of the name ("ACC Cement (Bags)" is the order's "cement"), and when the
- * challan lists as many items as the order, the one item left takes the one line left. Two or more
- * left unnamed are not guessed by position: a challan may list them in another order (live, 31 Oct: its
- * sand line became 40 bags of cement on a signed delivery). The person is asked instead.
+ * name, then by the words of the name ("ACC Cement (Bags)" is the order's "cement"). An item no line
+ * names is not guessed by position: a challan may list items in another order (live, 31 Oct: its sand
+ * line became 40 bags of cement on a signed delivery). The person is asked instead.
  * @template {{name: string}} T
  * @param {{name: string}[]} orderItems
  * @param {T[]} seen
@@ -364,8 +369,6 @@ export function challanMatches(orderItems, seen) {
   });
   pass((a, b) => a === b);
   pass(sameMaterial);
-  const left = found.flatMap((f, i) => (f ? [] : [i]));
-  if (seen.length === orderItems.length && left.length === 1 && free.size === 1) found[left[0]] = [...free][0];
   return found;
 }
 

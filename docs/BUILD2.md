@@ -731,6 +731,10 @@ bare "हाँ" needs a read-back naming the order. A clarifying reply does not
 named keep their billed quantity; the total comes from the agreed rates and GST. The wire stays `theirFigure.totalPaise`, and the
 person's whole message is the reason. A figure that cannot be tied is asked about.
 
+**A first bill before the site's count** rests only on the supplier's figures. It says so (`site.material_bill_no_count`) and offers no one-word "हाँ"; `हाँ P-5` reads back. A correction answers the contractor's own objection and keeps the one word. The count still closes once a bill is in force.
+
+**A challan is matched to the order by name, never by position, and never across units.** Two known units that differ (40 cft on an order in tons), or an item no line names, are asked. Unit words we don't know are not called different.
+
 **`हाँ P-4` and `नहीं P-4 ...` from the contractor** decide an approval while a step for that reference waits. With none waiting and the order billed or disputed they are about the bill: `हाँ` reads back `accept_bill`, bound to the bill in force, and `नहीं` goes to the objection. The notices of a bill with no open question (`site.material_bill_mismatch`, `site.material_bill_count_differs`) say so.
 
 **Code's rule on an objection.** With a bill question open and no reference, a `request_material` with no site, day or time whose every item, with a figure, is a line of that bill is the objection, whatever the model chose (live, both runs). It gets the same checks and read-back. With a site, day or time, or any other item, it stays a new order.

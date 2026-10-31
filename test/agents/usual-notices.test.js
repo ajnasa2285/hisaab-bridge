@@ -21,6 +21,8 @@ async function material(s, quantity = 5000, rate = 38000, accepted = true) {
   const reply = await runTool(s.sup.tools, supplier, { tool: 'reply_order', args: { orderId, answer: 'yes', ratesPaise: [rate], gstPercents: [28] } });
   assert.equal(reply.ok, true);
   assert.equal((await runTool(s.sup.tools, supplier, { tool: 'record_delivery', args: { orderId, items: [cement(quantity)], sha256: SHA_A } })).ok, true);
+  await pause();
+  assert.equal((await runTool(s.site.tools, contractor, { tool: 'confirm_count', args: { orderId, qtysHundredths: [quantity], sameAsChallan: true } })).ok, true);
   assert.equal((await runTool(s.sup.tools, supplier, { tool: 'send_bill', args: { orderId } })).ok, true);
   await pause();
   if (accepted) assert.equal((await runTool(s.site.tools, contractor, { tool: 'accept_bill', args: { orderId } })).ok, true);

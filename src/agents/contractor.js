@@ -554,7 +554,10 @@ export function createContractorAgent(o) {
     const c = materialBillCheck(b, type, orderId);
     if (!c.follows || !c.d) return false;
     const d = c.d;
-    return c.count === null || sameItems(c.count, b.lines.map((/** @type {any} */ l, /** @type {number} */ i) => ({ name: l.what, qtyHundredths: l.qtyHundredths, unit: d.items[i].unit })));
+    // A first bill with no site count: nobody has checked the supplier's figures, so its yes is a read-back
+    // (`हाँ P-5`), not one word. A correction answers the contractor's own objection.
+    if (c.count === null) return type !== 'BILL';
+    return sameItems(c.count, b.lines.map((/** @type {any} */ l, /** @type {number} */ i) => ({ name: l.what, qtyHundredths: l.qtyHundredths, unit: d.items[i].unit })));
   }
 
   /**
@@ -662,6 +665,12 @@ export function createContractorAgent(o) {
     }
     const params = { ref, site, lines, total, photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
       ...(check === 'differs' ? { invoiceTotal: rupees(/** @type {number} */ (d.grandTotalPaise)) } : {}) };
+    if (count === null && m.type === 'BILL') {
+      traceCheck('bill before the site count ✗ supplier figures unchecked', false, { name: 'bill_no_count' }, m.order_id);
+      await tellBill(m.order_id, b, variant('site.material_bill_no_count', { invoice_differs: check === 'differs' }), params);
+      await tell('supervisor', 'site.bill_copy', { ref, site, what: billText(m.order_id, b) });
+      return;
+    }
     const key = variant(m.type === 'BILL' ? 'site.material_bill_received' : 'site.material_correction_received', { invoice_match: check === 'match', invoice_differs: check === 'differs' });
     await tellBill(m.order_id, b, key, params, { tool: 'accept_bill', args: { orderId: m.order_id, bill: m.msg_id } });
     await tell('supervisor', 'site.bill_copy', { ref, site, what: billText(m.order_id, b) });

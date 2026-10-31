@@ -178,6 +178,7 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'site.count_closed': [], 'site.dispute_which_item': ['ref', 'items'], 'site.dispute_same': ['ref', 'total'], 'site.dispute_format': ['example'], 'site.dispute_already': ['ref'], 'answer.unclear': ['ref'], 'step.dispute_bill_items': ['ref', 'site', 'items', 'total', 'reason'], 'site.material_bill_received': ['ref', 'site', 'lines', 'total', 'photos', 'example'],
     'site.material_correction_received': ['ref', 'site', 'lines', 'total', 'photos', 'example'],
     'site.material_bill_mismatch': ['ref', 'site', 'lines', 'total', 'expected', 'expectedTotal', 'example'],
+    'site.material_bill_no_count': ['ref', 'site', 'lines', 'total', 'example'], 'site.material_bill_no_count_invoice_differs': ['ref', 'site', 'lines', 'total', 'example', 'invoiceTotal'],
     'site.material_bill_count_differs': ['ref', 'site', 'lines', 'total', 'count', 'siteTotal', 'example'], 'site.material_bill_accepted': ['ref', 'site'],
     'site.material_bill_disputed': ['ref', 'site'], 'site.material_figure_needed': [], 'site.material_total_only': [], 'site.material_payment_claimed': ['ref', 'payment'],
     'site.material_settled': ['ref', 'site', 'amount'],

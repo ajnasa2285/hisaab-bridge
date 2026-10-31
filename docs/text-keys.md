@@ -96,6 +96,7 @@ Contractor side (contractor, supervisor):
 | `site.bill_changed_check` | ref, site, bill, total | the same when the new bill does not follow from the delivery (no "हाँ" offered) |
 | `site.bill_is_material` / `site.bill_is_jcb` | lines, total / hours, rate, total | the bill in force as one text, for the two above |
 | `site.material_bill_mismatch` | ref, site, lines, total, expected, expectedTotal | to the contractor: the bill does not equal delivered qty × agreed rates (no "हाँ" offered) |
+| `site.material_bill_no_count` / `_invoice_differs` | ref, site, lines, total, example, [invoiceTotal] | to the contractor: the bill came before the site's count, so it rests only on the supplier's figures (no one-word "हाँ"; `हाँ {ref}` reads back) |
 | `site.material_bill_count_differs` | ref, site, lines, total, count, siteTotal | to the contractor: the bill follows the challan but the site counted differently (no "हाँ" offered) |
 | `site.material_bill_accepted` / `site.material_bill_disputed` | ref, site | accepted / objection sent to the supplier |
 | `site.material_figure_needed` | — | an objection needs your figure (quantity or amount) |

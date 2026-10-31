@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createConversation } from '../../src/agents/conversation.js';
 import { runTool } from '../../src/agents/common.js';
+import { delivery } from '../../src/agents/material.js';
 import { ratesWithGst, tokens } from '../../src/agents/replies.js';
 import { billLines, gstPaise, invoiceCheck, invoiceFromReading, lineAmountPaise } from '../../src/agents/material.js';
 import { orderFacts, runLookup } from '../../src/agents/ask.js';
@@ -47,6 +48,11 @@ async function desk() {
   const orderId = /** @type {{order_id: string}} */ (s.siteCore.ledger.orders()[0]).order_id;
   return {
     s, supTalk, siteTalk, said, orderId,
+    /** The site's count, equal to the delivery: the bill is then compared with it. */
+    counted: async () => {
+      const qtys = delivery(s.siteCore.ledger.events(orderId))?.items.map((it) => it.qtyHundredths);
+      if (qtys) await runTool(s.site.tools, contractor, { tool: 'confirm_count', args: { orderId, qtysHundredths: qtys, sameAsChallan: true } });
+    },
     challan: (/** @type {any} */ r) => { nextChallan = r; },
     upi: (/** @type {any} */ r) => { nextUpi = r; },
     keys: (/** @type {string} */ who) => said.filter(([w]) => w === who).map(([, k]) => k),
@@ -97,6 +103,7 @@ test('GST from the yes: "हाँ 380 + 28%" is sent at once; the bill is ₹19
     d.challan({ ok: true, kind: 'challan', challanNo: '96', date: null, vehicle: null, clear: true, signed: null, items: [{ name: 'Cement', qtyHundredths: 5000, unit: 'bag', raw: 'Cement 50' }] });
     await d.supTalk.onImage(supplier, photo);
     await settle();
+    await d.counted();
     await d.supTalk.onText(supplier, 'बिल');
     await settle();
     assert.equal(d.last('supplier')[1], 'supplier.bill_sent');
@@ -119,6 +126,7 @@ test('GST from the invoice reading; its grand total equals the bill: "चाल�
     const delivered = d.s.siteCore.ledger.events(d.orderId).find((e) => e.type === 'DELIVERY')?.body.body;
     assert.deepEqual(delivered?.items, [{ ...CEMENT, gstPercent: 28, invoiceRatePaise: 38000, taxablePaise: 1900000 }]);
     assert.equal(delivered?.grandTotalPaise, 2432000);
+    await d.counted();
     await d.supTalk.onText(supplier, 'बिल');
     await settle();
     assert.equal(d.last('supplier')[1], 'supplier.bill_sent_invoice_match', 'equal totals: sent at once');
@@ -139,6 +147,7 @@ test('no GST anywhere: the bill is rate × quantity as before, with no GST field
     await settle();
     const delivered = d.s.siteCore.ledger.events(d.orderId).find((e) => e.type === 'DELIVERY')?.body.body;
     assert.deepEqual([delivered?.items, 'grandTotalPaise' in (delivered ?? {})], [[CEMENT], false]);
+    await d.counted();
     await d.supTalk.onText(supplier, 'बिल');
     await settle();
     assert.equal(d.last('supplier')[1], 'supplier.bill_sent');
@@ -157,6 +166,7 @@ test('the invoice\'s grand total differs: the supplier sees both figures before 
     d.challan(invoiceRead(2400000));
     await d.supTalk.onImage(supplier, photo);
     await settle();
+    await d.counted();
     await d.supTalk.onText(supplier, 'बिल');
     assert.equal(d.last('supplier')[1], 'step.send_material_bill_invoice_differs');
     assert.ok(d.last('supplier')[2].includes('₹24,320') && d.last('supplier')[2].includes('₹24,000'), d.last('supplier')[2]);
@@ -180,6 +190,7 @@ test('after the bill: the UPI amount, ask-anything totals and explanation figure
     d.challan(invoiceRead(2432000));
     await d.supTalk.onImage(supplier, photo);
     await settle();
+    await d.counted();
     await d.supTalk.onText(supplier, 'बिल');
     await settle();
 

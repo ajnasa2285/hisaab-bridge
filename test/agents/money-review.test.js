@@ -46,6 +46,8 @@ async function desk() {
     await runTool(s.sup.tools, supplier, { tool: 'reply_order', args: { orderId, answer: 'yes', ratesPaise: [35000] } });
     await runTool(s.sup.tools, supplier, { tool: 'record_delivery', args: { orderId, items: [{ ...CEMENT, qtyHundredths: bags * 100 }], sha256: SHA_A, challanNo: '7' } });
     if (upTo === 'delivered') return orderId;
+    await until(() => s.siteCore.ledger.view(orderId).state === 'delivered');
+    assert.equal((await runTool(s.site.tools, contractor, { tool: 'confirm_count', args: { orderId, qtysHundredths: [bags * 100], sameAsChallan: true } })).ok, true);
     assert.equal((await runTool(s.sup.tools, supplier, { tool: 'send_bill', args: { orderId } })).ok, true);
     if (upTo === 'accepted') assert.equal((await runTool(s.site.tools, contractor, { tool: 'accept_bill', args: { orderId } })).ok, true);
     return orderId;
@@ -69,11 +71,12 @@ async function desk() {
 test('money1: an acceptance is bound to the bill it was offered for; a correction in between accepts nothing', async () => {
   const d = await desk();
   try {
-    const orderId = await d.order(50, 'billed');
-    await until(() => d.toldCount('site:contractor', 'site.material_bill_received') === 1);
-    const offer = d.told('site:contractor', 'site.material_bill_received')?.[3];
+    // No site count here, so the correction below keeps its own offer of a one-word yes.
+    const orderId = await d.order(50, 'delivered');
+    assert.equal((await runTool(d.s.sup.tools, supplier, { tool: 'send_bill', args: { orderId } })).ok, true);
+    await until(() => d.toldCount('site:contractor', 'site.material_bill_no_count') === 1);
     const billId = d.s.siteCore.ledger.view(orderId).currentBill;
-    assert.deepEqual(offer.args, { orderId, bill: billId }, 'the expectation names the bill');
+    const offer = { args: { orderId, bill: billId } };
 
     // The seller replaces the bill before the contractor's yes is handled.
     assert.equal((await runTool(d.s.sup.tools, supplier, { tool: 'send_correction', args: { orderId, qtysHundredths: [4800] } })).ok, true);

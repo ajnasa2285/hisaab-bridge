@@ -109,9 +109,10 @@ function readerTitle(job, out) {
  */
 export function traceReader(job, reader, rec) {
   if (!reader) return undefined;
-  return /** @type {F} */ (async (/** @type {any} */ image) => {
+  // The second argument is the reader's own (the correction memory): it must reach the reader.
+  return /** @type {F} */ (async (/** @type {any} */ image, /** @type {any} */ opts) => {
     const start = performance.now();
-    const r = await reader(image);
+    const r = await /** @type {any} */ (reader)(image, opts);
     try {
       const out = readerOutput(job, r);
       rec.add('model', readerTitle(job, out), { job, model: r?.model ?? MODEL_NAME, reasoningEffort: 'default', vision: true, ...out }, { ms: r?.latencyMs ?? ms(start) });

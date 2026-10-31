@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { createConversation } from '../../src/agents/conversation.js';
 import { runTool } from '../../src/agents/common.js';
 import { openLearn, voiceParty } from '../../src/learn/corrections.js';
+import { traceReader } from '../../src/trace/hooks.js';
 import { openTrace, withTrace } from '../../src/trace/trace.js';
 import { t } from '../../src/i18n/index.js';
 import { setup, person, seesPhoto } from '../agents/helpers.js';
@@ -58,7 +59,8 @@ async function jcbJob(tc, learn = openLearn()) {
   f.talk = createConversation({
     ledger: s.jcbCore.ledger, tools: s.jcb.tools, spark: async () => ({ ok: true, toolCalls: [] }), now: s.jcbCore.now, learn,
     classifyPhoto: seesPhoto('meter'),
-    readMeter: async (/** @type {any} */ _image, /** @type {any} */ opts = undefined) => { reads.push({ opts }); return opts?.memory ? f.withMemory ?? f.plain : f.plain; },
+    // Through the wrapper the app puts on every reader: the memory must come out the other side.
+    readMeter: traceReader('meter', async (/** @type {any} */ _image, /** @type {any} */ opts = undefined) => { reads.push({ opts }); return opts?.memory ? f.withMemory ?? f.plain : f.plain; }, rec),
     reply: (_p, key, params) => { said.push([key, t(key, params)]); },
   });
   return f;

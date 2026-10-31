@@ -18,7 +18,7 @@ const settle = () => new Promise((r) => setTimeout(r, 30));
 const photo = (n) => ({ mime: /** @type {const} */ ('image/jpeg'), bytes: new Uint8Array([0xff, 0xd8, n, n]) });
 /** One clear line: the reader sees 50 of the order's one item. @param {boolean} [clear] */
 const reading = (clear = true) => ({ ok: true, kind: 'challan', challanNo: '412', date: null, vehicle: null, clear,
-  items: [{ name: 'माल', qtyHundredths: clear ? 5000 : null, unit: 'बोरी', raw: 'माल 50' }] });
+  items: ['सीमेंट', 'गिट्टी'].map((name) => ({ name, qtyHundredths: clear ? 5000 : null, unit: 'बोरी', raw: `${name} 50` })) });
 
 /**
  * `orders` material orders booked, one item each, and the supplier's conversation.

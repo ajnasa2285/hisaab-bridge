@@ -203,7 +203,7 @@ test('item 21: the supervisor\'s copy of a bill does not ask for हाँ; thei
     assert.ok(copy, 'the supervisor gets the copy');
     assert.equal(copy?.[2].includes('हाँ'), false, copy?.[2]);
     assert.ok(copy?.[2].includes('₹17,500'));
-    assert.ok(told.some(([w, k, x]) => w === 'site:contractor' && k.startsWith('site.material_bill_received') && x.includes('हाँ')));
+    assert.ok(told.some(([w, k, x]) => w === 'site:contractor' && k.startsWith('site.material_bill_no_count') && x.includes('हाँ')));
     /** @type {string[]} */
     const said = [];
     const talk = createConversation({ ledger: s.siteCore.ledger, tools: s.site.tools, spark: async () => ({ ok: /** @type {const} */ (true), toolCalls: [] }),

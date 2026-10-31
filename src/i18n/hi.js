@@ -132,6 +132,8 @@ export const hi = Object.freeze({
   'site.bill_is_jcb': '{hours} घंटे × {rate} = {total}',
   'site.material_bill_mismatch': '{ref}: {site} का बिल ({lines}, कुल {total}) डिलीवरी और तय दरों से मेल नहीं खाता। डिलीवरी × तय दर से बनता है: {expected}, कुल {expectedTotal}। मंज़ूर करने से पहले जाँच लें। मंज़ूर हो तो "हाँ {ref}" लिखें। आपत्ति हो तो लिखें, जैसे: नहीं ₹{example} कारण',
   'site.material_bill_count_differs': '{ref}: {site} का बिल आया: {lines}, कुल {total}। पर साइट पर गिनती {count} है, उस हिसाब से {siteTotal} बनता है। मंज़ूर हो तो "हाँ {ref}" लिखें। ठीक न लगे तो आपत्ति लिखें, जैसे: नहीं ₹{example} कारण',
+  'site.material_bill_no_count': '{ref}: {site} का बिल आया: {lines}, कुल {total}। साइट की गिनती दर्ज नहीं हुई, यह सिर्फ़ सप्लायर के चालान पर बना है। जाँचकर मंज़ूर हो तो "हाँ {ref}" लिखें। आपत्ति हो तो लिखें, जैसे: नहीं ₹{example} कारण',
+  'site.material_bill_no_count_invoice_differs': '{ref}: {site} का बिल आया: {lines}, कुल {total}। साइट की गिनती दर्ज नहीं हुई, यह सिर्फ़ सप्लायर के चालान पर बना है। ध्यान दें: इनवॉइस पर कुल {invoiceTotal} है। जाँचकर मंज़ूर हो तो "हाँ {ref}" लिखें। आपत्ति हो तो लिखें, जैसे: नहीं ₹{example} कारण',
   'site.material_bill_accepted': '{ref}: {site} का बिल मंज़ूर किया, सप्लायर को बता दिया।',
   'site.material_bill_disputed': '{ref}: {site} के बिल पर आपकी आपत्ति सप्लायर को भेज दी।',
   'site.material_figure_needed': 'आपत्ति के साथ अपना आँकड़ा लिखें: गिनती या रक़म।',

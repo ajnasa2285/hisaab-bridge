@@ -407,6 +407,19 @@ test('in the disputed state: हाँ can still accept after a read-back; न�
   assert.equal(d.s.siteCore.ledger.view(id).state, 'accepted');
 });
 
+test('a first bill with no site count: "हाँ P-1" reads back, then accepts', async (tc) => {
+  const d = await desk(tc);
+  const id = await billed(d, { count: false });
+  const notice = d.said.find((x) => x[0] === 'contractor' && x[1] === 'site.material_bill_no_count');
+  assert.ok(notice?.[2].includes('"हाँ P-1"'), notice?.[2]);
+  assert.equal(d.talks.contractor.pending(contractor), null);
+  await d.say(contractor, 'हाँ P-1');
+  assert.equal(d.last('contractor')?.[1], 'step.accept_bill');
+  assert.equal(d.s.siteCore.ledger.view(id).state, 'billed');
+  await d.say(contractor, 'हाँ');
+  assert.equal(d.s.siteCore.ledger.view(id).state, 'accepted');
+});
+
 test('a step still undecided keeps its approval behaviour, on its own reference', async (tc) => {
   const d = await desk(tc);
   const { office, id } = await billedAfterApproval(d);
