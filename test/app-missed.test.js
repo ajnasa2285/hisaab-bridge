@@ -20,6 +20,8 @@ import { setup, person, SHA_A, SHA_B } from './agents/helpers.js';
 const CONTRACTOR = '919000000061';
 const SUPERVISOR = '919000000062';
 const SECOND = '919000000063';
+const SECOND_SUPERVISOR = '919000000067';
+const OPERATOR = '919000000066';
 const SITE_ID = 'agent:contractor-1';
 const SHA = 'd'.repeat(64);
 const CEMENT = { name: 'सीमेंट', qtyHundredths: 5000, unit: 'बोरी' };
@@ -40,8 +42,8 @@ async function desk(tc) {
   const sent = [];
   /** @type {string[]} */
   const logs = [];
-  /** @type {{failNext: number, sparks: number, nowMs: number, calls: {name: string, args: any}[]}} */
-  const state = { failNext: 0, sparks: 0, nowMs: Date.parse('2026-10-29T02:30:00Z'), calls: [] };
+  /** @type {{failNext: number, sparks: number, nowMs: number, calls: {name: string, args: any}[], turns: {name: string, args: any}[][], seen: any[]}} */
+  const state = { failNext: 0, sparks: 0, nowMs: Date.parse('2026-10-29T02:30:00Z'), calls: [], turns: [], seen: [] };
   /** @type {typeof globalThis.fetch} */
   const fetch = async (_input, init) => {
     if (state.failNext > 0) { state.failNext -= 1; return new Response('{}', { status: 500 }); }
@@ -70,9 +72,9 @@ async function desk(tc) {
         peerUrls: { 'agent:jcb-1': `${base}/agents/jcb`, 'agent:supplier-1': `${base}/agents/supplier` }, jcbAgentId: 'agent:jcb-1', supplierAgentId: 'agent:supplier-1' },
     ],
     lines: [{ name: 'site', phoneNumberId: 'line-site', appSecret: 'secret-site', verifyToken: 'v', accessToken: 'tok' }],
-    people: [contractor, supervisor, site(SECOND, 'contractor')],
+    people: [contractor, supervisor, site(SECOND, 'contractor'), site(SECOND_SUPERVISOR, 'supervisor'), owner, operator],
     waStoreFile: join(dir, 'wa.db'),
-    spark: async () => { state.sparks += 1; const toolCalls = state.calls; state.calls = []; return { ok: /** @type {const} */ (true), toolCalls }; },
+    spark: async (/** @type {any} */ req) => { state.sparks += 1; state.seen.push(req); const toolCalls = state.turns.shift() ?? state.calls; state.calls = []; return { ok: /** @type {const} */ (true), toolCalls }; },
     fetch,
     now: () => state.nowMs,
     log: (/** @type {string} */ l) => { logs.push(l); },
@@ -368,4 +370,132 @@ test('a bill first told with the "usual" line is found under that key, and under
     assert.deepEqual(missedWaiting([{ ref: 'P-4', key: 'site.count_told_yes' }], open), []);
     assert.deepEqual(s.site.waiting('supervisor'), [], 'a bill is not the supervisor\'s');
   } finally { await s.close(); }
+});
+
+// A decision on a supervisor's step, when the supervisor's window was closed. Told once when they next
+// write, from the stored decision; it asks nothing and decides nothing.
+
+/** A supervisor's order held for approval, and a contractor who can decide a day later. @param {any} d */
+async function heldOrder(d) {
+  d.state.calls = [{ name: 'request_material', args: { site: 'Rampur', day: 'tomorrow', time: null, items: [{ name: 'सीमेंट', quantity: '50', unit: 'बोरी' }] } }];
+  await d.say(SUPERVISOR, 'कल Rampur सीमेंट 50 बोरी');
+  const [held] = d.app.agent(SITE_ID).office.held();
+  d.state.nowMs += 25 * 3600 * 1000;
+  return held;
+}
+
+test('a decline the supervisor could not be told comes when they next write, once, with the reason; their message is still handled', async (tc) => {
+  const d = await desk(tc);
+  const held = await heldOrder(d);
+  const before = d.to(SUPERVISOR).length;
+  await d.say(CONTRACTOR, `नहीं ${held.ref} रेट ज़्यादा है`);
+  assert.equal(d.app.agent(SITE_ID).office.held()[0].decision.decision, 'no');
+  assert.equal(d.to(SUPERVISOR).length, before, 'the window was closed');
+  assert.ok(d.logs.some((l) => l.includes('notice to supervisor') && l.includes('outside 24h window')));
+
+  await d.say(SUPERVISOR, 'मदद');
+  const [told, help, ...rest] = d.to(SUPERVISOR).slice(before);
+  assert.deepEqual(rest, []);
+  assert.equal(told, t('office.declined', { ref: held.ref, by: 'contractor', reason: 'रेट ज़्यादा है' }));
+  assert.equal(help, t('help.supervisor'));
+  await d.say(SUPERVISOR, 'मदद');
+  assert.deepEqual(d.to(SUPERVISOR).slice(before + 2), [t('help.supervisor')], 'never twice');
+});
+
+test('an approval and its result the supervisor could not be told come as one notice: who, what, the state now', async (tc) => {
+  const d = await desk(tc);
+  const held = await heldOrder(d);
+  const before = d.to(SUPERVISOR).length;
+  await d.say(CONTRACTOR, `OK ${held.ref} जल्दी मँगाओ`);
+  assert.equal(d.supEntry.core.ledger.orders().length, 1, 'the order went out');
+  assert.equal(d.to(SUPERVISOR).length, before);
+
+  await d.say(SUPERVISOR, 'मदद');
+  const [told, help, ...rest] = d.to(SUPERVISOR).slice(before);
+  assert.deepEqual(rest, []);
+  assert.equal(help, t('help.supervisor'));
+  for (const part of [held.ref, 'contractor', 'Rampur', 'सीमेंट 50 बोरी', 'जल्दी मँगाओ', t('state.requested')]) assert.ok(told.includes(part), `${part}: ${told}`);
+  await d.say(SUPERVISOR, 'मदद');
+  assert.equal(d.to(SUPERVISOR).filter((x) => x.includes('जल्दी मँगाओ')).length, 1, 'never twice');
+});
+
+test('told as the message that opened the window, a plain "हाँ" stays what it was: nothing decided, no "name the order" nudge', async (tc) => {
+  const d = await desk(tc);
+  const held = await heldOrder(d);
+  await d.say(CONTRACTOR, `नहीं ${held.ref} अभी नहीं`);
+  const before = d.to(SUPERVISOR).length;
+  await d.say(SUPERVISOR, 'हाँ');
+  const words = d.to(SUPERVISOR).slice(before);
+  assert.equal(words[0], t('office.declined', { ref: held.ref, by: 'contractor', reason: 'अभी नहीं' }));
+  assert.ok(!words.some((x) => x === t('site.yes_needs_ref', { ref: held.ref, refs: held.ref })), words.join(' | '));
+  const [after] = d.app.agent(SITE_ID).office.held();
+  assert.equal(after.decision.decision, 'no');
+  assert.equal(d.app.agent(SITE_ID).office.held().length, 1);
+  assert.equal(d.supEntry.core.ledger.orders().length, 0, 'nothing went out');
+});
+
+test('a decision told at the time is not told again, and nobody else is told', async (tc) => {
+  const d = await desk(tc);
+  d.state.calls = [{ name: 'request_material', args: { site: 'Rampur', day: 'tomorrow', time: null, items: [{ name: 'सीमेंट', quantity: '50', unit: 'बोरी' }] } }];
+  await d.say(SUPERVISOR, 'कल Rampur सीमेंट 50 बोरी');
+  const [held] = d.app.agent(SITE_ID).office.held();
+  await d.say(CONTRACTOR, `नहीं ${held.ref} रेट ज़्यादा है`);
+  const declined = t('office.declined', { ref: held.ref, by: 'contractor', reason: 'रेट ज़्यादा है' });
+  assert.equal(d.to(SUPERVISOR).at(-1), declined, 'the window was open');
+  await d.say(SUPERVISOR, 'मदद');
+  assert.equal(d.to(SUPERVISOR).filter((x) => x === declined).length, 1);
+  await d.say(SECOND_SUPERVISOR, 'मदद');
+  assert.deepEqual(d.to(SECOND_SUPERVISOR), [t('help.supervisor')]);
+});
+
+// Through the assembled app: the operator's exact commands and questions over WhatsApp.
+test('the operator on WhatsApp: "status" and "pending" show no money, and none reaches the model', async (tc) => {
+  const d = await desk(tc);
+  await d.run(d.siteEntry, contractor, 'request_jcb', { site: 'Rampur', day: '2026-10-30', hoursTenths: 60 });
+  const orderId = String(d.jcbEntry.core.ledger.orders()[0].order_id);
+  await d.run(d.jcbEntry, owner, 'reply_booking', { orderId, answer: 'yes', ratePaise: 120000 });
+  await d.run(d.jcbEntry, operator, 'record_meter', { orderId, which: 'start', valueTenths: 100, sha256: SHA_A });
+  await d.run(d.jcbEntry, operator, 'record_meter', { orderId, which: 'end', valueTenths: 160, sha256: SHA_B });
+  await d.run(d.jcbEntry, owner, 'send_bill', { orderId });
+
+  await d.say(OPERATOR, 'status J-1');
+  await d.say(OPERATOR, 'pending');
+  d.state.turns = [[{ name: 'ask_records', args: {} }], [{ name: 'order_detail', args: { ref: 'J-1' } }], [{ name: 'answer', args: { answer: 'J-1 का बिल ₹7,200 है।' } }]];
+  await d.say(OPERATOR, 'J-1 का बिल कितना है?');
+  const words = d.to(OPERATOR);
+  assert.ok(words.length >= 3, words.join(' | '));
+  for (const text of words) assert.ok(!/₹|1,200|7,200/u.test(text), text);
+  assert.ok(words[0].includes('Rampur') && words[0].includes(t('state.billed')), words[0]);
+  assert.ok(words.at(-1)?.includes('J-1'), words.at(-1));
+  const lookups = d.state.seen.at(-1).text;
+  assert.ok(lookups.includes('Rampur') && !/₹|1,200|7,200/u.test(lookups), lookups);
+});
+
+// Through the assembled app: a wrong JCB bill, its trace check, and the way to accept it after all.
+test('a JCB bill that does not follow: on the trace, a plain "हाँ" accepts nothing, "हाँ J-1" reads back, and it is told again when missed', async (tc) => {
+  const d = await desk(tc);
+  await d.run(d.siteEntry, contractor, 'request_jcb', { site: 'Rampur', day: '2026-10-30', hoursTenths: 60 });
+  const orderId = String(d.siteEntry.core.ledger.orders()[0].order_id);
+  await d.run(d.jcbEntry, owner, 'reply_booking', { orderId, answer: 'yes', ratePaise: 120000 });
+  // The window is closed, so the first telling is missed.
+  const sent = await d.jcbEntry.link.send({ type: 'BILL', to: SITE_ID, orderId, body: { lines: [{ what: 'JCB', hoursTenths: 60, ratePaise: 150000, amountPaise: 900000 }], totalPaise: 900000, evidence: [{ sha256: SHA_A, kind: 'meter', readValue: '100', takenAt: null, sentAt: '2026-10-29T02:30:00.000Z' }] } });
+  assert.equal(sent.ok, true);
+  await d.quiet();
+  const check = d.siteEntry.trace.list({ orderId }).find((/** @type {any} */ e) => e.detail?.name === 'bill_follows');
+  assert.equal(check.detail.pass, false);
+  assert.equal(check.detail.agreedRatePaise, 120000);
+  assert.equal(check.detail.billedRatePaise, 150000);
+
+  await d.say(CONTRACTOR, 'हाँ');
+  const words = d.to(CONTRACTOR);
+  assert.ok(words[0].includes('₹9,000') && words[0].includes('₹1,200') && words[0].includes('₹7,200') && words[0].includes('"हाँ J-1"'), words[0]);
+  assert.equal(words[1], t('site.yes_needs_ref', { ref: 'J-1', refs: 'J-1' }));
+  assert.deepEqual([d.stateOf(orderId), d.accepts(orderId)], ['billed', 0]);
+  assert.deepEqual(d.to(SUPERVISOR), [], 'no copy of a bill that does not follow');
+
+  await d.say(CONTRACTOR, 'हाँ J-1');
+  assert.equal(d.to(CONTRACTOR).at(-1), t('step.accept_bill', { ref: 'J-1', site: 'Rampur', total: '₹9,000' }));
+  assert.equal(d.accepts(orderId), 0, 'a read-back still');
+  await d.say(CONTRACTOR, 'हाँ');
+  assert.deepEqual([d.stateOf(orderId), d.accepts(orderId)], ['accepted', 1], 'the person may still accept it, having been told');
 });

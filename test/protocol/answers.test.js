@@ -146,7 +146,7 @@ test('a sender who is authenticated still gets a signed refusal', () => {
   assert.equal(verifyMessage(/** @type {any} */ (r.answer), p.jk.publicKey), true);
 });
 
-test('a2a2: a message already applied gets its original receipt after its expiry', () => {
+test('a2a2: a message already applied gets a receipt for the same entry after its expiry', () => {
   const p = pair();
   const orderId = randomUUID();
   const req = /** @type {any} */ (prepare(p.contractor, { type: 'BOOKING_REQUEST', to: 'agent:jcb-1', orderId, body: { kind: 'jcb_hours', site: 'Shivpuri', day: '2026-10-29' } }));

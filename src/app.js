@@ -144,6 +144,7 @@ export function createApp(cfg) {
    * again; a notice that is not about an open request of theirs is dropped). Then their message is
    * handled as usual. What could not be sent is kept for the next time. On the contractor's agent such
    * a notice sets no expectation: it asks for "हाँ <ref>", and a plain "हाँ" right after it decides nothing.
+   * A decision on a supervisor's step (`toldOnly`) asks nothing, so that "हाँ" is left as it was.
    * @param {Person} person @param {{cfg: AgentConfig, core: any, talk: ReturnType<typeof createConversation>, office: ReturnType<typeof createOffice>,
    *   agent: {waiting?: (role: string) => {key: string, params: Record<string, string | number>, also?: RegExp}[]}}} entry
    */
@@ -154,12 +155,13 @@ export function createApp(cfg) {
     /** @type {string[]} */
     const told = [];
     try {
+      /** @type {{key: string, params: Record<string, string | number>, also?: RegExp, toldOnly?: boolean}[]} */
       const open = [...(entry.agent.waiting?.(person.role) ?? []), ...entry.office.waiting(person), ...undeliveredNotices(entry.core.ledger), ...unsureNotices(entry.core.ledger)];
       const notices = missedWaiting(missed, open);
       unsent = missed.filter((m) => missedWaiting([m], notices).length > 0);
       for (const n of notices) {
         if (!(await sendTo(person, t(n.key, n.params)))) continue;
-        told.push(String(n.params.ref));
+        if (!n.toldOnly) told.push(String(n.params.ref));
         unsent = unsent.filter((m) => missedWaiting([m], [n]).length === 0);
       }
     } catch (e) {
@@ -254,9 +256,9 @@ export function createApp(cfg) {
         ? createSupplierAgent({ agent: core, link, tell, spark })
         : createContractorAgent({ agent: core, link, tell, spark, jcbAgentId: /** @type {string} */ (a.jcbAgentId), supplierAgentId: a.supplierAgentId, evidence: automaticEvidence });
     /** @type {import('./agents/conversation.js').Reply} */
-    const reply = async (p, key, params) => {
+    const reply = async (p, key, params, missed) => {
       traceReply(key, p.role, 1);
-      await sendTo(p, t(key, params));
+      await sendTo(p, t(key, params), missed);
     };
     // The owner's yes/no to sharing a photo (evidence.tools) is a step like the agent's own.
     const tools = traceTools({ ...agent.tools, ...evidence.tools }, trace);

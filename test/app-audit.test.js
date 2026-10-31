@@ -140,8 +140,14 @@ test('whatsapp1: an expectation stands only on a notice that really went; with a
   const d = await desk(tc);
   const entry = d.app.agent('agent:contractor-1');
   const person = /** @type {any} */ ({ line: 'line-site', phone: CONTRACTOR, agent: 'agent:contractor-1', role: 'contractor', name: 'Contractor' });
+  // A JCB bill is offered for one word only when it follows from the rate in the owner's yes on its order.
+  const orderId = '11111111-1111-4111-8111-111111111111';
+  const at = '2026-10-29T02:30:00.000Z';
+  entry.core.ledger.ensureOrder({ orderId, kind: 'jcb_hours', counterparty: 'agent:jcb-1', site: 'Rampur', at });
+  entry.core.ledger.append({ orderId, direction: 'out', type: 'BOOKING_REQUEST', msgId: '55555555-5555-4555-8555-555555555555', body: { body: { kind: 'jcb_hours', site: 'Rampur', day: '2026-10-30' } }, at });
+  entry.core.ledger.append({ orderId, direction: 'in', type: 'BOOKING_REPLY', msgId: '66666666-6666-4666-8666-666666666666', body: { body: { answer: 'yes', ratePaise: 100000 } }, at });
   /** @param {string} msgId */
-  const bill = (msgId) => ({ type: 'BILL', msg_id: msgId, order_id: '11111111-1111-4111-8111-111111111111', body: { lines: [{ what: 'JCB', hoursTenths: 10, ratePaise: 100000, amountPaise: 100000 }], totalPaise: 100000, evidence: [] } });
+  const bill = (msgId) => ({ type: 'BILL', msg_id: msgId, order_id: orderId, body: { lines: [{ what: 'JCB', hoursTenths: 10, ratePaise: 100000, amountPaise: 100000 }], totalPaise: 100000, evidence: [] } });
   // Outside the 24-hour window nothing goes, so no yes can mean it.
   await entry.agent.onApplied(bill('22222222-2222-4222-8222-222222222222'));
   assert.equal(d.sent.length, 0);

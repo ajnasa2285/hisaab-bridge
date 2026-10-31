@@ -40,6 +40,13 @@ export const ok = (key, params) => ({ ok: true, key, ...(params ? { params } : {
 export const no = (key, params) => ({ ok: false, key, ...(params ? { params } : {}) });
 
 /**
+ * Whether this role sees money: rates, bills, balances and payments. The operator sees the order, its
+ * site and day and its state, on every route (src/agents/office.js status and pending, src/agents/ask.js).
+ * @param {string} role
+ */
+export const seesMoney = (role) => role !== 'operator';
+
+/**
  * Runs a tool for a person: unknown tool or role not allowed → refused before anything happens.
  * @param {Record<string, Tool>} tools
  * @param {Person} person

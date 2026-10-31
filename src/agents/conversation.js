@@ -52,7 +52,8 @@ import { plain, promptBlock, voiceParty } from '../learn/corrections.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('./common.js').Tool} Tool */
-/** @typedef {(person: Person, key: string, params?: Record<string, string | number>) => Promise<void> | void} Reply */
+/** `missed`: what to remember if this could not be sent outside the 24-hour window (src/app.js sendTo).
+ * @typedef {(person: Person, key: string, params?: Record<string, string | number>, missed?: {ref: string, key: string}) => Promise<void> | void} Reply */
 /**
  * `notice`: a question the agent put to the person, not a read-back of their own step; `again`: it has been asked again once.
  * @typedef {{kind: 'confirm', tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}, ask?: Asked, at: number, notice?: boolean, again?: boolean} |

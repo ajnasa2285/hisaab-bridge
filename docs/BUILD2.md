@@ -247,7 +247,9 @@ Muse Spark plans and phrases; code produces every figure (`src/agents/ask.js`).
   error the model sees, never a guess.
 * **Who may ask what** follows the exact commands (`office.js`): everyone may see orders and one
   order (as `status` and `pending`); the contractor, supervisor, JCB owner and supplier also totals
-  and payments; `stock` only on the contractor agent; the operator gets only orders and one order.
+  and payments; `stock` only on the contractor agent; the operator gets only orders and one order,
+  each as its order, site, day and state, with no rate, bill, balance or payment (nor do `status` and
+  `pending` show them), so none of it reaches the model.
   The model sees only the lookups allowed; one named anyway is refused by code.
 * **The loop.** At most 4 lookups, in sequence (independent ones may come in one round), then
   `answer` (Hindi, at most 400 characters); a fifth round offers only `answer`. `reasoning_effort:
@@ -747,3 +749,9 @@ figure afterwards is an objection to the bill.
 **Missed notices on the contractor's side.** The contractor's agent and the office now have `waiting`, rebuilt from the ledger like the sellers': the contractor's bill or correction in force in state `billed`, and a held step not decided; the supervisor's delivery in state `delivered` with no site count; for both another day offered. The bill's notice is built by one function (`billNotice`) when first told and when told again. `tellBill` can make the recorded key `usual.notice`, and a replaced bill has another key, so a notice can name other keys of the same question on that reference (`also`, in `missedWaiting`), and the bill in force is what is told.
 
 A notice told again sets no expectation, because the person's own message runs after it and may be a "हाँ" written before they saw it. The one-word texts take `{yes}`, which is "हाँ" when first told and "हाँ P-1" when told again. `हाँ P-1` from the contractor is the existing read-back bound to the bill in force. From a supervisor on a delivery waiting for the count it records the count as the same as the challan (new; it answered "only the contractor" before). For 30 minutes after a replay a bare yes from that person, with no question open, gets `site.yes_needs_ref`: it decides nothing and reaches no model. After that, or after a restart, it goes the usual way (read against the latest open question, then a read-back). A notice whose send fails is put back and told at the next message; a crash between taking and sending still loses it.
+
+**A JCB bill is checked too.** On a BILL or CORRECTION for a JCB order the contractor's agent checks the rate against the one in the JCB owner's yes on that order, and the amount against hours × that rate (rounded as `jcbBillBody` does). A correction may change the hours, never the rate. One that does not follow is told with both figures (`site.bill_mismatch`), to the contractor only, with no one-word "हाँ" (it asks for `हाँ J-1`), also when told again. The trace check is `bill_follows`, as for material. The hours are not checked here: the meter readings are on the owner's side, and the photos come with the bill.
+
+**A repeat gets a fresh receipt.** A receipt sent is not kept in the receiver's ledger, and keeping it would change the ledger's chain. So a repeat is not applied twice and is answered with a new `RECEIPT` for the same entry: new id and time, the same `entry_hash`, and `chain_head` as it stands at that moment, not as it stood when the entry was written.
+
+**Approval results outside the window.** `office.declined`, and an approval with its result, are remembered as missed under the held step's reference (`wa_missed`) when they cannot be sent. When that supervisor next writes, the office's `waiting` rebuilds the notice from `held_decisions`, and an approval says the order's state now, since the run's result is not stored. It goes once, sets no expectation, and leaves a following "हाँ" as it was (`toldOnly`). The latest decision on a reference is the one told.

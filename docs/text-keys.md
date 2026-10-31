@@ -94,6 +94,8 @@ Contractor side (contractor, supervisor):
 | `site.bill_contractor_accepts` | — | a supervisor's हाँ while a bill is open: the contractor accepts bills |
 | `site.bill_changed` | ref, site, bill, total | the contractor's yes was for a bill no longer in force: nothing accepted, the new bill shown, "हाँ" accepts it |
 | `site.bill_changed_check` | ref, site, bill, total | the same when the new bill does not follow from the delivery (no "हाँ" offered) |
+| `site.bill_changed_check_jcb` | ref, site, bill, total | the same for a JCB bill that does not follow from hours × the agreed rate |
+| `site.bill_mismatch` | ref, site, hours, rate, total, agreedRate, expectedTotal, example | to the contractor: a JCB bill's rate is not the one in the owner's yes, or its amount is not hours × that rate; both figures, no one-word "हाँ" (asks for `हाँ {ref}`), also when told again |
 | `site.bill_is_material` / `site.bill_is_jcb` | lines, total / hours, rate, total | the bill in force as one text, for the two above |
 | `site.material_bill_mismatch` | ref, site, lines, total, expected, expectedTotal | to the contractor: the bill does not equal delivered qty × agreed rates (no "हाँ" offered) |
 | `site.material_bill_no_count` / `_invoice_differs` | ref, site, lines, total, example, [invoiceTotal] | to the contractor: the bill came before the site's count, so it rests only on the supplier's figures (no one-word "हाँ"; `हाँ {ref}` reads back) |
@@ -186,7 +188,9 @@ Commands are parsed by code before the model (`src/agents/office.js`, `parseComm
 | `office.held` | ref | to the supervisor: the step waits for the contractor's approval |
 | `office.approval_needed` | ref, by, estimate, step | to every contractor: who asks, the estimate, the read-back (without "हाँ / नहीं"), and the reply forms |
 | `office.approved` / `office.approved_note` | ref, by (, note) | to the supervisor: who approved (then the step's own result) |
-| `office.declined` | ref, by, reason | to the supervisor: who declined and why |
+| `office.declined` | ref, by, reason | to the supervisor: who declined and why; told again once, from the stored decision, if the 24-hour window was closed |
+| `office.approved_later` / `office.approved_later_note` | ref, by, step, state (, note) | to the supervisor who missed it outside the 24-hour window: who approved, what, and the order's state now, from the stored decision; told only |
+| `office.held_not_run` | — | the state in `office.approved_later` when no order came of the approved step |
 | `office.you_declined` | ref | to the contractor: the "no" is recorded |
 | `office.already_decided` | ref, decision, by | a second ok/no: already decided, by whom (`office.decision.ok` / `.no`) |
 | `office.only_contractor` | — | a supervisor sent ok/no |
@@ -195,6 +199,8 @@ Commands are parsed by code before the model (`src/agents/office.js`, `parseComm
 | `office.reason_needed` | ref | "no" without a reason |
 | `office.status` | ref, what, site, day, state, rate, payments, awaited | `status <ref>` for an order; day/rate fragments are omitted when absent; payments includes the summary balance and waiting claims |
 | `office.status_held` | ref, step, estimate, decision | `status <ref>` for a held step (`office.held_waiting`, `office.held_ok` by, `office.held_no` by, reason) |
+| `office.status_plain` | ref, what, site, day, state, awaited | `status <ref>` for an operator: no rate, bill, balance or payment |
+| `office.pending_order_plain` | ref, what, site, awaited | a `pending` line for an operator: no balance |
 | `office.pending` | lines | `pending`: held steps, `office.pending_order` (ref, what, site, awaited, balance), and seller claims grouped once; `office.pending_none` when empty |
 | `office.stock` | lines | `stock [item]` on the contractor's agent: `office.stock_site` (site), `office.stock_line` (name, qty), `office.stock_line_differs` (name, qty, challan); `office.stock_none` when empty |
 | `office.stock_not_here` | — | `stock` on another agent |
@@ -302,6 +308,7 @@ person's payment confirmation before keeping the photo or creating a cash claim.
 | `records.fig.jcb` | asked, billed, open | JCB hours asked, billed, billed and not settled |
 | `records.fig.money` | billed, accepted, claimed, settled, open | money of a totals group |
 | `records.fig.order` | ref, what, site, day, state, bill | one order in a list |
+| `records.fig.order_plain` | ref, what, site, day, state | one order in a list, for an operator: no bill |
 | `records.fig.detail` | ref, what, site, day, state | one order by its reference; its balance and payment rows follow |
 | `records.fig.stock` | site, item, qty, challan | one stock line |
 | `records.fig.payment` | ref, to, site, amount, details | one order's payment share: method, advance/bill, status, known date/time and clubbed references |

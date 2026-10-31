@@ -286,3 +286,25 @@ test('status, pending and stock read the ledger; on the JCB side "ok J-1" is not
   assert.equal(said.length, 0);
   ledger.close();
 });
+
+test('an approved step that made no order: told to its requester as not gone ahead, from the stored decision', async () => {
+  const { openLedger } = await import('../../src/ledger/store.js');
+  const ledger = openLedger(':memory:');
+  /** @type {any} */
+  const failing = { roles: ['supervisor'], commits: true, hold: { limit: 'procurement', estimatePaise: () => null }, describe: () => ({ key: 'office.step_unknown', params: {} }), run: async () => ({ ok: false, key: 'common.bad_args' }) };
+  const asker = { line: 'l', phone: '919000000071', agent: 'agent:contractor-1', role: /** @type {const} */ ('supervisor'), name: 'asker' };
+  const boss = { line: 'l', phone: '919000000072', agent: 'agent:contractor-1', role: /** @type {const} */ ('contractor'), name: 'boss' };
+  const office = createOffice({ ledger, tools: { request_material: failing }, kind: 'contractor', tell: async () => {}, reply: async () => {}, now: () => Date.parse('2026-10-29T02:30:00Z') });
+  try {
+    const held = await office.commit(asker, 'request_material', {});
+    const ref = String(held.params?.ref);
+    assert.deepEqual(office.waiting(asker), [], 'nothing decided yet');
+    await office.command(boss, { cmd: 'ok', ref, note: null });
+    const [n, ...rest] = office.waiting(asker);
+    assert.deepEqual(rest, []);
+    assert.equal(n.key, 'office.approved_later');
+    assert.equal(n.params.state, t('office.held_not_run'));
+    assert.equal(n.toldOnly, true);
+    assert.deepEqual(office.waiting({ ...asker, phone: '919000000073' }), [], 'only to the one who asked');
+  } finally { ledger.close(); }
+});
