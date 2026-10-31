@@ -109,7 +109,7 @@ The figure that matters most is the "wrong but confident" column: across all rea
 
 Not yet measured: UPI on unseen screenshots and other UPI apps, the challan reader and the photo-kind reader on real challans. Sample sizes are small and stated as such.
 
-**Tests:** 796 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and answered with the same receipt), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, exact replies and clear photos that act at once, evidence exchange with hash checks, the site's signed copy, the explanation and answer checks, and the judge page's file serving.
+**Tests:** 843 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and answered with the same receipt), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, exact replies and clear photos that act at once, evidence exchange with hash checks, the site's signed copy, the explanation and answer checks, and the judge page's file serving.
 
 ## What works today, honestly
 
@@ -132,6 +132,7 @@ An independent audit found no critical or high issue. A later AI red-team review
 - **The UPI payee is shown, not checked.** Code does not compare it with the seller; the seller's own "आया" is the check.
 - **The explanation's wording check is a list of banned phrases.** Its number check is strict, but a sentence can be paraphrased past the wording check, so code's plain figures are always added after the prose.
 - **The first meter reading of a job has no continuity check,** since there is no earlier reading to compare it with.
+- **A reply is read as an answer to the latest open question first.** While a bill is open, a message listing only that bill's items, with no site, day or time, is read back as an objection even if it was meant as a new order. A "नहीं" at the read-back stops it, and naming a site or day keeps it a new order.
 - **A booking does not name a machine.** The agents cannot tell if another JCB does the whole job, and a machine swapped mid-job cannot be recorded: its end photo is refused and a job with a reading cannot be cancelled.
 - **An edited or cropped photo is not detected.** Cropping out the date passes the date check, and the display's clock is not compared with the time.
 - **The two sides' challan checks are not independent when both send the same photo.** On 31 October a live challan listing its items in another order put 40 bags instead of 50 on a signed delivery, and both checks agreed. The matching is fixed, and the invoice's grand total still differed from the bill's, but a person's own count is the real check.
