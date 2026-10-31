@@ -354,7 +354,7 @@ export function createContractorAgent(o) {
         if (items === null) return no('site.count_figures', { items: itemsText(d.items) });
         const stored = ledger.append({
           orderId: a.orderId, direction: 'local', type: 'NOTE', msgId: randomUUID(),
-          body: { kind: 'site_count', items }, at: new Date(agent.now()).toISOString(),
+          body: { kind: 'site_count', items, by: person.role, how: a.sameAsChallan === true ? 'yes' : 'typed' }, at: new Date(agent.now()).toISOString(),
         });
         if (stored === null) return no('common.wrong_state');
         traceCheck(`site count vs signed delivery ${sameItems(items, d.items) ? '✓ matches' : '✗ differs'}: ${itemsText(items)} / ${itemsText(d.items)}`,
@@ -362,7 +362,11 @@ export function createContractorAgent(o) {
         if (!sameItems(items, d.items)) await o.evidence?.countDifference(a.orderId);
         const site = siteOf(a.orderId);
         const ref = refOf(a.orderId);
-        if (sameItems(items, d.items)) return ok('site.count_matches', { ref, site, items: itemsText(items) });
+        if (sameItems(items, d.items)) {
+          // A count equal to the challan proves nobody counted: the contractor sees who entered it and how. Told only.
+          if (person.role !== 'contractor') await tell('contractor', a.sameAsChallan === true ? 'site.count_told_yes' : 'site.count_told_typed', { ref, site, items: itemsText(items) });
+          return ok('site.count_matches', { ref, site, items: itemsText(items) });
+        }
         // Code compares; the contractor is told both figures (in the reply, when the contractor counted).
         const params = { ref, site, challan: itemsText(d.items), count: itemsText(items) };
         if (person.role !== 'contractor') await tell('contractor', 'site.count_differs', params);
@@ -583,7 +587,7 @@ export function createContractorAgent(o) {
     if (a.challan.signed !== undefined) challan.signed = a.challan.signed;
     const stored = ledger.append({
       orderId: a.orderId, direction: 'local', type: 'NOTE', msgId: randomUUID(),
-      body: { kind: 'site_count', items, challan }, at: new Date(agent.now()).toISOString(),
+      body: { kind: 'site_count', items, challan, by: person.role, how: 'photo' }, at: new Date(agent.now()).toISOString(),
     });
     if (stored === null) return no('common.wrong_state');
     const site = siteOf(a.orderId);
@@ -592,7 +596,10 @@ export function createContractorAgent(o) {
     if (d === null) return ok(variant('site.challan_count_saved', { challan: challan.number }), { ref, site, items: itemsText(items), ...(challan.number ? { challan: challan.number } : {}) });
     const c = compareCount(a.orderId, items, challan.number, d);
     const number = d.number ?? challan.number;
-    if (c.same) return ok(variant('site.challan_count_matches', { challan: number }), { ref, site, items: itemsText(items), ...(number ? { challan: number } : {}) });
+    if (c.same) {
+      if (person.role !== 'contractor') await tell('contractor', 'site.count_told_photo', { ref, site, items: itemsText(items) });
+      return ok(variant('site.challan_count_matches', { challan: number }), { ref, site, items: itemsText(items), ...(number ? { challan: number } : {}) });
+    }
     await o.evidence?.countDifference(a.orderId);
     // Code compares; the contractor is told both figures (in the reply, when the contractor counted).
     if (person.role !== 'contractor') await tell('contractor', 'site.challan_count_differs', c.params);

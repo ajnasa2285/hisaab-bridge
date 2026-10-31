@@ -76,6 +76,7 @@ Contractor side (contractor, supervisor):
 | `site.delivery_info` / `_challan` | ref, site, items, [challan] | the same delivery, to the contractor: told only, nothing to answer |
 | `site.count_figures` | items | the count needs one figure per delivered item, in order |
 | `site.count_matches` | ref, site, items | the site's count is saved and equals the challan |
+| `site.count_told_yes` / `_typed` / `_photo` | ref, site, items | to the contractor, told only: the supervisor's count equals the challan, and how it was entered (a plain yes, typed figures, a challan photo) |
 | `site.count_saved_differs` | ref, site, challan, count | to the person who counted: saved, differs from the challan |
 | `site.count_differs` | ref, site, challan, count | to the contractor: the site's count differs from the challan (both figures) |
 | `site.count_already` | ref, count | a one-word "हाँ" to the delivery notice after a count is already recorded: nothing changes (type figures to change it) |

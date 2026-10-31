@@ -112,6 +112,11 @@ test('a whole material order, from request to settled, leaves both ledgers in ag
     r = await runTool(s.site.tools, supervisor, ask?.[3]);
     assert.deepEqual([r.ok, r.key], [true, 'site.count_matches']);
     assert.equal(s.supCore.ledger.events(orderId).filter((e) => e.type === 'NOTE').length, 0, 'the site count stays on the site side');
+    // A count equal to the challan is still told to the contractor, with how it was entered; nothing is asked.
+    assert.ok(s.told.some(([a, role, key]) => a === 'site' && role === 'contractor' && key === 'site.count_told_yes'));
+    assert.ok(!expects.some(([a, role, key]) => a === 'site' && role === 'contractor' && key === 'site.count_told_yes'), 'told only');
+    const entry = s.siteCore.ledger.events(orderId).find((e) => e.type === 'NOTE' && e.body.kind === 'site_count');
+    assert.deepEqual([entry?.body.by, entry?.body.how], ['supervisor', 'yes']);
 
     // The bill is built by code: 50 × ₹350 + 2 × ₹4,000 = ₹25,500, the challan as evidence.
     r = await runTool(s.sup.tools, supplier, { tool: 'send_bill', args: { orderId } });

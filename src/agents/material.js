@@ -241,6 +241,12 @@ export function siteCount(events) {
   return n ? n.body.items : null;
 }
 
+/** Who entered the site's count in force and how, or null on a count from before this was kept. @param {LedgerEvent[]} events @returns {{by: string, how: string} | null} */
+export function siteCountEntry(events) {
+  const n = ofType(events, 'NOTE', 'local').filter((e) => e.body.kind === 'site_count').at(-1);
+  return n && typeof n.body.by === 'string' && typeof n.body.how === 'string' ? { by: n.body.by, how: n.body.how } : null;
+}
+
 /** The challan the site's count in force was read from (its photo), or null. @param {LedgerEvent[]} events @returns {{sha256: string, number: string | null} | null} */
 export function siteChallan(events) {
   const n = ofType(events, 'NOTE', 'local').filter((e) => e.body.kind === 'site_count').at(-1);
