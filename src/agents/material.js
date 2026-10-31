@@ -5,7 +5,7 @@
 
 import { qty, rupees } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
-import { ofType, posInt } from './common.js';
+import { nonNegInt, ofType, posInt } from './common.js';
 import { refusedIds } from '../ledger/states.js';
 import { MAX_UNIT, safeName } from '../protocol/names.js';
 import { parseQuantity } from '../orchestrator/units.js';
@@ -88,7 +88,8 @@ export function gstFor(rates, item, delivered = []) {
 
 /**
  * One bill line for an item at its agreed rate, with GST when its rate is known; null when the item
- * has no agreed rate or an amount cannot be computed.
+ * has no agreed rate or an amount cannot be computed. A correction may put an item at 0 (it never came):
+ * the line stays, in its place, and comes to nothing.
  * @param {{name: string, qtyHundredths: number, unit: string, gstPercent?: number}} it
  * @param {Rate[]} rates
  * @param {Item[]} [delivered]
@@ -96,7 +97,7 @@ export function gstFor(rates, item, delivered = []) {
  */
 export function billLine(it, rates, delivered) {
   const ratePaise = rateFor(rates, it);
-  const taxablePaise = ratePaise === null ? null : lineAmountPaise(it.qtyHundredths, ratePaise);
+  const taxablePaise = ratePaise === null ? null : it.qtyHundredths === 0 ? 0 : lineAmountPaise(it.qtyHundredths, ratePaise);
   if (ratePaise === null || taxablePaise === null) return null;
   const gstPercent = gstFor(rates, it, delivered);
   if (gstPercent === null) return { what: it.name, qtyHundredths: it.qtyHundredths, ratePaise, amountPaise: taxablePaise };
@@ -156,7 +157,7 @@ export function disputedItems(lines, delivered, rates, said, text) {
     items[at].qtyHundredths = q;
   }
   if (seen.size === 0 || items.some((it) => !it.unit || rateFor(rates, it) === null)) return null;
-  return { items: items.filter((it) => it.qtyHundredths > 0), totalPaise: itemsTotalPaise(items, rates, delivered) };
+  return { items, totalPaise: itemsTotalPaise(items, rates, delivered) };
 }
 
 /**
@@ -193,17 +194,18 @@ export function materialBillBody(items, rates, challan) {
 /**
  * Does a received bill follow from the delivery and the agreed rates? Every line is the delivered item
  * in the same place, at its agreed rate, with the amount by the rounding rule. A first bill must also
- * carry the delivered quantities; a correction may change quantities (towards the site's count) only.
+ * carry the delivered quantities; a correction may change quantities (towards the site's count) only,
+ * an item at 0 included, as long as something is still billed: a ₹0 bill could never be settled.
  * @param {{lines: any[], totalPaise: number}} body
  * @param {Item[]} delivered
  * @param {Rate[]} rates
  * @param {{sameQty: boolean}} o
  */
 export function billFollows(body, delivered, rates, o) {
-  if (!Array.isArray(body.lines) || body.lines.length !== delivered.length) return false;
+  if (!Array.isArray(body.lines) || body.lines.length !== delivered.length || !body.lines.some((l) => posInt(l.qtyHundredths))) return false;
   return body.lines.every((l, i) => {
     const it = delivered[i];
-    if (!posInt(l.qtyHundredths) || (o.sameQty && l.qtyHundredths !== it.qtyHundredths)) return false;
+    if (!(posInt(l.qtyHundredths) || (l.qtyHundredths === 0 && !o.sameQty)) || (o.sameQty && l.qtyHundredths !== it.qtyHundredths)) return false;
     // The same line this side would build: rate, taxable, GST (rate and amount) and the line's total.
     const want = billLine({ ...it, qtyHundredths: l.qtyHundredths }, rates);
     return want !== null && l.what === want.what && l.ratePaise === want.ratePaise && l.amountPaise === want.amountPaise
@@ -246,6 +248,12 @@ export function siteCount(events) {
 export function siteCountEntry(events) {
   const n = ofType(events, 'NOTE', 'local').filter((e) => e.body.kind === 'site_count').at(-1);
   return n && typeof n.body.by === 'string' && typeof n.body.how === 'string' ? { by: n.body.by, how: n.body.how } : null;
+}
+
+/** The hours the site recorded for a JCB job and who entered them (a local NOTE, once), or null. @param {LedgerEvent[]} events @returns {{hoursTenths: number, by: string} | null} */
+export function siteHours(events) {
+  const n = ofType(events, 'NOTE', 'local').find((e) => e.body.kind === 'site_hours');
+  return n ? { hoursTenths: n.body.hoursTenths, by: n.body.by } : null;
 }
 
 /** The challan the site's count in force was read from (its photo), or null. @param {LedgerEvent[]} events @returns {{sha256: string, number: string | null} | null} */
@@ -297,9 +305,10 @@ export function sameChallanNo(a, b) {
   return n(a) === n(b);
 }
 
-/** Same items with the same quantities, in the same order. @param {Item[]} a @param {Item[]} b */
+/** Same items with the same quantities, in the same order; an item at 0 is an item not there. @param {Item[]} a @param {Item[]} b */
 export function sameItems(a, b) {
-  return a.length === b.length && a.every((x, i) => x.name === b[i].name && x.unit === b[i].unit && x.qtyHundredths === b[i].qtyHundredths);
+  const [x, y] = [a, b].map((list) => list.filter((it) => it.qtyHundredths !== 0));
+  return x.length === y.length && x.every((it, i) => it.name === y[i].name && it.unit === y[i].unit && it.qtyHundredths === y[i].qtyHundredths);
 }
 
 /**
@@ -421,7 +430,7 @@ export function ratesText(rates) {
  */
 export function linesText(lines, units) {
   return lines.map((l, i) => {
-    const head = `${l.what} ${posInt(l.qtyHundredths) ? qty(l.qtyHundredths, units[i]?.unit ?? '').trim() : '—'} × ${rupees(l.ratePaise)}`;
+    const head = `${l.what} ${nonNegInt(l.qtyHundredths) ? qty(l.qtyHundredths, units[i]?.unit ?? '').trim() : '—'} × ${rupees(l.ratePaise)}`;
     if (isGstPercent(l.gstPercent) && Number.isSafeInteger(l.taxablePaise) && Number.isSafeInteger(l.gstPaise)) {
       return `${head} = ${rupees(/** @type {number} */ (l.taxablePaise))} ${t('bill.line_gst', { percent: l.gstPercent, gst: rupees(/** @type {number} */ (l.gstPaise)), amount: rupees(l.amountPaise) })}`;
     }

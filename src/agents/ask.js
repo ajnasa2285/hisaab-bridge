@@ -6,7 +6,7 @@
 // or reaches a tool that commits; there is no read-back and no "हाँ".
 
 import { ofType, nonNegInt, posInt, seesMoney } from './common.js';
-import { signedWord, siteCount, siteCountEntry, siteReceipt } from './material.js';
+import { signedWord, siteCount, siteCountEntry, siteHours, siteReceipt } from './material.js';
 import { stockOf } from './office.js';
 import { numbersSupported, wordingViolation } from './explain.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
@@ -31,6 +31,7 @@ import { traceCheck } from '../trace/trace.js';
  * @typedef {{orderId: string, ref: string, kind: 'jcb_hours' | 'material', site: string, day: string, state: string,
  *   requested: Item[], hoursTenths: number | null, ratePaise: number | null, rates: {name: string, unit: string, ratePaise: number}[],
  *   delivered: Item[] | null, counted: Item[] | null, countEntry: {by: string, how: string} | null,
+ *   siteHours: {hoursTenths: number, by: string} | null,
  *   bill: {totalPaise: number, hoursTenths: number | null, lines: {what: string, qtyHundredths: number | null, amountPaise: number, gstPaise: number | null}[]} | null,
  *   bills: number, balance: import('../ledger/payments.js').PaymentSummary, claim: {amountPaise: number, paidOn: string, paidAt: string | null} | null, settled: {amountPaise: number, day: string} | null,
  *   siteReceipt: {items: Item[], number: string | null, signed: boolean | null} | null}} OrderFacts
@@ -180,6 +181,8 @@ export function orderFacts(ledger) {
       delivered: delivery ? validItems(bodyOf(delivery).items) : null,
       counted: count ? validItems(count) : null,
       countEntry: o.kind === 'material' ? siteCountEntry(events) : null,
+      // A note on the contractor's ledger only: no seller's or operator's lookup has it.
+      siteHours: o.kind === 'jcb_hours' ? siteHours(events) : null,
       bill: bill && nonNegInt(bill.totalPaise) ? {
         totalPaise: bill.totalPaise,
         hoursTenths: billHours.length ? billHours.reduce((/** @type {number} */ a, /** @type {number} */ b) => a + b, 0) : null,
@@ -485,6 +488,10 @@ export function runLookup(name, raw, ctx) {
     if (o.delivered) data.delivered_on_challan = itemsShown(c, o.delivered);
     if (o.counted) data.counted_at_site = itemsShown(c, o.counted);
     if (o.countEntry) data.count_entered = t(`records.count_entered.${o.countEntry.how}`, { by: t(`records.who.${o.countEntry.by}`) });
+    if (o.siteHours) {
+      data.hours_at_site = c.hours(o.siteHours.hoursTenths);
+      data.hours_entered = t('records.hours_entered', { by: t(`records.who.${o.siteHours.by}`) });
+    }
     if (o.bill) {
       data.bill_in_force = c.money(o.bill.totalPaise);
       // A material bill with GST: the GST in it, as its own figure (the bill in force already includes it).

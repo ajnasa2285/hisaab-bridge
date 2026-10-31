@@ -6,7 +6,7 @@
 // sends.
 
 import { blank, dayWord, parseAmountPaise, parseHundredths, parsePaise, parseQuantity, parseRatePaise, parseTenths, parseTime, resolveDay } from './units.js';
-import { isGstPercent, itemsText, siteCount } from '../agents/material.js';
+import { isGstPercent, itemsText, siteCount, siteHours } from '../agents/material.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
 import { MAX_UNIT, safeName } from '../protocol/names.js';
 
@@ -14,7 +14,7 @@ import { MAX_UNIT, safeName } from '../protocol/names.js';
 /** @typedef {import('../wa/directory.js').Role} Role */
 /** @typedef {(req: {system?: string, text: string, tools?: object[], timeoutMs?: number, reasoningEffort?: 'minimal' | 'low'}) =>
  *   Promise<{ok: true, toolCalls: {name: string, args: any}[]} | {ok: false, transient: boolean, reason: string}>} Spark */
-/** `counted`: the site's count of it is recorded. @typedef {{ref: string, orderId: string, site: string, day: string, state: string, what?: string, counted?: boolean}} OrderRef */
+/** `counted`: the site's count of it is recorded; `hoursNoted`: the site's hours of it are. @typedef {{ref: string, orderId: string, site: string, day: string, state: string, what?: string, counted?: boolean, hoursNoted?: boolean}} OrderRef */
 /**
  * @typedef {{kind: 'step', tool: string, args: Record<string, any>} | {kind: 'help'} |
  *   {kind: 'missing', tool: string, args: Record<string, any>, missing: string[], raw: Record<string, any>} |
@@ -135,6 +135,11 @@ function complete(name, a, ctx) {
   return r && r.missing.length === 0 ? r.args : null;
 }
 
+// A JCB job on the contractor's side is `booked` until its bill: the meter photos are on the owner's side.
+const HOURS_STATES = ['booked', 'working'];
+/** A JCB job still waiting for the site's hours, if any are to be noted. @param {OrderRef} r */
+const hoursOpen = (r) => r.ref.startsWith('J-') && HOURS_STATES.includes(r.state) && !r.hoursNoted;
+
 /** @type {Spec[]} */
 export const SPECS = [
   {
@@ -245,9 +250,9 @@ export const SPECS = [
   {
     name: 'send_correction', roles: ['supplier'], states: ['billed', 'disputed'],
     description: 'Send a corrected material bill with different quantities after the contractor objected.',
-    properties: { order: ORDER, quantities: FIGURES(false, 'The corrected quantity of each delivered item, in the order of the bill, exactly as written like "48".') },
+    properties: { order: ORDER, quantities: FIGURES(false, 'The corrected quantity of each delivered item, in the order of the bill, exactly as written like "48"; "0" for an item that never came.') },
     toArgs: (a) => {
-      const q = figures(a.quantities, parseHundredths, false);
+      const q = figures(a.quantities, parseHundredths, true);
       return q === null ? null : { qtysHundredths: q };
     },
   },
@@ -325,6 +330,15 @@ export const SPECS = [
     },
   },
   {
+    name: 'record_site_hours', roles: ['supervisor', 'contractor'], states: HOURS_STATES,
+    description: 'Record how many hours the JCB actually worked on a booked job, as the site saw it. This is work already done, not a request for the JCB.',
+    properties: { order: ORDER, hours: { type: 'string', maxLength: 20, description: 'Hours worked exactly as written, in digits or words, like "6" or "ढाई".' } },
+    toArgs: (a) => {
+      const h = hoursOf(a.hours);
+      return h === null || h === 0 ? null : { hoursTenths: h };
+    },
+  },
+  {
     // A UPI payment needs its screenshot (UTR), so only cash is taken from words; read back first.
     name: 'claim_payment', roles: ['contractor'], states: PAYABLE,
     description: 'The contractor says they paid the JCB owner or the supplier IN CASH for one job (a UPI payment is reported by sending its screenshot).',
@@ -350,7 +364,7 @@ export const SPECS = [
       their_total_rupees: NULLABLE_TEXT(12, 'Total in rupees the contractor says, exactly as written, or null.'),
       their_items: {
         type: ['array', 'null'], minItems: 1, maxItems: 20,
-        description: 'For a material bill when the person names quantities of items: only the items they name, each with the name exactly as the bill lists it and the quantity exactly as written; quantity null when the unit they say differs from the bill or the figure cannot be tied to that item. Else null. Never calculate a total from these.',
+        description: 'For a material bill when the person names quantities of items: only the items they name, each with the name exactly as the bill lists it and the quantity exactly as written ("0" for an item that never came); quantity null when the unit they say differs from the bill or the figure cannot be tied to that item. Else null. Never calculate a total from these.',
         items: { type: 'object', additionalProperties: false, required: ['item', 'quantity'], properties: { item: { type: 'string', maxLength: 80 }, quantity: { type: ['string', 'null'], maxLength: 12 } } },
       },
       reason: { type: 'string', minLength: 1, maxLength: 300, description: 'The reason in the words of the person.' },
@@ -366,7 +380,7 @@ export const SPECS = [
       }
       if (given[0] === 'their_quantity') {
         const q = parseHundredths(a.their_quantity);
-        return q === null || q === 0 ? null : { qtyHundredths: q, reason: a.reason };
+        return q === null ? null : { qtyHundredths: q, reason: a.reason };
       }
       const p = parsePaise(a.their_total_rupees);
       return p === null ? null : { totalPaise: p, reason: a.reason };
@@ -402,7 +416,7 @@ function toolDef(s) {
 export async function proposeStep(o) {
   // The site's count is offered only while a delivery waits for it, not once counted or billed.
   const countOpen = o.orders.some((r) => r.state === 'delivered' && !r.counted);
-  const specs = (o.specs ?? SPECS).filter((s) => s.roles.includes(o.person.role) && (s.name !== 'confirm_count' || countOpen));
+  const specs = (o.specs ?? SPECS).filter((s) => s.roles.includes(o.person.role) && (s.name !== 'confirm_count' || countOpen) && (s.name !== 'record_site_hours' || o.orders.some(hoursOpen)));
   const today = new Date(o.nowMs + 330 * 60 * 1000).toISOString().slice(0, 10);
   const jobs = o.orders.length
     ? o.orders.map((r) => `${r.ref} | site: ${r.site} | day: ${r.day}${r.what ? ` | items: ${r.what}` : ''} | state: ${r.state}`).join('\n')
@@ -451,7 +465,8 @@ export async function proposeStep(o) {
   const args = spec.toArgs(call.args, ctx);
   if (args === null) return { kind: 'none', key: 'common.bad_args' };
   if ('order' in spec.properties) {
-    const picked = pickOrder(spec.name === 'confirm_count' && blank(call.args.order) ? o.orders.filter((r) => !r.counted) : o.orders, blank(call.args.order) ? null : call.args.order, spec.states ?? []);
+    const among = !blank(call.args.order) ? o.orders : spec.name === 'confirm_count' ? o.orders.filter((r) => !r.counted) : spec.name === 'record_site_hours' ? o.orders.filter(hoursOpen) : o.orders;
+    const picked = pickOrder(among, blank(call.args.order) ? null : call.args.order, spec.states ?? []);
     // A payment without its order is not lost: the conversation offers the orders owed, with their
     // balance (live, 30 Oct: "पंद्रह हजार नगद दिया" with no order understood).
     if (picked === 'orchestrator.which_job' && spec.name === 'claim_payment') return { kind: 'step', tool: spec.name, args };
@@ -688,7 +703,8 @@ export function orderRefs(ledger) {
     if (view.state === 'settled' || view.state === 'declined' || view.state === 'cancelled' || view.state === 'none') continue;
     const req = ledger.events(o.order_id).filter((e) => e.type === 'BOOKING_REQUEST').at(-1);
     const ref = { ref: refs.refOf(o.order_id) ?? '—', orderId: o.order_id, site: o.site, day: req?.body.body.day ?? '—', state: view.state,
-      ...(siteCount(ledger.events(o.order_id)) !== null ? { counted: true } : {}) };
+      ...(siteCount(ledger.events(o.order_id)) !== null ? { counted: true } : {}),
+      ...(siteHours(ledger.events(o.order_id)) !== null ? { hoursNoted: true } : {}) };
     // A material order shows its items, so rates or a count can be given "in the order of the items".
     out.push(Array.isArray(req?.body.body.items) ? { ...ref, what: itemsText(req.body.body.items) } : ref);
   }

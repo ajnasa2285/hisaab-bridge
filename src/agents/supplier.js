@@ -6,7 +6,7 @@
 
 import { rupees, day as dayName, qty } from '../i18n/format.js';
 import { rateUsualNotes, withUsual } from './usual.js';
-import { deliveryResult, isDay, isSha256, isTime, isUuid, no, ofType, posInt } from './common.js';
+import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, posInt } from './common.js';
 import { agreedRates, countDifferences, delivery, invoiceCheck, isGstPercent, itemsText, linesText, materialBillBody, rateFor, ratesText, requestedItems, sameChallanNo, signedWord, validItems } from './material.js';
 import { t } from '../i18n/index.js';
 import { openRefs } from '../ledger/refs.js';
@@ -64,12 +64,13 @@ export function createSupplierAgent(o) {
   };
 
   /**
-   * Corrected quantities, one per delivered item in the delivery's order.
+   * Corrected quantities, one per delivered item in the delivery's order; an item may be 0 (it never
+   * came), not all of them: a ₹0 bill could never be settled (`supplier.correction_nothing`).
    * @param {string} orderId @param {unknown} qtys @returns {Item[] | null}
    */
   const correctedItems = (orderId, qtys) => {
     const d = delivery(eventsOf(orderId));
-    if (!d || !Array.isArray(qtys) || qtys.length !== d.items.length || !qtys.every(posInt)) return null;
+    if (!d || !Array.isArray(qtys) || qtys.length !== d.items.length || !qtys.every(nonNegInt) || !qtys.some(posInt)) return null;
     return d.items.map((it, i) => ({ ...it, qtyHundredths: /** @type {number} */ (qtys[i]) }));
   };
 
@@ -203,6 +204,7 @@ export function createSupplierAgent(o) {
       async run(_p, a) {
         if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
         const items = correctedItems(a.orderId, a.qtysHundredths);
+        if (Array.isArray(a.qtysHundredths) && a.qtysHundredths.length > 0 && a.qtysHundredths.every((q) => q === 0)) return no('supplier.correction_nothing', { ref: refOf(a.orderId) });
         if (items === null) return no('common.bad_args');
         const events = ledger.events(a.orderId);
         const view = ledger.view(a.orderId);
@@ -273,7 +275,7 @@ export function createSupplierAgent(o) {
         return { key: 'supplier.bill_disputed', params: {
           ref: refOf(m.order_id),
           site: siteOf(m.order_id),
-          their: posInt(f.qtyHundredths) ? qty(f.qtyHundredths, unit).trim() : posInt(f.totalPaise) ? rupees(f.totalPaise) : '—',
+          their: nonNegInt(f.qtyHundredths) ? qty(f.qtyHundredths, unit).trim() : nonNegInt(f.totalPaise) ? rupees(f.totalPaise) : '—',
           reason: b.reason,
           example,
         } };

@@ -179,11 +179,13 @@ const QUESTION = { call: { name: 'ask_records', args: {} }, kind: 'ask' };
 const HELP_EXAMPLES = {
   supervisor: {
     'इस हफ़्ते कितने घंटे JCB का बिल आया?': QUESTION,
+    'J-1 6 घंटे': { site: 'Rampur', call: { name: 'record_site_hours', args: { order: 'J-1', hours: '6' } }, orders: [{ ref: 'J-1', orderId: '11111111-1111-4111-8111-111111111111', site: 'Rampur', day: '2026-10-30', state: 'booked' }] },
     'JCB चाहिए कल 8 बजे': { site: 'Rampur', call: { name: 'request_jcb', args: { site: null, day: 'tomorrow', time: '8', hours: null } } },
     'सीमेंट 50 बोरी कल': { site: 'Rampur', call: { name: 'request_material', args: { site: null, day: 'tomorrow', time: null, items: [cement('50')] } } },
   },
   contractor: {
     'इस महीने शिवपुरी पर कितना सीमेंट आया?': QUESTION,
+    'J-1 6 घंटे': { call: { name: 'record_site_hours', args: { order: 'J-1', hours: '6' } }, orders: [{ ref: 'J-1', orderId: '11111111-1111-4111-8111-111111111111', site: 'Rampur', day: '2026-10-30', state: 'booked' }] },
     'JCB चाहिए 30-10 शिवपुरी': { call: { name: 'request_jcb', args: { site: 'शिवपुरी', day: '30-10', time: null, hours: null } } },
     'सीमेंट 50 बोरी 30-10 शिवपुरी': { call: { name: 'request_material', args: { site: 'शिवपुरी', day: '30-10', time: null, items: [cement('50')] } } },
   },

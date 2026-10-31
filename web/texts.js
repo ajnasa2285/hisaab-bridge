@@ -50,6 +50,7 @@ export const TEXTS = {
     challan_hash: 'चालान फ़ोटो की छाप',
     delivered_at: 'पहुँचा',
     site_count: 'साइट की गिनती',
+    site_hours: 'साइट के घंटे',
     vs_challan: 'चालान के मुक़ाबले',
     differs: 'अंतर ⚠️',
     matches: 'बराबर ✅',
@@ -169,7 +170,7 @@ export const TEXTS = {
       delivered: 'पहुँचा', billed: 'बिल आया', disputed: 'आपत्ति', accepted: 'मंज़ूर', part_paid: 'कुछ भुगतान मिला', payment_claimed: 'भुगतान बताया', settled: 'हिसाब पूरा', cancelled: 'रद्द',
     },
     types: {
-      BOOKING_REQUEST: 'JCB की माँग', MATERIAL_REQUEST: 'सामान की माँग', BOOKING_REPLY: 'जवाब', EVIDENCE: 'मीटर की फ़ोटो', BILL: 'बिल', RECEIPT: 'रसीद', ACCEPT: 'मंज़ूरी',
+      SITE_HOURS: 'साइट के घंटे', BOOKING_REQUEST: 'JCB की माँग', MATERIAL_REQUEST: 'सामान की माँग', BOOKING_REPLY: 'जवाब', EVIDENCE: 'मीटर की फ़ोटो', BILL: 'बिल', RECEIPT: 'रसीद', ACCEPT: 'मंज़ूरी',
       DISPUTE: 'आपत्ति', CORRECTION: 'सुधरा बिल', PAYMENT_CLAIM: 'भुगतान बताया', PAYMENT_ACK: 'भुगतान का जवाब', PAYMENT_RECEIVED: 'भुगतान मिला', SETTLED: 'हिसाब पूरा', CANCEL: 'रद्द', REFUSE: 'इनकार', NOTE: 'टिप्पणी', DELIVERY: 'सामान पहुँचा', SITE_COUNT: 'साइट की गिनती',
     },
   },
@@ -221,6 +222,7 @@ export const TEXTS = {
     challan_hash: 'Challan photo fingerprint',
     delivered_at: 'Delivered',
     site_count: 'Site count',
+    site_hours: 'Site hours',
     vs_challan: 'against the challan',
     differs: 'differs ⚠️',
     matches: 'matches ✅',
@@ -340,7 +342,7 @@ export const TEXTS = {
       delivered: 'delivered', billed: 'billed', disputed: 'disputed', accepted: 'accepted', part_paid: 'part paid', payment_claimed: 'payment claimed', settled: 'settled', cancelled: 'cancelled',
     },
     types: {
-      BOOKING_REQUEST: 'JCB request', MATERIAL_REQUEST: 'material request', BOOKING_REPLY: 'booking reply', EVIDENCE: 'meter photo', BILL: 'bill', RECEIPT: 'receipt', ACCEPT: 'accept',
+      SITE_HOURS: 'site hours', BOOKING_REQUEST: 'JCB request', MATERIAL_REQUEST: 'material request', BOOKING_REPLY: 'booking reply', EVIDENCE: 'meter photo', BILL: 'bill', RECEIPT: 'receipt', ACCEPT: 'accept',
       DISPUTE: 'dispute', CORRECTION: 'correction', PAYMENT_CLAIM: 'payment claim', PAYMENT_ACK: 'payment answer', PAYMENT_RECEIVED: 'money received', SETTLED: 'settled', CANCEL: 'cancelled', REFUSE: 'refusal', NOTE: 'note', DELIVERY: 'delivery', SITE_COUNT: 'site count',
     },
   },

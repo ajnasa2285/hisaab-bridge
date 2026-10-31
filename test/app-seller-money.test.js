@@ -152,6 +152,19 @@ async function desk(tc) {
 
 // --- A plain "हाँ" right after a notice told again --------------------------------------------------
 
+test('supplier: a first message of plain "नहीं" after a missed claim denies nothing; "नहीं P-1" answers it', async (tc) => {
+  const d = await desk(tc);
+  const orderId = await d.material();
+  await d.cash(orderId, 1000000);
+  await d.say(SUPPLIER, 'नहीं');
+  const words = d.to(SUPPLIER);
+  assert.equal(words.at(-1), t('site.no_needs_ref', { ref: 'P-1', refs: 'P-1' }));
+  assert.deepEqual(d.money(orderId), [0, 1, 'payment_claimed'], 'nothing denied');
+  assert.equal(d.state.sparks, 0, 'no model reads that no');
+  await d.say(SUPPLIER, 'नहीं P-1');
+  assert.equal(d.money(orderId)[1], 0, 'named, it is answered');
+});
+
 test('supplier: a claim missed outside the window, then a first message of plain "हाँ": told, nothing confirmed, no model; "हाँ P-1" confirms that claim', async (tc) => {
   const d = await desk(tc);
   const orderId = await d.material();

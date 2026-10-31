@@ -108,7 +108,7 @@ const paymentGroup = (g, share) => !!g && typeof g === 'object' && only(g, ['id'
 const only = (b, keys) => Object.keys(b).every((k) => keys.includes(k));
 /** @param {any} l */
 const billLine = (l) => l && typeof l === 'object' && text(l.what) && nat(l.ratePaise) && nat(l.amountPaise)
-  && (l.qtyHundredths === undefined || pos(l.qtyHundredths)) && (l.hoursTenths === undefined || nat(l.hoursTenths))
+  && (l.qtyHundredths === undefined || nat(l.qtyHundredths)) && (l.hoursTenths === undefined || nat(l.hoursTenths))
   && (l.qtyHundredths !== undefined) !== (l.hoursTenths !== undefined)
   // GST (optional): taxable, rate and GST together, and the line's amount is taxable + GST.
   && (l.gstPercent === undefined
@@ -131,14 +131,15 @@ const BODY_OK = {
     && (b.answer !== 'other_time' || isDay(b.day)),
   DELIVERY: (b) => items(b.items) && b.items.every(deliveredItem) && b.challan && typeof b.challan.sha256 === 'string' && SHA256_RE.test(b.challan.sha256)
     && isIso(b.deliveredAt) && (b.grandTotalPaise === undefined || pos(b.grandTotalPaise)),
-  BILL: (b) => billBody(b) && b.replaces === undefined,
+  // A first bill carries what was delivered; only a correction may put an item at 0, and never all of them.
+  BILL: (b) => billBody(b) && b.replaces === undefined && b.lines.every((/** @type {any} */ l) => l.qtyHundredths !== 0),
   RECEIPT: (b) => isUuid(b.receipt_for) && typeof b.entry_hash === 'string' && SHA256_RE.test(b.entry_hash)
     && typeof b.chain_head === 'string' && SHA256_RE.test(b.chain_head),
   ACCEPT: (b) => isUuid(b.bill),
   DISPUTE: (b) => isUuid(b.bill) && text(b.reason) && b.theirFigure && typeof b.theirFigure === 'object'
     && ['hoursTenths', 'qtyHundredths', 'totalPaise'].some((k) => nat(b.theirFigure[k]))
     && (b.siteCount === undefined || siteCount(b.siteCount)),
-  CORRECTION: (b) => billBody(b) && isUuid(b.replaces),
+  CORRECTION: (b) => billBody(b) && isUuid(b.replaces) && b.lines.some((/** @type {any} */ l) => l.qtyHundredths !== 0),
   // Payments (CONTRACTS 4.1): `bill` null is an advance; UPI carries its UTR and screenshot, cash neither
   // (a photo of a cash receipt optional); a share of a clubbed payment carries its group.
   PAYMENT_CLAIM: (b) => (b.bill === null || isUuid(b.bill)) && pos(b.amountPaise) && isDay(b.paidOn)

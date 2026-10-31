@@ -25,14 +25,14 @@ Contractor agent        over the approval limit? held as J-1 for the contractor'
 JCB agent               asks the JCB owner; their exact "हाँ 1200" / "नहीं" / "30-10" is the answer -> signed BOOKING_REPLY
 JCB operator            start and end hour-meter photos -> Muse Spark reads the digits -> code checks continuity -> hours
 JCB owner               "भेजो" -> signed BILL, the meter photos' fingerprints as evidence
-Contractor              sees the bill beside the supervisor's own count -> accept, or dispute with their figure
+Contractor              sees the bill beside the supervisor's own hours, when recorded -> accept, or dispute with their figure
                         -> Muse Spark explains the difference from the evidence; code checks every number it cites
 JCB owner               keeps the bill or sends a CORRECTION; nothing is ever rewritten
 Contractor              sends the UPI screenshot -> Muse Spark reads amount, UTR, payee -> code picks the order by what is owed; the owner sees the payee
 JCB owner               "आया" -> SETTLED on both ledgers
 ```
 
-The material flow is the same with a supplier agent: an order with items, rates in the supplier's yes, a delivery with a challan photo read by Muse Spark, the supervisor's own count on arrival (48 of 50 bags becomes a dispute, not an argument), then bill, payment and settlement.
+The material flow is the same with a supplier agent: an order with items, rates in the supplier's yes, a delivery with a challan photo read by Muse Spark, the supervisor's own count on arrival (48 of 50 bags becomes a dispute, not an argument), then bill, payment and settlement. On a JCB job the supervisor's hours are optional (`J-2 6 घंटे`) and nobody is asked for them: when they differ from the bill the contractor sees both figures, and with none recorded the bill rests on the meter photos alone.
 GST is part of the bill: the rate comes from the supplier's yes ("हाँ 380 + 28%") or from the tax invoice Muse Spark reads, code adds CGST + SGST to the paisa and checks the total against the invoice's grand total.
 
 **Nothing is booked, sent, accepted, corrected or settled without the explicit WhatsApp reply of the person allowed to decide it.** There are no payment reminders and no chasing; the JCB owner sees "unpaid", the agent never nags.
@@ -109,7 +109,7 @@ The figure that matters most is the "wrong but confident" column: across all rea
 
 Not yet measured: UPI on unseen screenshots and other UPI apps, the challan reader and the photo-kind reader on real challans. Sample sizes are small and stated as such.
 
-**Tests:** 000 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and the repeat is answered with a fresh receipt for the same entry), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, exact replies and clear photos that act at once, evidence exchange with hash checks, the site's signed copy, the explanation and answer checks, and the judge page's file serving.
+**Tests:** 956 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and the repeat is answered with a fresh receipt for the same entry), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, exact replies and clear photos that act at once, evidence exchange with hash checks, the site's signed copy, the explanation and answer checks, and the judge page's file serving.
 
 ## What works today, honestly
 
@@ -129,7 +129,7 @@ An independent audit found no critical or high issue. A later AI red-team review
 - **A person who stays silent gets nothing.** There are no template messages, so someone who has not written in the last 24 hours cannot be sent a notice, and there are no reminders. When they next write, each agent first tells them what is still open and waiting for them, rebuilt from its ledger: for the contractor a bill or correction in force and an approval request, for the supervisor a delivery waiting for the count, for both another day a seller offered, for the sellers an open order, objection or reported payment. Notices that only inform (a settlement, a cancellation, a count told) are not told again.
 - **An approval is stored before its order runs.** A crash in that moment leaves it approved and never sent, with no automatic retry.
 - **A combined payment's split is worked out again at the "हाँ".** If a bill changes after the read-back, the split recorded can differ from the one shown.
-- **A wrong count can still be entered.** The agent cannot know what actually reached the site. The contractor is told each supervisor count that equals the challan, and whether it was a plain yes, typed figures or a photo, and can object when the bill comes; nothing stops a false figure being entered, and a plain yes proves nobody counted.
+- **A wrong count can still be entered.** The agent cannot know what actually reached the site. The contractor is told each supervisor count that equals the challan, and whether it was a plain yes, typed figures or a photo, and can object when the bill comes; nothing stops a false figure being entered, and a plain yes proves nobody counted. The same goes for a JCB job's hours, which also cannot be changed once entered: a mistake there shows as a difference when the bill comes.
 - **A supervisor can split one need into several orders under the approval limit.** The contractor is told of each order, but they are not added up against the limit.
 - **All three agents run in one process on one host.** They keep separate keys and ledgers and talk only over A2A, but a compromise of that host reaches all three.
 - **The cross-check through receipts reaches only as far as the last receipt.** Rows written after the last receipt from that peer can't be checked, so their edit or deletion goes unseen until a later receipt names a head after them; a seller's own sent bill is among those rows until it next receives a message.
