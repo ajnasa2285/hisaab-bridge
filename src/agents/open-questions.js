@@ -34,7 +34,7 @@ export function openQuestions(ledger, role) {
       const bill = view.currentBill ? ledger.eventOfMessage(view.currentBill)?.body.body : null;
       const units = delivery(events)?.items ?? [];
       const lines = (bill?.lines ?? []).map((/** @type {any} */ l, /** @type {number} */ i) => (l.hoursTenths !== undefined ? `JCB ${tenths(l.hoursTenths)} hours` : `"${l.what}" ${qty(l.qtyHundredths, units[i]?.unit ?? '')}`.trim()));
-      add(['accept_bill', 'dispute_bill'], view.currentBill, `The bill of ${where}: ${lines.join(', ')}, total ${rupees(view.billTotalPaise ?? 0)}. They were asked to accept it, or to object with their own figure and reason.`);
+      add(['accept_bill', 'dispute_bill'], view.currentBill, `The bill of ${where}: ${lines.join(', ')}, total ${rupees(view.billTotalPaise ?? 0)}. They were asked to accept it, or to object with their own figure and reason. Item names of this bill with quantities and no site or day are their own figures: an objection (their_items), not a new request.`);
     }
     if (role === 'supervisor' && view.state === 'delivered' && siteCount(events) === null) {
       add(['confirm_count'], lastIn('DELIVERY'), `The delivery of ${where}: ${items(delivery(events)?.items ?? [])}. They were asked to count what came, one figure per item in this order.`);

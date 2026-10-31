@@ -5,7 +5,7 @@
 // job and checks everything again; the model never decides who may do what, never computes, never
 // sends.
 
-import { blank, dayWord, parseAmountPaise, parseHundredths, parsePaise, parseQuantity, parseTenths, parseTime, resolveDay } from './units.js';
+import { blank, dayWord, parseAmountPaise, parseHundredths, parsePaise, parseQuantity, parseRatePaise, parseTenths, parseTime, resolveDay } from './units.js';
 import { isGstPercent, itemsText, siteCount } from '../agents/material.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
 import { MAX_UNIT, safeName } from '../protocol/names.js';
@@ -41,8 +41,8 @@ const todayIn = (nowMs) => new Date(nowMs + 330 * 60 * 1000).toISOString().slice
 
 const ORDER = { type: ['string', 'null'], maxLength: 8, description: 'The job reference like "J-1" or "P-2" from the list, or null if the person did not say which.' };
 const NULLABLE_TEXT = (/** @type {number} */ max, /** @type {string} */ description) => ({ type: ['string', 'null'], maxLength: max, description });
-const FIGURES = (/** @type {boolean} */ nullable, /** @type {string} */ description) => ({
-  type: nullable ? ['array', 'null'] : 'array', minItems: 1, maxItems: 20, items: { type: 'string', maxLength: 12 }, description,
+const FIGURES = (/** @type {boolean} */ nullable, /** @type {string} */ description, maxLength = 12) => ({
+  type: nullable ? ['array', 'null'] : 'array', minItems: 1, maxItems: 20, items: { type: 'string', maxLength }, description,
 });
 
 /**
@@ -143,14 +143,14 @@ export const SPECS = [
     properties: {
       order: ORDER,
       answer: { type: 'string', enum: ['yes', 'no', 'other_time'] },
-      rate_rupees_per_hour: NULLABLE_TEXT(12, 'Hourly rate in rupees exactly as written, digits only, or null.'),
+      rate_rupees_per_hour: NULLABLE_TEXT(30, 'Hourly rate in rupees exactly as written, in digits or in number words like "बारह सौ", or null.'),
       day: NULLABLE_TEXT(10, "Only for other_time: 'today', 'tomorrow', 'day_after' or the date as written like '30-10'; else null."),
       time: NULLABLE_TEXT(5, 'Start time as written like "8" or "08:30", or null.'),
     },
     toArgs: (a, ctx) => {
       const out = /** @type {Record<string, any>} */ ({ answer: a.answer });
       if (!blank(a.rate_rupees_per_hour)) {
-        const p = parsePaise(a.rate_rupees_per_hour);
+        const p = parseRatePaise(a.rate_rupees_per_hour);
         if (p === null) return null;
         out.ratePaise = p;
       }
@@ -204,7 +204,7 @@ export const SPECS = [
     properties: {
       order: ORDER,
       answer: { type: 'string', enum: ['yes', 'no', 'other_time'] },
-      rates_rupees: FIGURES(true, "Only for yes: the rate in rupees per unit for each item, in the order of the job's items, digits exactly as written; else null."),
+      rates_rupees: FIGURES(true, "Only for yes: the rate in rupees per unit for each item, in the order of the job's items, exactly as written, in digits or number words; else null.", 30),
       gst_percents: { type: ['array', 'null'], minItems: 1, maxItems: 20, items: { type: ['string', 'null'], maxLength: 4 },
         description: 'Only when the supplier names GST: the GST percent written for each rate, in the same order, digits only like "28" (null for a rate without GST); else null.' },
       day: NULLABLE_TEXT(10, "Only for other_time: 'today', 'tomorrow', 'day_after' or the date as written like '30-10'; else null."),
@@ -213,7 +213,7 @@ export const SPECS = [
     toArgs: (a, ctx) => {
       const out = /** @type {Record<string, any>} */ ({ answer: a.answer });
       if (!blank(a.rates_rupees)) {
-        const r = figures(a.rates_rupees, parsePaise, false);
+        const r = figures(a.rates_rupees, parseRatePaise, false);
         if (r === null) return null;
         out.ratesPaise = r;
       }

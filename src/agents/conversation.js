@@ -32,10 +32,10 @@
 
 import { createHash } from 'node:crypto';
 import { answerOpen, fillStep, proposeStep, orderRefs, shareFilled } from '../orchestrator/orchestrator.js';
-import { parseHundredthsList, parseQuantity } from '../orchestrator/units.js';
+import { blank, parseHundredthsList, parseQuantity } from '../orchestrator/units.js';
 import { impossible, meterReadings, MAX_JOB_TENTHS } from './jcb.js';
 import { displayDateWrong, jobDay } from './meter-guard.js';
-import { agreedRates, challanQuantities, countDifferences, delivery, disputedItems, invoiceFromReading, itemsText, requestedItems, sameChallanNo, siteCount, unitFromOrder } from './material.js';
+import { agreedRates, billLineNamed, challanQuantities, countDifferences, delivery, disputedItems, invoiceFromReading, itemsText, requestedItems, sameChallanNo, siteCount, unitFromOrder } from './material.js';
 import { exactReply, saysCash, yesNo } from './replies.js';
 import { balanceText, owedPaise, payableOrders, paymentLine, shares, summaryOf, todayIst, utrUses } from './pay.js';
 import { openRefs, parseRef, refsIn } from '../ledger/refs.js';
@@ -686,6 +686,13 @@ export function createConversation(o) {
       if (answer) return onProposal(person, text, answer);
     }
     const proposal = await proposeStep({ spark: o.spark, person, text, orders: orderRefs(o.ledger), nowMs: o.now(), ask: true });
+    // Code's rule, whatever the model said (live, 31 Oct, both runs): with a bill question open, the bill's
+    // own items with figures and no site, day or time are the person's figures for that bill, not an order.
+    const figures = question && named.length === 0 && question.tools.includes('dispute_bill') ? billFiguresIn(proposal, question.orderId) : null;
+    if (question && figures) {
+      traceCheck(`a new order with the bill's own items and no site or day ✗ → read as the objection to ${question.ref}`, false, { name: 'order_or_objection' }, question.orderId);
+      return disputeByItems(person, text, { orderId: question.orderId, itemFigures: figures, reason: text.trim().slice(0, 300) });
+    }
     if (proposal.kind === 'ask') {
       // Read-only: the answer is only said; it never becomes a step, a pending question or a ledger entry.
       const r = await answerQuestion({ spark: o.spark, ledger: o.ledger, person, question: text, nowMs: o.now() });
@@ -707,6 +714,8 @@ export function createConversation(o) {
       return twoRequests(person, text, shareFilled({ person, orders: orderRefs(o.ledger), nowMs: o.now() }, parts));
     }
     if (proposal.kind === 'step' && proposal.tool === 'dispute_bill' && (proposal.args.itemFigures || (proposal.args.qtyHundredths && billLines(proposal.args.orderId).length > 1))) return disputeByItems(person, text, proposal.args);
+    const noRate = proposal.kind === 'step' ? rateMissing(proposal) : null;
+    if (noRate) return o.reply(person, noRate.key, noRate.params);
     if (proposal.kind === 'help') return o.reply(person, `help.${person.role}`);
     if (proposal.kind === 'none') return o.reply(person, proposal.key);
     if (proposal.kind === 'ask') return o.reply(person, 'common.unknown_step');
@@ -720,6 +729,41 @@ export function createConversation(o) {
       return o.reply(person, 'ask.missing', { questions: askText(proposal.args, proposal.missing) });
     }
     return stepsReady(person, [{ tool: proposal.tool, args: proposal.args }]);
+  }
+
+  /**
+   * A material request with no site, day or time whose every item, with a figure, is a line of this
+   * order's bill: those figures, under the bill's own names. Null for anything else.
+   * @param {import('../orchestrator/orchestrator.js').Proposal} proposal @param {string} orderId
+   * @returns {{item: string, quantity: string}[] | null}
+   */
+  function billFiguresIn(proposal, orderId) {
+    if (proposal.kind !== 'missing' || proposal.tool !== 'request_material') return null;
+    const { site, day, time, items } = proposal.raw;
+    if (!blank(site) || !blank(day) || !blank(time) || !Array.isArray(items) || items.length === 0) return null;
+    const lines = billLines(orderId);
+    /** @type {{item: string, quantity: string}[]} */
+    const out = [];
+    for (const it of items) {
+      const line = billLineNamed(lines, it?.name);
+      if (!line || typeof it.quantity !== 'string' || blank(it.quantity)) return null;
+      out.push({ item: line.what, quantity: it.quantity });
+    }
+    return out;
+  }
+
+  /**
+   * A seller's yes understood without its rate, or with too few: the rate is asked for now, never read
+   * back with a dash (live, 31 Oct). Null when the step has what it needs.
+   * @param {{tool: string, args: Record<string, any>}} step
+   * @returns {{key: string, params?: Record<string, string>} | null}
+   */
+  function rateMissing(step) {
+    if (step.args.answer !== 'yes') return null;
+    if (step.tool === 'reply_booking') return step.args.ratePaise ? null : { key: 'jcb.rate_needed' };
+    if (step.tool !== 'reply_order') return null;
+    const asked = requestedItems(o.ledger.events(step.args.orderId));
+    return step.args.ratesPaise?.length === asked.length ? null : { key: 'supplier.rates_needed', params: { items: itemsText(asked) } };
   }
 
   /** The lines of the bill in force. @param {string} orderId @returns {any[]} */

@@ -314,6 +314,24 @@ const SAME_MATERIAL = {
   'गिट्टी': 'gitti', 'ईंट': 'brick', 'ईंटें': 'brick', bricks: 'brick', 'सरिया': 'steel', sariya: 'steel',
 };
 
+/** Do these two names (normalised) say the same material, by their words? @param {string} a @param {string} b */
+function sameMaterial(a, b) {
+  const words = (/** @type {string} */ s) => s.split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean).map((w) => SAME_MATERIAL[w] ?? w);
+  const [x, y] = [words(a), words(b)];
+  return x.length > 0 && y.length > 0 && (y.every((w) => x.includes(w)) || x.every((w) => y.includes(w)));
+}
+
+/**
+ * The one bill line this name says ("Cement" is the line "सीमेंट"), or null when none or several.
+ * @template {{what: string}} L
+ * @param {L[]} lines @param {unknown} name @returns {L | null}
+ */
+export function billLineNamed(lines, name) {
+  if (typeof name !== 'string') return null;
+  const hits = lines.filter((l) => sameMaterial(norm(l.what), norm(name)));
+  return hits.length === 1 ? hits[0] : null;
+}
+
 /**
  * The challan line read for each of the order's items (undefined where none), each line used once: by
  * name, then by the words of the name ("ACC Cement (Bags)" is the order's "cement"), and when the
@@ -339,12 +357,7 @@ export function challanMatches(orderItems, seen) {
     free.delete(hits[0]);
   });
   pass((a, b) => a === b);
-  /** @param {string} s */
-  const words = (s) => s.split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean).map((w) => SAME_MATERIAL[w] ?? w);
-  pass((a, b) => {
-    const [x, y] = [words(a), words(b)];
-    return x.length > 0 && y.length > 0 && (y.every((w) => x.includes(w)) || x.every((w) => y.includes(w)));
-  });
+  pass(sameMaterial);
   const left = found.flatMap((f, i) => (f ? [] : [i]));
   if (seen.length === orderItems.length && left.length === 1 && free.size === 1) found[left[0]] = [...free][0];
   return found;

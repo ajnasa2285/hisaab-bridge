@@ -10,6 +10,7 @@ import { createOffice } from '../../src/agents/office.js';
 import { exactReply } from '../../src/agents/replies.js';
 import { runTool } from '../../src/agents/common.js';
 import { t } from '../../src/i18n/index.js';
+import { parseRatePaise } from '../../src/orchestrator/units.js';
 import { setup, person } from './helpers.js';
 
 const contractor = { ...person('contractor', 'agent:contractor-1'), phone: '919000000061' };
@@ -460,4 +461,118 @@ test('a bill with no question open (the site counted differently): the notice sa
   assert.equal(d.s.siteCore.ledger.view(id).state, 'accepted');
   const mismatch = t('site.material_bill_mismatch', { ref: 'P-4', site: 'x', lines: 'x', total: 'x', expected: 'x', expectedTotal: 'x', example: '1' });
   assert.ok(mismatch.includes('मंज़ूर हो तो "हाँ P-4" लिखें'), mismatch);
+});
+
+/** What Muse did live, twice, on 4babf3c: not an answer, then a new order with no site and no day. @param {[string, string | null][]} items @param {{site?: string | null, day?: string | null, time?: string | null}} [o] */
+const newOrderCalls = (items, o = {}) => [[NOT_ANSWER], [{ name: 'request_material', args: { site: o.site ?? null, day: o.day ?? null, time: o.time ?? null, items: items.map(([name, quantity]) => ({ name, quantity, unit: 'बोरी' })) } }]];
+
+test('live again: item names of the bill with figures, no site, no day: code makes it the objection, whatever the model said', async (tc) => {
+  const d = await desk(tc);
+  const id = await billed(d);
+  const orders = d.s.siteCore.ledger.orders().length;
+  await d.say(contractor, 'Cement 50 bori, sand 40 ton', ...newOrderCalls([['Cement', '50'], ['sand', '40']]));
+  const back = d.last('contractor');
+  assert.equal(back?.[1], 'step.dispute_bill_items');
+  assert.ok(back?.[2].includes('₹54,420'), back?.[2]);
+  await d.say(contractor, 'हाँ');
+  assert.deepEqual(disputes(d, id)[0].body.body.theirFigure, { totalPaise: 5442000 });
+  assert.equal(disputes(d, id)[0].body.body.reason, 'Cement 50 bori, sand 40 ton');
+  assert.equal(d.s.siteCore.ledger.orders().length, orders, 'no new order');
+});
+
+test('the same rule: every figure equal to the bill is told so', async (tc) => {
+  const d = await desk(tc);
+  await billed(d);
+  await d.say(contractor, 'Cement 40 bori', ...newOrderCalls([['Cement', '40']]));
+  assert.equal(d.last('contractor')?.[1], 'site.dispute_same');
+});
+
+test('the same rule: a figure not in the person\'s words is asked about', async (tc) => {
+  const d = await desk(tc);
+  await billed(d);
+  await d.say(contractor, 'Cement 50 bori', ...newOrderCalls([['Cement', '55']]));
+  assert.equal(d.last('contractor')?.[1], 'site.dispute_which_item');
+});
+
+for (const [why, calls, text] of /** @type {[string, any[], string][]} */ ([
+  ['a site', newOrderCalls([['Cement', '50']], { site: 'Shivpuri' }), 'Shivpuri par cement 50 bori'],
+  ['a day', newOrderCalls([['Cement', '50']], { day: 'tomorrow' }), 'kal cement 50 bori'],
+  ['a time', newOrderCalls([['Cement', '50']], { time: '8' }), '8 baje cement 50 bori'],
+  ['an item not on the bill', newOrderCalls([['Cement', '50'], ['गिट्टी', '40']]), 'cement 50 गिट्टी 40'],
+  ['an item with no figure', newOrderCalls([['Cement', null]]), 'cement bhejo'],
+])) {
+  test(`with ${why} it stays a new order`, async (tc) => {
+    const d = await desk(tc);
+    const id = await billed(d);
+    await d.say(contractor, text, ...calls);
+    assert.ok(['ask.missing', 'step.request_material', 'site.which_site'].includes(/** @type {string} */ (d.said.filter((x) => x[0] === 'contractor').at(-2)?.[1])) || ['ask.missing', 'step.request_material'].includes(/** @type {string} */ (d.last('contractor')?.[1])), d.keys('contractor').join());
+    assert.ok(!d.keys('contractor').some((k) => k.startsWith('step.dispute') || k.startsWith('site.dispute')));
+    assert.equal(disputes(d, id).length, 0);
+  });
+}
+
+test('a reference named: the rule does not apply', async (tc) => {
+  const d = await desk(tc);
+  await billed(d);
+  await d.say(contractor, 'P-1 cement 50 bori', ...newOrderCalls([['Cement', '50']]));
+  assert.ok(!d.keys('contractor').some((k) => k.startsWith('step.dispute')), d.keys('contractor').join());
+});
+
+test('no bill question open: as today, a new order', async (tc) => {
+  const d = await desk(tc);
+  await d.say(contractor, 'Cement 50 bori', [{ name: 'request_material', args: { site: null, day: null, time: null, items: [{ name: 'Cement', quantity: '50', unit: 'bori' }] } }]);
+  assert.equal(d.last('contractor')?.[1], 'ask.missing');
+});
+
+test('the supervisor, with a bill open: a new order, never the objection', async (tc) => {
+  const d = await desk(tc);
+  const id = await billed(d);
+  await d.say(supervisor, 'Cement 50 bori', [{ name: 'request_material', args: { site: null, day: null, time: null, items: [{ name: 'Cement', quantity: '50', unit: 'bori' }] } }]);
+  assert.ok(!d.keys('supervisor').some((k) => k.startsWith('step.dispute')));
+  assert.equal(disputes(d, id).length, 0);
+});
+
+test('a JCB yes with no rate asks for the rate, never a read-back with a dash', async (tc) => {
+  const d = await desk(tc);
+  assert.equal((await runTool(d.s.site.tools, contractor, { tool: 'request_jcb', args: { site: 'Invented Site', day: '2026-11-02' } })).ok, true);
+  await settle();
+  await d.say(owner, 'कर देंगे, बारह सौ घंटा लगेगा', [{ name: 'reply_booking', args: { answer: 'yes', rate_rupees_per_hour: null, day: null, time: null } }]);
+  assert.equal(d.last('jcb_owner')?.[1], 'jcb.rate_needed');
+  assert.equal(d.talks.jcb_owner.pending(owner), null, 'nothing to say हाँ to');
+  await d.say(owner, 'हाँ 1200');
+  assert.equal(d.last('jcb_owner')?.[1], 'jcb.reply_sent_yes');
+});
+
+test('a JCB rate in words the model copied is read back in figures', async (tc) => {
+  const d = await desk(tc);
+  assert.equal((await runTool(d.s.site.tools, contractor, { tool: 'request_jcb', args: { site: 'Invented Site', day: '2026-11-02' } })).ok, true);
+  await settle();
+  await d.say(owner, 'कर देंगे, बारह सौ घंटा लगेगा', [{ name: 'reply_booking', args: { answer: 'yes', rate_rupees_per_hour: 'बारह सौ', day: null, time: null } }]);
+  assert.equal(d.last('jcb_owner')?.[1], 'step.reply_booking_yes');
+  assert.ok(d.last('jcb_owner')?.[2].includes('₹1,200'), d.last('jcb_owner')?.[2]);
+});
+
+test('a supplier yes with a rate missing, or too few, asks for the rates naming the items', async (tc) => {
+  const d = await desk(tc);
+  assert.equal((await runTool(d.s.site.tools, contractor, { tool: 'request_material', args: { site: 'Invented Site', day: '2026-11-02', items: ITEMS } })).ok, true);
+  await settle();
+  for (const rates of [null, ['380']]) {
+    await d.say(supplier, 'दे देंगे', [{ name: 'reply_order', args: { answer: 'yes', rates_rupees: rates, gst_percents: null, day: null, time: null } }]);
+    const r = d.last('supplier');
+    assert.equal(r?.[1], 'supplier.rates_needed');
+    assert.ok(r?.[2].includes('सीमेंट') && !r?.[2].includes('—'), r?.[2]);
+    assert.equal(d.talks.supplier.pending(supplier), null);
+  }
+  await d.say(supplier, 'दे देंगे', [{ name: 'reply_order', args: { answer: 'yes', rates_rupees: ['तीन सौ अस्सी', '800'], gst_percents: null, day: null, time: null } }]);
+  assert.equal(d.last('supplier')?.[1], 'step.reply_order_yes');
+  assert.ok(d.last('supplier')?.[2].includes('₹380'), d.last('supplier')?.[2]);
+});
+
+test('a rate in words: only whole rupees; digits as before', () => {
+  assert.equal(parseRatePaise('बारह सौ'), 120000);
+  assert.equal(parseRatePaise('डेढ़ हज़ार'), 150000);
+  assert.equal(parseRatePaise('1,200'), 120000);
+  assert.equal(parseRatePaise('350.50'), 35050);
+  assert.equal(parseRatePaise('साढ़े चार'), null, 'could be ₹4.50 or ₹4,500');
+  assert.equal(parseRatePaise('कुछ'), null);
 });

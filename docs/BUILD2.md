@@ -733,5 +733,9 @@ person's whole message is the reason. A figure that cannot be tied is asked abou
 
 **`हाँ P-4` and `नहीं P-4 ...` from the contractor** decide an approval while a step for that reference waits. With none waiting and the order billed or disputed they are about the bill: `हाँ` reads back `accept_bill`, bound to the bill in force, and `नहीं` goes to the objection. The notices of a bill with no open question (`site.material_bill_mismatch`, `site.material_bill_count_differs`) say so.
 
+**Code's rule on an objection.** With a bill question open and no reference, a `request_material` with no site, day or time whose every item, with a figure, is a line of that bill is the objection, whatever the model chose (live, both runs). It gets the same checks and read-back. With a site, day or time, or any other item, it stays a new order.
+
+**A seller's yes without its rate** is asked for (`jcb.rate_needed`, `supplier.rates_needed`), never read back with a dash. A rate in number words counts only when it comes to whole rupees (`parseRatePaise`).
+
 **The count** is recorded once and never with a bill in force: not offered to the model, refused by reference and at the tool. A different
 figure afterwards is an objection to the bill.

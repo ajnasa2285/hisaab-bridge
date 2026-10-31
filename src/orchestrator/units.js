@@ -55,8 +55,7 @@ export function parsePaise(s) {
 /**
  * A payment amount: digits as parsePaise, or said in words as a voice note gives it (live, 30 Oct:
  * "पंद्रह हजार", "15 हज़ार", "do hazar paanch sau rupaye"), read like a quantity in rupees, so
- * hundredths of a rupee are paise. Only for amounts paid, which are read back before they are sent;
- * rates stay digits only ("साढ़े चार" could be ₹4.50 or ₹4,500). Not exactly a number: null.
+ * hundredths of a rupee are paise. Read back before anything is sent. Not exactly a number: null.
  * @param {unknown} s
  */
 export function parseAmountPaise(s) {
@@ -65,6 +64,18 @@ export function parseAmountPaise(s) {
   const said = s.trim().replace(/^₹\s*/, '').replace(/\s*(?:रुपये|रुपए|रुपया|rupaye|rupaiye|rupees|rupay|rs\.?)$/iu, '');
   const h = said ? parseQuantity(said) : null;
   return h !== null && h > 0 && Number.isSafeInteger(h) ? h : null;
+}
+
+/**
+ * A rate: digits as parsePaise, or words only when they come to whole rupees ("बारह सौ" is ₹1,200, read
+ * back in figures; "साढ़े चार" could be ₹4.50 or ₹4,500, so it is not a rate). Not exactly a number: null.
+ * @param {unknown} s
+ */
+export function parseRatePaise(s) {
+  const digits = parsePaise(s);
+  if (digits !== null) return digits;
+  const said = parseAmountPaise(s);
+  return said !== null && said % 100 === 0 ? said : null;
 }
 
 /**
