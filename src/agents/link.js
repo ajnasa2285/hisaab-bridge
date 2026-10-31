@@ -1,6 +1,7 @@
 // Delivering our signed messages to the other agent and keeping its answers. A message is written
 // to our ledger before it leaves (prepare); if the other side cannot be reached it stays pending and
-// is delivered again later, unchanged: the receiver answers a repeat with the same receipt. Past its
+// is delivered again later, unchanged: the receiver does not apply a repeat twice and answers it with a
+// fresh receipt for the same entry. Past its
 // expiry the other side may still have applied it (only the answer was lost), so it keeps going at a
 // slower pace and only a signed answer decides: a receipt means it counts, EXPIRED means it was never seen.
 

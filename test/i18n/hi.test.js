@@ -7,7 +7,7 @@ const DEVANAGARI = /[ऀ-ॿ]/;
 const LATIN_WORD = /[A-Za-z]+/g;
 const ALLOWED_LATIN = new Set(['JCB', 'UPI', 'UTR', 'OK', 'GST']);
 // Keys whose text is legitimately without Devanagari.
-const NO_DEVANAGARI_OK = new Set(['account.none', 'kind.jcb', 'bill.line', 'request.list_line', 'account.line', 'account.material', 'explain.wrapper', 'office.stock_line', 'office.pending_order', 'bill.line_gst', 'bill.rate_gst']);
+const NO_DEVANAGARI_OK = new Set(['account.none', 'kind.jcb', 'bill.line', 'request.list_line', 'account.line', 'account.material', 'explain.wrapper', 'office.stock_line', 'office.pending_order', 'office.pending_order_plain', 'records.fig.order_plain', 'bill.line_gst', 'bill.rate_gst']);
 // Order references as written in examples ("J-1", "P-2") are Latin by design (docs/BUILD2.md section 4).
 const REF_EXAMPLE = /\b[JP]-\d+\b/g;
 // AGENTS.md rule 9: status only, never a nudge to pay.
@@ -31,7 +31,7 @@ const SAMPLE = { word: 'नमूना-word', words: 'नमूना-words',
   by: 'मोहन', estimate: '₹12,000', materials: 'सीमेंट 50 बोरी', billed: '₹7,320', paid: '—', pending: '₹7,320',
   disputes: 0, name: 'सीमेंट', their: '5.5 घंटे', photos: 2, percent: 28, gst: '₹5,320', invoiceTotal: '₹24,320', example: '48 बोरी', taxable: '₹19,000',
   rates: 'सीमेंट ₹350/बोरी', count: 'सीमेंट 48 बोरी', expected: 'सीमेंट 50 बोरी × ₹350 = ₹17,500',
-  expectedTotal: '₹17,500', siteTotal: '₹16,800', item: 'सरिया (टन)',
+  expectedTotal: '₹17,500', agreedRate: '₹1,250', siteTotal: '₹16,800', item: 'सरिया (टन)',
   ref: 'J-1', step: 'शिवपुरी पर 29 अक्टूबर 2026 को 8 बजे से 6 घंटे के लिए JCB माँगें?', note: 'ठीक है', decision: 'मंज़ूर',
   awaited: 'बिल का इंतज़ार', bill: '₹7,320', challan: '50 बोरी',
   names: 'बालू (cft), गिट्टी (brass)', siteNo: '96', challanNo: '97', questions: 'किस साइट पर?', forms: '"UPI" / "चालान"', kinds: 'UPI भुगतान, चालान',
@@ -178,6 +178,10 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'site.count_closed': [], 'site.dispute_which_item': ['ref', 'items'], 'site.dispute_same': ['ref', 'total'], 'site.dispute_format': ['example'], 'site.dispute_already': ['ref'], 'answer.unclear': ['ref'], 'step.dispute_bill_items': ['ref', 'site', 'items', 'total', 'reason'], 'site.material_bill_received': ['yes', 'ref', 'site', 'lines', 'total', 'photos', 'example'],
     'site.material_correction_received': ['yes', 'ref', 'site', 'lines', 'total', 'photos', 'example'],
     'site.material_bill_mismatch': ['ref', 'site', 'lines', 'total', 'expected', 'expectedTotal', 'example'],
+    'site.bill_mismatch': ['ref', 'site', 'hours', 'rate', 'total', 'agreedRate', 'expectedTotal', 'example'], 'site.bill_changed_check_jcb': ['ref', 'site', 'bill', 'total'],
+    'office.approved_later': ['ref', 'by', 'step', 'state'], 'office.approved_later_note': ['ref', 'by', 'step', 'state', 'note'], 'office.held_not_run': [],
+    'office.status_plain': ['ref', 'what', 'site', 'day', 'state', 'awaited'], 'office.pending_order_plain': ['ref', 'what', 'site', 'awaited'],
+    'records.fig.order_plain': ['ref', 'what', 'site', 'day', 'state'],
     'site.material_bill_no_count': ['ref', 'site', 'lines', 'total', 'example'], 'site.material_bill_no_count_invoice_differs': ['ref', 'site', 'lines', 'total', 'example', 'invoiceTotal'],
     'site.material_bill_count_differs': ['ref', 'site', 'lines', 'total', 'count', 'siteTotal', 'example'], 'site.material_bill_accepted': ['ref', 'site'],
     'site.material_bill_disputed': ['ref', 'site'], 'site.material_figure_needed': [], 'site.material_total_only': [], 'site.material_payment_claimed': ['ref', 'payment'],

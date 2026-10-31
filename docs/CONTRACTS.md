@@ -197,7 +197,7 @@ Every message between agents:
 }
 ```
 
-Signature: Ed25519 over the RFC 8785 canonical JSON of the message without `sig`. Receiver checks, in this order: version → known sender → signature → addressed to me → a repeat (`msg_id`, exact match) gets its original answer whatever its expiry → not expired → at most 64 KiB (except `EVIDENCE`) → type allowed for this pair → order state allows it → apply → signed `RECEIPT` (a `RECEIPT` received must itself name a message of that order). A request failing sender authentication (`UNSUPPORTED`, `NOT_CONNECTED`, `BAD_SIGNATURE`) gets the unsigned `{type: 'ERROR', code}`, which the sender treats as no answer. A refusal counts only as the direct answer to a message just delivered, never for a message with a `RECEIPT` or with later events depending on it; on its own only an evidence refusal is accepted (`declined_by_owner`, `not_kept`, `no_such_record` for our `EVIDENCE_REQUEST`, any for our `EVIDENCE`). Refusals stored earlier keep their meaning. A refusal returns a signed `REFUSE` with a code only: `UNSUPPORTED`, `NOT_CONNECTED`, `BAD_SIGNATURE`, `NOT_FOR_ME`, `EXPIRED`, `WRONG_STATE`, `BAD_BODY`; for evidence also `no_such_record`, `not_party`, `not_kept` and `declined_by_owner` (below).
+Signature: Ed25519 over the RFC 8785 canonical JSON of the message without `sig`. Receiver checks, in this order: version → known sender → signature → addressed to me → a repeat (`msg_id`, exact match) is not applied twice and is answered whatever its expiry, with a fresh `RECEIPT` for the same entry (new `msg_id` and time, the same `entry_hash`, `chain_head` as it is now; receipts sent are not stored) or the evidence answer kept → not expired → at most 64 KiB (except `EVIDENCE`) → type allowed for this pair → order state allows it → apply → signed `RECEIPT` (a `RECEIPT` received must itself name a message of that order). A request failing sender authentication (`UNSUPPORTED`, `NOT_CONNECTED`, `BAD_SIGNATURE`) gets the unsigned `{type: 'ERROR', code}`, which the sender treats as no answer. A refusal counts only as the direct answer to a message just delivered, never for a message with a `RECEIPT` or with later events depending on it; on its own only an evidence refusal is accepted (`declined_by_owner`, `not_kept`, `no_such_record` for our `EVIDENCE_REQUEST`, any for our `EVIDENCE`). Refusals stored earlier keep their meaning. A refusal returns a signed `REFUSE` with a code only: `UNSUPPORTED`, `NOT_CONNECTED`, `BAD_SIGNATURE`, `NOT_FOR_ME`, `EXPIRED`, `WRONG_STATE`, `BAD_BODY`; for evidence also `no_such_record`, `not_party`, `not_kept` and `declined_by_owner` (below).
 
 | Type | From → to | Body |
 |---|---|---|
@@ -228,8 +228,8 @@ message to the requester; "नहीं" sends a signed `REFUSE {refers_to: requ
 'declined_by_owner'}`. No reason is asked, nothing is sent again. No answer within the question's
 window (30 minutes) sends nothing. The decision is a local `NOTE {kind: 'evidence_consent', request:
 msg_id, answer: 'yes'|'no', by: role}` written before anything leaves; `prepare` refuses an
-`EVIDENCE` without a `yes` for that exact request. A repeat of a request gets the same answer as
-before: the receipt while undecided, then the same `EVIDENCE` (bytes re-read and re-checked) or the
+`EVIDENCE` without a `yes` for that exact request. A repeat of a request is answered again: a
+fresh receipt for the same entry while undecided, then the same `EVIDENCE` (bytes re-read and re-checked) or the
 same `REFUSE`. A consented `EVIDENCE` that could not be delivered stays pending and is delivered
 again with its bytes taken from the private store.
 The requester must already have the expected hash in its own ledger. The received bytes must hash

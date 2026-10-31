@@ -247,7 +247,9 @@ Muse Spark plans and phrases; code produces every figure (`src/agents/ask.js`).
   error the model sees, never a guess.
 * **Who may ask what** follows the exact commands (`office.js`): everyone may see orders and one
   order (as `status` and `pending`); the contractor, supervisor, JCB owner and supplier also totals
-  and payments; `stock` only on the contractor agent; the operator gets only orders and one order.
+  and payments; `stock` only on the contractor agent; the operator gets only orders and one order,
+  each as its order, site, day and state, with no rate, bill, balance or payment (nor do `status` and
+  `pending` show them), so none of it reaches the model.
   The model sees only the lookups allowed; one named anyway is refused by code.
 * **The loop.** At most 4 lookups, in sequence (independent ones may come in one round), then
   `answer` (Hindi, at most 400 characters); a fifth round offers only `answer`. `reasoning_effort:
@@ -763,3 +765,9 @@ A notice told again sets no expectation, because the person's own message runs a
 **On copies.** `node src/ledger/check-files.js jcb=<file> site=<file> supplier=<file>`, with `<name>.key=ed25519:...` to check signatures too. Exit 0 agrees, 1 does not, 2 wrong use or not checked.
 
 **What it still cannot see.** Rows written after the last receipt from that peer, which include a seller's own sent bill until it next receives a message. Three agents with their keys on one server: someone with full server access can rewrite all three ledgers and re-sign them consistently, and only a copy of the chain heads held off the server would catch that, which is not built. Rows with no receipt relation (local notes) are covered only by the chain, so an edit to one shows only if a later receipt names a head after it. Nothing here changes how hashes are computed or any existing row, and no protocol message is added.
+
+**A JCB bill is checked too.** On a BILL or CORRECTION for a JCB order the contractor's agent checks the rate against the one in the JCB owner's yes on that order, and the amount against hours × that rate (rounded as `jcbBillBody` does). A correction may change the hours, never the rate. One that does not follow is told with both figures (`site.bill_mismatch`), to the contractor only, with no one-word "हाँ" (it asks for `हाँ J-1`), also when told again. The trace check is `bill_follows`, as for material. The hours are not checked here: the meter readings are on the owner's side, and the photos come with the bill.
+
+**A repeat gets a fresh receipt.** A receipt sent is not kept in the receiver's ledger, and keeping it would change the ledger's chain. So a repeat is not applied twice and is answered with a new `RECEIPT` for the same entry: new id and time, the same `entry_hash`, and `chain_head` as it stands at that moment, not as it stood when the entry was written.
+
+**Approval results outside the window.** `office.declined`, and an approval with its result, are remembered as missed under the held step's reference (`wa_missed`) when they cannot be sent. When that supervisor next writes, the office's `waiting` rebuilds the notice from `held_decisions`, and an approval says the order's state now, since the run's result is not stored. It goes once, sets no expectation, and leaves a following "हाँ" as it was (`toldOnly`). The latest decision on a reference is the one told.

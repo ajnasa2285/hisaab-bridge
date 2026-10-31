@@ -87,7 +87,7 @@ test('a booking request travels over A2A (official SDK) and comes back with a si
     assert.equal(jcb.ledger.view(orderId).state, 'requested');
     assert.deepEqual(applied, ['BOOKING_REQUEST']);
 
-    // Sent again (as after a lost answer): same receipt, written once, the owner not told twice.
+    // Sent again (as after a lost answer): a receipt for the same entry, written once, the owner not told twice.
     const again = await sendToAgent(s.baseUrl, req);
     assert.equal(/** @type {any} */ (again).body.entry_hash, /** @type {any} */ (answer).body.entry_hash);
     assert.equal(jcb.ledger.events(orderId).length, 1);

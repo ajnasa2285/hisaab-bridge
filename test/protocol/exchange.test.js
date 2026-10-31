@@ -100,7 +100,7 @@ test('a whole JCB job between two agents: both ledgers agree at every step', () 
   assert.deepEqual(businessIds(jcb), businessIds(contractor));
 });
 
-test('delivered twice after a crash: written once, answered with the same receipt', () => {
+test('delivered twice after a crash: written once, answered with a fresh receipt for the same entry', () => {
   const { jcb, contractor } = pair();
   const orderId = randomUUID();
   const req = prepare(contractor, { type: 'BOOKING_REQUEST', to: 'agent:jcb-1', orderId, body: { kind: 'jcb_hours', site: 'Shivpuri', day: '2026-10-29' } });
@@ -114,6 +114,35 @@ test('delivered twice after a crash: written once, answered with the same receip
   assert.equal(second.answer.body.entry_hash, first.answer.body.entry_hash);
   assert.equal(jcb.ledger.events(orderId).length, 1);
   assert.deepEqual(recordAnswer(contractor, second.answer), { ok: true, kind: 'receipt' });
+});
+
+test('a repeat gets a fresh receipt for the same entry: new id, the same entry_hash, chain_head as it is now, nothing written', () => {
+  const { jcb, contractor } = pair();
+  const orderId = randomUUID();
+  const req = prepare(contractor, { type: 'BOOKING_REQUEST', to: 'agent:jcb-1', orderId, body: { kind: 'jcb_hours', site: 'Shivpuri', day: '2026-10-29' } });
+  assert.ok(req);
+  const first = /** @type {any} */ (receive(jcb, req).answer);
+  assert.equal(first.body.chain_head, jcb.ledger.chainHead());
+  assert.equal(first.body.entry_hash, first.body.chain_head);
+  // The ledger moves on before the repeat comes.
+  assert.ok(prepare(jcb, { type: 'BOOKING_REPLY', to: 'agent:contractor-1', orderId, body: { answer: 'no' } }));
+  const head = jcb.ledger.chainHead();
+  const count = jcb.ledger.events(orderId).length;
+  const again = receive(jcb, req);
+  const second = /** @type {any} */ (again.answer);
+  assert.equal(again.applied, false);
+  assert.notEqual(second.msg_id, first.msg_id);
+  assert.equal(second.body.receipt_for, first.body.receipt_for);
+  assert.equal(second.body.entry_hash, first.body.entry_hash);
+  assert.equal(second.body.chain_head, head);
+  assert.notEqual(second.body.chain_head, first.body.chain_head);
+  assert.equal(jcb.ledger.events(orderId).length, count);
+  assert.equal(jcb.ledger.chainHead(), head);
+  assert.equal(jcb.ledger.verifyChain().ok, true);
+  // The sender keeps each receipt it was given.
+  assert.deepEqual(recordAnswer(contractor, first), { ok: true, kind: 'receipt' });
+  assert.deepEqual(recordAnswer(contractor, second), { ok: true, kind: 'receipt' });
+  assert.equal(contractor.ledger.events(orderId).filter((e) => e.type === 'RECEIPT').length, 2);
 });
 
 test('a forged message gets an unsigned error; a step out of order a signed REFUSE', () => {

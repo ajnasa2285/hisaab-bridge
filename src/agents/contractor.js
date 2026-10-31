@@ -2,7 +2,8 @@
 // answering a bill (accept or dispute with the site's own figure), and telling the seller that a
 // payment was made. A payment claim is only a claim; the order is settled when the JCB owner or the
 // supplier confirms the money arrived. A material bill is checked by code against the signed
-// delivery and the agreed rates before anyone is asked to accept it.
+// delivery and the agreed rates, and a JCB bill against the rate in the JCB owner's yes, before anyone
+// is asked to accept it.
 
 import { randomUUID } from 'node:crypto';
 import { billUsualNotes, requestUsualNotes, withUsual } from './usual.js';
@@ -17,6 +18,7 @@ import { differenceFacts } from './explain-facts.js';
 import { traceCheck } from '../trace/trace.js';
 import { PAYABLE, balanceText, newGroupId, paymentLine, shares, summaryOf, utrUses } from './pay.js';
 import { cancelTool, orderWords } from './cancel.js';
+import { jcbBillBody } from './jcb.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -552,12 +554,26 @@ export function createContractorAgent(o) {
   }
 
   /**
-   * Whether a plain "हाँ" may accept this bill: a JCB bill, or a material bill that follows from the
-   * delivery, the agreed rates and the site's count.
+   * A JCB bill against the rate in the JCB owner's yes on this order: that rate, and the amount hours ×
+   * rate as the JCB agent works it out (jcbBillBody). A correction may change the hours, never the rate.
+   * The hours themselves come from the owner's meter photos, which are on the bill as evidence.
+   * @param {Record<string, any>} b @param {string} orderId
+   */
+  function jcbBillCheck(b, orderId) {
+    const yes = ofType(ledger.events(orderId), 'BOOKING_REPLY', 'in').filter((e) => e.body.body.answer === 'yes' && posInt(e.body.body.ratePaise)).at(-1);
+    const agreed = yes ? /** @type {number} */ (yes.body.body.ratePaise) : null;
+    const line = b.lines[0];
+    const expected = agreed !== null && b.lines.length === 1 && nonNegInt(line.hoursTenths) ? jcbBillBody(line.hoursTenths, agreed, []).totalPaise : null;
+    return { agreed, expected, follows: expected !== null && line.ratePaise === agreed && line.amountPaise === expected && b.totalPaise === expected };
+  }
+
+  /**
+   * Whether a plain "हाँ" may accept this bill: a JCB bill that follows from the agreed rate, or a
+   * material bill that follows from the delivery, the agreed rates and the site's count.
    * @param {string} orderId @param {Record<string, any>} b @param {string} type
    */
   function mayAcceptOnYes(orderId, b, type) {
-    if (!isMaterial(orderId)) return true;
+    if (!isMaterial(orderId)) return jcbBillCheck(b, orderId).follows;
     const c = materialBillCheck(b, type, orderId);
     if (!c.follows || !c.d) return false;
     const d = c.d;
@@ -577,7 +593,7 @@ export function createContractorAgent(o) {
     const b = e.body.body;
     const armed = mayAcceptOnYes(orderId, b, e.type);
     const params = { ref: refOf(orderId), site: siteOf(orderId), bill: billText(orderId, b), total: rupees(b.totalPaise) };
-    return armed ? { ...no('site.bill_changed', params), expect: { tool: 'accept_bill', args: { orderId, bill: billId } } } : no('site.bill_changed_check', params);
+    return armed ? { ...no('site.bill_changed', params), expect: { tool: 'accept_bill', args: { orderId, bill: billId } } } : no(isMaterial(orderId) ? 'site.bill_changed_check' : 'site.bill_changed_check_jcb', params);
   }
 
   /**
@@ -636,8 +652,8 @@ export function createContractorAgent(o) {
   /**
    * What the contractor is told about a bill or correction, when first told and when told again after a
    * missed 24-hour window (waiting()). A material bill is checked against the signed delivery and the
-   * agreed rates, then against the site's own count. `armed`: a bill that follows from both (or a JCB
-   * bill) is offered for a one-word "हाँ" when first told; the others ask for "हाँ {ref}" in their own words.
+   * agreed rates, then against the site's own count; a JCB bill against the agreed rate. `armed`: a bill
+   * that follows is offered for a one-word "हाँ" when first told; the others ask for "हाँ {ref}" in their own words.
    * @param {string} orderId @param {Record<string, any>} b @param {string} type
    * @returns {{key: string, params: Record<string, string | number>, armed: boolean}}
    */
@@ -648,6 +664,11 @@ export function createContractorAgent(o) {
     const yes = t('site.yes_word');
     if (!isMaterial(orderId)) {
       const line = b.lines[0];
+      const c = jcbBillCheck(b, orderId);
+      if (!c.follows) {
+        return { key: 'site.bill_mismatch', armed: false, params: { ref, site, total, hours: line.hoursTenths !== undefined ? hours(line.hoursTenths) : '—', rate: rupees(line.ratePaise),
+          agreedRate: c.agreed === null ? '—' : rupees(c.agreed), expectedTotal: c.expected === null ? '—' : rupees(c.expected), ...(c.expected ? { example: plainRupees(c.expected) } : {}) } };
+      }
       return { key: type === 'BILL' ? 'site.bill_received' : 'site.correction_received', armed: true, params: {
         ref, site, yes, total, hours: line.hoursTenths !== undefined ? hours(line.hoursTenths) : '—', rate: rupees(line.ratePaise), photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
       } };
@@ -793,9 +814,13 @@ export function createContractorAgent(o) {
           await onMaterialBill(m);
           break;
         }
+        const c = jcbBillCheck(b, m.order_id);
+        traceCheck(`bill = hours × agreed rate ${c.follows ? '✓' : '✗'} ${rupees(b.totalPaise)}${c.expected !== null && !c.follows ? ` / ${rupees(c.expected)}` : ''}`, c.follows,
+          { name: 'bill_follows', totalPaise: b.totalPaise, expectedPaise: c.expected, billedRatePaise: b.lines[0].ratePaise, agreedRatePaise: c.agreed }, m.order_id);
         const n = billNotice(m.order_id, b, m.type);
-        await tellBill(m.order_id, b, n.key, n.params, { tool: 'accept_bill', args: { orderId: m.order_id, bill: m.msg_id } });
-        await tell('supervisor', 'site.bill_copy', { ref, site, what: billText(m.order_id, b) });
+        await tellBill(m.order_id, b, n.key, n.params, n.armed ? { tool: 'accept_bill', args: { orderId: m.order_id, bill: m.msg_id } } : undefined);
+        // As for material: a bill that does not follow goes to the one who decides, and no copy.
+        if (n.armed) await tell('supervisor', 'site.bill_copy', { ref, site, what: billText(m.order_id, b) });
         break;
       }
       case 'SETTLED': {

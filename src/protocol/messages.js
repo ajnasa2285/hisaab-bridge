@@ -1,6 +1,6 @@
 // Agent-to-agent messages (docs/CONTRACTS.md section 4): their shape, how they are built and
 // signed, and the checks a receiver runs, always in the same order, before anything is applied:
-// version -> known sender -> signature -> addressed to me -> a repeat is answered as before, whatever
+// version -> known sender -> signature -> addressed to me -> a repeat is answered, not applied, whatever
 // its expiry -> not expired -> not too large -> type allowed from this sender -> body well formed.
 // The order state is the ledger's check.
 

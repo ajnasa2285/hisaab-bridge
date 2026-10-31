@@ -1,8 +1,10 @@
 // One agent's side of the conversation: how a received message becomes a ledger event and a signed
 // answer, and how a message we send is checked against our own ledger before it leaves.
-// Receiving: checkIncoming (identity, signature, expiry, type) -> repeat? answer as before ->
+// Receiving: checkIncoming (identity, signature, expiry, type) -> repeat? answer again, nothing written ->
 // register the order -> the ledger checks the state and appends -> signed RECEIPT (or REFUSE).
-// The answer to a repeat is rebuilt from the stored event, so a retry never changes anything.
+// A receipt we send is not kept in our ledger, so a repeat is not applied twice and is answered with a
+// fresh receipt for the same entry: a new id and time, the same `entry_hash`, `chain_head` as it is now.
+// A retry never changes anything. An evidence answer is kept and goes again as it was.
 // A request that failed sender authentication gets an unsigned error, never our signature. A refusal
 // counts only as the direct answer to a message just delivered (recordAnswer); posted in on its own
 // (receive) only an evidence refusal is taken, and those never change an order's state.
@@ -83,7 +85,7 @@ export function receive(agent, raw) {
   }
   const m = checked.message;
 
-  // A repeat: the same answer as the first time, nothing written.
+  // A repeat: nothing written, and a fresh receipt for the same entry (or the evidence answer kept).
   const earlier = ledger.eventOfMessage(m.msg_id);
   if (earlier !== null) {
     if (m.type === 'EVIDENCE') {
@@ -94,7 +96,7 @@ export function receive(agent, raw) {
       return { answer: refusal('BAD_BODY', m.msg_id, m.from, m.order_id), applied: false, message: m };
     }
     if (m.type === 'EVIDENCE_REQUEST') {
-      // Answered already: the same answer again. Not decided yet: the same receipt.
+      // Answered already: the same answer again. Not decided yet: a fresh receipt for the same entry.
       const answered = ledger.events(m.order_id).find((e) => e.direction === 'out' && (e.type === 'EVIDENCE' || e.type === 'REFUSE') && e.body.body.refers_to === m.msg_id);
       if (!answered) return { answer: receiptFor(agent, m, earlier.hash, nowMs), applied: false, message: m };
       const response = answered.type === 'EVIDENCE' ? restoreEvidence(agent, /** @type {Message} */ (answered.body)) : /** @type {Message} */ (answered.body);
@@ -214,7 +216,8 @@ function receiptFor(agent, m, entryHash, nowMs) {
 /**
  * Prepares a message we send: built, signed and written to our own ledger first (so a crash after
  * sending cannot lose it), only if it fits the order's state. The caller then delivers it, and may
- * deliver it again on failure: the receiver answers a repeat with the same receipt.
+ * deliver it again on failure: the receiver does not apply a repeat twice and answers it with a fresh
+ * receipt for the same entry.
  * @param {{self: Self, ledger: Ledger, now: () => number, mediaStore?: MediaStore}} agent
  * @param {{type: import('./messages.js').MessageType, to: string, orderId: string, body: Record<string, any>,
  *   site?: string}} o  `site` and `body.kind` are needed when this message opens the order

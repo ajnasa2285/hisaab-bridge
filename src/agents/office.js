@@ -6,7 +6,7 @@
 // restart; the ledger's own tables and hash chain are not touched. Commands are parsed by code,
 // never by the model, and only a contractor decides.
 
-import { runTool, ok, no, ofType, posInt, nonNegInt } from './common.js';
+import { runTool, ok, no, ofType, posInt, nonNegInt, seesMoney } from './common.js';
 import { openRefs, parseRef } from '../ledger/refs.js';
 import { refusedIds } from '../ledger/states.js';
 import { day as dayName, qty, rupees, tenths } from '../i18n/format.js';
@@ -71,6 +71,9 @@ const CLOSED = ['settled', 'declined', 'cancelled', 'none'];
 const MAX_NOTE = 300;
 // The keys an approval request may have been missed under: the estimate or the "usual" line can differ now.
 const APPROVAL_KEYS = /^(?:office\.approval_needed(?:_estimate)?|usual\.notice)$/u;
+// What an approved step was missed under: who approved, and the step's own result, are told as one.
+const APPROVED_MISSED = 'office.approved';
+const APPROVED_KEYS = /^office\.approved$/u;
 
 /** @param {string[]} words */
 const wordSet = (words) => new Set(words.map((w) => w.normalize('NFC')));
@@ -250,12 +253,34 @@ export function createOffice(o) {
   }
 
   /**
-   * The held steps still waiting for this contractor's decision, for someone whose 24-hour window was
-   * closed when asked. The text asks for "OK {ref}", so nothing here can be decided by a plain "हाँ".
+   * A decision on a step, for its requester who could not be told at the time, rebuilt from the stored
+   * decision. An approved step's result is not stored, so the order's state now says how it went.
+   * @param {HeldStep} h @param {NonNullable<HeldStep['decision']>} d
+   * @returns {{key: string, params: Record<string, string | number>, also?: RegExp, toldOnly: boolean}}
+   */
+  function decisionNotice(h, d) {
+    if (d.decision === 'no') return { key: 'office.declined', params: { ref: h.ref, by: nameOf(d.by), reason: d.note ?? '' }, toldOnly: true };
+    const orderId = refs.orderOfRef(h.ref);
+    const state = orderId === null ? 'none' : ledger.view(orderId).state;
+    return { key: variant('office.approved_later', { note: d.note }), also: APPROVED_KEYS, toldOnly: true, params: { ref: h.ref, by: nameOf(d.by), step: stepText(h.tool, h.args),
+      state: state === 'none' ? t('office.held_not_run') : t(`state.${state}`), ...(d.note ? { note: d.note } : {}) } };
+  }
+
+  /**
+   * For someone whose 24-hour window was closed when told. A contractor: the held steps still waiting
+   * for their decision; the text asks for "OK {ref}", so nothing here can be decided by a plain "हाँ".
+   * A supervisor: the latest decision on each of their own steps, told only (`missedWaiting` keeps those
+   * they really missed, once); it asks nothing and decides nothing.
    * @param {Person} person
+   * @returns {{key: string, params: Record<string, string | number>, also?: RegExp, toldOnly?: boolean}[]}
    */
   function waiting(person) {
-    if (o.kind !== 'contractor' || person.role !== 'contractor') return [];
+    if (o.kind !== 'contractor') return [];
+    if (person.role === 'supervisor') {
+      const latest = new Map(q.all.all().map(toHeld).filter((h) => same(h.person, person)).map((h) => [h.ref, h]));
+      return [...latest.values()].flatMap((h) => (h.decision ? [decisionNotice(h, h.decision)] : []));
+    }
+    if (person.role !== 'contractor') return [];
     return q.all.all().map(toHeld).filter((h) => h.decision === null && !same(h.person, person))
       .map((h) => ({ ...approvalNotice(h.ref, h.person, h.tool, h.args, h.estimatePaise), also: APPROVAL_KEYS }));
   }
@@ -311,12 +336,13 @@ export function createOffice(o) {
       return d ? already(d) : no('common.wrong_state');
     }
     if (c.cmd === 'no') {
-      await o.reply(h.person, 'office.declined', { ref: c.ref, by: nameOf(person), reason: /** @type {string} */ (reason) });
+      await o.reply(h.person, 'office.declined', { ref: c.ref, by: nameOf(person), reason: /** @type {string} */ (reason) }, { ref: c.ref, key: 'office.declined' });
       return ok('office.you_declined', { ref: c.ref });
     }
-    await o.reply(h.person, note ? 'office.approved_note' : 'office.approved', { ref: c.ref, by: nameOf(person), ...(note ? { note } : {}) });
+    const missed = { ref: c.ref, key: APPROVED_MISSED };
+    await o.reply(h.person, note ? 'office.approved_note' : 'office.approved', { ref: c.ref, by: nameOf(person), ...(note ? { note } : {}) }, missed);
     const r = await runHeld(h);
-    await o.reply(h.person, r.key, r.params);
+    await o.reply(h.person, r.key, r.params, missed);
     return r.ok ? withUsual(r, o.tools[h.tool]?.hold?.usualNote?.(h.args, false) ?? '') : r;
   }
 
@@ -333,8 +359,8 @@ export function createOffice(o) {
   /** @param {string} state */
   const awaited = (state) => (state === 'none' ? t('office.pending_none') : t(`office.await.${side}.${state}`));
 
-  /** @param {string} ref @returns {Said} */
-  function status(ref) {
+  /** @param {string} ref @param {Person} person @returns {Said} */
+  function status(ref, person) {
     const orderId = refs.orderOfRef(ref);
     if (orderId === null) {
       const h = o.kind === 'contractor' ? heldByRef(ref) : null;
@@ -347,6 +373,10 @@ export function createOffice(o) {
     const view = ledger.view(orderId);
     const events = ledger.events(orderId);
     const req = events.filter((e) => e.type === 'BOOKING_REQUEST').at(-1)?.body.body;
+    if (!seesMoney(person.role)) {
+      return ok('office.status_plain', { ref, what: whatOf(orderId, order.kind), site: order.site, day: typeof req?.day === 'string' ? `, ${dayName(req.day)}` : '',
+        state: view.state === 'none' ? t('office.state_unknown') : t(`state.${view.state}`), awaited: awaited(view.state) });
+    }
     const yes = ofType(events, 'BOOKING_REPLY').filter((e) => e.body.body.answer === 'yes').at(-1)?.body.body;
     let rate = '';
     if (posInt(yes?.ratePaise)) rate = rupees(yes.ratePaise);
@@ -386,7 +416,8 @@ export function createOffice(o) {
       const uncounted = state === 'delivered' && !ofType(ledger.events(order.order_id), 'NOTE', 'local').some((e) => e.body.kind === 'site_count');
       const wanted = person.role === 'contractor' ? AWAITING_CONTRACTOR.includes(state) || uncounted : !CLOSED.includes(state);
       if (!wanted) continue;
-      lines.push(t('office.pending_order', { ref, what: whatOf(order.order_id, order.kind), site: order.site, awaited: awaited(state), balance: orderBalanceText(ledger, order.order_id) }));
+      const line = { ref, what: whatOf(order.order_id, order.kind), site: order.site, awaited: awaited(state) };
+      lines.push(seesMoney(person.role) ? t('office.pending_order', { ...line, balance: orderBalanceText(ledger, order.order_id) }) : t('office.pending_order_plain', line));
     }
     return lines.length ? ok('office.pending', { lines: lines.join('\n') }) : ok('office.pending_none');
   }
@@ -426,7 +457,7 @@ export function createOffice(o) {
         if (!orderId) return no('office.no_such_ref', { ref: c.ref });
         return o.evidence ? o.evidence.requestLatest(orderId) : no('evidence.unavailable', { ref: c.ref });
       }
-      case 'status': return status(c.ref);
+      case 'status': return status(c.ref, person);
       case 'pending': return pending(person);
       case 'stock': return stock(c.item);
       case 'ok':
