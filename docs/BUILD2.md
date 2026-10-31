@@ -701,6 +701,7 @@ working the photo waits, unread, as the open question (`meter_job`): "1. J-2: �
 on the list or a listed reference picks the job, and the normal flow goes on, reading included. A number or reference off
 the list or a "हाँ" asks again; a cancel word drops the photo; another message lapses it and is read as new. One reference in the photo's
 caption answers it before it is asked; a caption naming a job not open asks, even with one job open. A new photo replaces the held one.
+A supplier's challan photo with several orders booked works the same way (`challan_job`), each line also naming the items.
 
 **Cancelling** (`src/agents/cancel.js`). `रद्द J-2` (also `J-2 रद्द करो`, `cancel J-2`) is parsed by code. The contractor, the
 JCB owner or the supplier; anyone else is told whose decision it is. What blocks it is said at once, with the reason;

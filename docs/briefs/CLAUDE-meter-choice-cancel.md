@@ -31,7 +31,7 @@ Behaviour change: in a two-request flow the shared lines (the first message, its
 
 ## Same dead end elsewhere
 
-- **Not fixed, real dead end:** `onChallanImage` in `src/agents/conversation.js`, a supplier with two booked orders. The photo gets `orchestrator.which_job`, is dropped, and neither a caption nor an answer resolves it. The same held-question pattern would fit.
+- **Fixed afterwards, same pattern:** `onChallanImage`, a supplier with two booked orders. The photo got `orchestrator.which_job` and was dropped. It is now held as `challan_job` through `orderForPhoto`, shared with the meter photo; each line also names the items, as two orders can share a site and day.
 - **Not a dead end, misleading text:** the model path in `proposeStep` (`orchestrator.js`, `pickOrder` with no order, every spec with `states`). `orchestrator.which_job` says "site or day", but only a reference resolves it; sending the step again with a reference works.
 - **Fine:** exact `बिल` with two jobs answers `reply.which_order`, and `J-2 बिल` works. `onSiteChallanImage` and payments already ask with references.
 

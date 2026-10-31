@@ -520,6 +520,8 @@ original key and text remain unchanged. Judge labels live in `web/texts.js` in b
 |---|---|---|
 | `meter.which_job` | lines, ref | a meter photo with several jobs open (or a caption naming a job not open): the photo waits; `ref` is the first job's reference, as the example of the reply |
 | `meter.job_line` | n, ref, site, day | one job in that list |
+| `challan.which_order` | lines, ref | the same for a supplier's challan photo with several orders booked |
+| `challan.order_line` | n, ref, site, day, what | one order in that list, with its items |
 
 ## Cancelling an order (31 Oct)
 

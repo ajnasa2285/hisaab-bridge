@@ -151,6 +151,8 @@ export const hi = Object.freeze({
   'challan.ask_person': 'चालान साफ़ नहीं पढ़ा गया ({raw})। जो सामान गया, उसकी गिनती उसी क्रम में लिखें: {items}। जैसे 50, 2।',
   'challan.ask_person_blank': 'जो सामान गया, उसकी गिनती उसी क्रम में लिखें: {items}। जैसे 50, 2।',
   'challan.no_order_for_photo': 'चालान की फ़ोटो मिली, पर अभी कोई तय माँग नहीं है जिसकी डिलीवरी बाक़ी हो।',
+  'challan.which_order': 'चालान की फ़ोटो मिली। यह किस माँग का है? नंबर लिखें या {ref} जैसा:\n{lines}\nफ़ोटो छोड़नी हो तो "नहीं" लिखें।',
+  'challan.order_line': '{n}. {ref}: {site}, {day} की माँग: {what}',
 
   // --- Read-back before a step runs: said back in full, goes only on "हाँ". Days arrive formatted. ---
   'step.reply_booking_yes': '{site} के लिए {day} को JCB की हाँ भेजें, दर {rate} प्रति घंटा? हाँ / नहीं',

@@ -222,7 +222,7 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'step.site_challan': ['ref', 'site', 'items', 'names'], 'step.site_challan_challan': ['ref', 'site', 'challan', 'items', 'names'],
     'what.jcb': ['site', 'day'], 'what.jcb_time': ['site', 'day', 'time'], 'what.jcb_hours': ['site', 'day', 'hours'],
     'what.jcb_time_hours': ['site', 'day', 'time', 'hours'], 'what.material': ['site', 'day', 'items'], 'what.material_time': ['site', 'day', 'time', 'items'],
-    'reply.which_order': ['refs', 'ref'], 'meter.which_job': ['lines', 'ref'], 'meter.job_line': ['n', 'ref', 'site', 'day'],
+    'reply.which_order': ['refs', 'ref'], 'meter.which_job': ['lines', 'ref'], 'meter.job_line': ['n', 'ref', 'site', 'day'], 'challan.which_order': ['lines', 'ref'], 'challan.order_line': ['n', 'ref', 'site', 'day', 'what'],
     'step.cancel_order': ['ref', 'site', 'day', 'what'], 'cancel.done': ['ref', 'site', 'day', 'what'], 'cancel.refused': ['ref'], 'cancel.not_allowed': [], 'cancel.held': ['ref'],
     'cancel.already': ['ref'], 'cancel.closed': ['ref', 'state'], 'cancel.has_bill': ['ref'], 'cancel.has_payment': ['ref', 'amount'], 'cancel.has_delivery': ['ref'], 'cancel.has_count': ['ref'], 'cancel.has_meter': ['ref'],
     'site.order_cancelled': ['from', 'ref', 'site', 'day', 'what'], 'site.order_cancelled_own': ['ref', 'site', 'day', 'what'], 'jcb.order_cancelled': ['ref', 'site', 'day'],

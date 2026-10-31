@@ -23,12 +23,12 @@
 // through the office's gate on its own. A request naming a site this agent does not know asks once
 // which site it is, before the read-back; the answer is kept for everyone on this agent
 // (src/agents/site-names.js). Code decides from exact matches only.
-// A meter photo with several jobs open is held as the open question: the jobs are listed by number,
+// A meter or (supplier's) challan photo with several orders open is held as the open question: they are listed by number,
 // reference, site and day, and a number or a reference (or a reference in the photo's caption) says which.
 // People decide; the model only proposes.
 
 import { createHash } from 'node:crypto';
-import { fillStep, proposeStep, orderRefs, pickOrder, shareFilled } from '../orchestrator/orchestrator.js';
+import { fillStep, proposeStep, orderRefs, shareFilled } from '../orchestrator/orchestrator.js';
 import { parseHundredthsList, parseQuantity } from '../orchestrator/units.js';
 import { impossible, meterReadings, MAX_JOB_TENTHS } from './jcb.js';
 import { displayDateWrong, jobDay } from './meter-guard.js';
@@ -59,7 +59,7 @@ import { plain, promptBlock, voiceParty } from '../learn/corrections.js';
  *   {kind: 'site_name', name: string, options: string[], steps: Step[], at: number} |
  *   {kind: 'two_requests', steps: Step[], at: number} |
  *   {kind: 'photo_kind', image: Photo, at: number} |
- *   {kind: 'meter_job', image: Photo, orderIds: string[], at: number} |
+ *   {kind: 'meter_job' | 'challan_job', image: Photo, orderIds: string[], at: number} |
  *   {kind: 'pay_choice', orderIds: string[], group: boolean, amountPaise: number, base: Record<string, any>, at: number}} Pending
  */
 /** @typedef {import('../orchestrator/orchestrator.js').PairPart} PairPart */
@@ -470,11 +470,11 @@ export function createConversation(o) {
       if (kind) return routePhoto(person, p.image, kind);
       // Not an answer: the question lapses, the photo with it, and the message is read as a new one.
     }
-    if (p && p.kind === 'meter_job') {
+    if (p && (p.kind === 'meter_job' || p.kind === 'challan_job')) {
       const answer = jobAnswer(said, p.orderIds);
-      if (answer?.again) return askJob(person, p.orderIds);
+      if (answer?.again) return askJob(person, p.kind, p.orderIds);
       pending.delete(keyOf(person));
-      if (answer) return onMeterImage(person, p.image, answer.orderId);
+      if (answer) return p.kind === 'meter_job' ? onMeterImage(person, p.image, answer.orderId) : onChallanImage(person, p.image, answer.orderId);
       if (NO.has(said) || DROP_WORDS.has(said)) return o.reply(person, 'step.cancelled');
       // Not an answer: the question lapses, the photo with it, and the message is read as a new one.
     }
@@ -946,18 +946,8 @@ export function createConversation(o) {
     if (image.mime !== 'image/jpeg' && image.mime !== 'image/png' && image.mime !== 'image/webp') return o.reply(person, 'meter.not_meter');
     // A forwarded photo can be of any day and any machine (live, 29 Oct): only a photo taken now counts.
     if (image.forwarded) return o.reply(person, 'meter.forwarded');
-    const open = meterJobs();
-    if (open.length === 0) return o.reply(person, chosen ? 'common.wrong_state' : 'orchestrator.no_job_for_photo');
-    const named = refsIn(image.caption ?? '');
-    const picked = chosen ? open.find((r) => r.orderId === chosen)
-      : named.length === 1 ? open.find((r) => r.ref === named[0]) : named.length === 0 && open.length === 1 ? open[0] : undefined;
-    // The job moved on while the question was open: nothing is put on another one.
-    if (!picked && chosen) return o.reply(person, 'common.wrong_state');
-    if (!picked) {
-      const orderIds = open.map((r) => r.orderId);
-      pending.set(keyOf(person), { kind: 'meter_job', image, orderIds, at: o.now() });
-      return askJob(person, orderIds);
-    }
+    const picked = await orderForPhoto(person, 'meter_job', image, chosen);
+    if (!picked) return;
     let events = o.ledger.events(picked.orderId);
     let r = meterReadings(events);
     /** @type {'start' | 'end'} */
@@ -1024,21 +1014,47 @@ export function createConversation(o) {
     return commitNow(person, 'record_meter', args);
   }
 
-  /** The jobs a meter photo can be for, oldest first. */
-  const meterJobs = () => orderRefs(o.ledger).filter((r) => r.state === 'booked' || r.state === 'working');
+  /** @typedef {'meter_job' | 'challan_job'} PhotoQuestion */
+  /** The orders a meter photo (booked or working) or a supplier's challan (booked) can be for, oldest first. @param {PhotoQuestion} kind */
+  const photoOrders = (kind) => orderRefs(o.ledger).filter((r) => r.state === 'booked' || (kind === 'meter_job' && r.state === 'working'));
+  /** @param {PhotoQuestion} kind */
+  const noOrderKey = (kind) => (kind === 'meter_job' ? 'orchestrator.no_job_for_photo' : 'challan.no_order_for_photo');
 
   /**
-   * Which job is this meter photo for? The jobs still open, numbered as first listed.
-   * @param {Person} person @param {string[]} orderIds
+   * The order a photo is for: the one the person chose, the one named in the caption, else the one
+   * open. With several open (or a caption naming one that is not open) the photo waits, unread, as the
+   * open question. Nothing to go on yet: the person has been told or asked, and the answer is null.
+   * @param {Person} person @param {PhotoQuestion} kind @param {Photo} image @param {string} [chosen]
    */
-  function askJob(person, orderIds) {
-    const open = meterJobs();
-    const jobs = orderIds.flatMap((id, i) => open.filter((r) => r.orderId === id).map((r) => ({ n: i + 1, ref: r.ref, site: r.site, day: /^\d{4}-/.test(r.day) ? dayName(r.day) : r.day })));
+  async function orderForPhoto(person, kind, image, chosen) {
+    const open = photoOrders(kind);
+    const named = refsIn(image.caption ?? '');
+    const picked = chosen ? open.find((r) => r.orderId === chosen)
+      : named.length === 1 ? open.find((r) => r.ref === named[0]) : named.length === 0 && open.length === 1 ? open[0] : undefined;
+    if (picked) return picked;
+    // The order moved on while the question was open: nothing is put on another one.
+    if (chosen || open.length === 0) await o.reply(person, chosen ? 'common.wrong_state' : noOrderKey(kind));
+    else {
+      const orderIds = open.map((r) => r.orderId);
+      pending.set(keyOf(person), { kind, image, orderIds, at: o.now() });
+      await askJob(person, kind, orderIds);
+    }
+    return null;
+  }
+
+  /**
+   * Which order is this photo for? Those still open, numbered as first listed.
+   * @param {Person} person @param {PhotoQuestion} kind @param {string[]} orderIds
+   */
+  function askJob(person, kind, orderIds) {
+    const open = photoOrders(kind);
+    const jobs = orderIds.flatMap((id, i) => open.filter((r) => r.orderId === id).map((r) => ({ n: i + 1, ref: r.ref, site: r.site, day: /^\d{4}-/.test(r.day) ? dayName(r.day) : r.day, what: r.what ?? t('kind.material') })));
     if (jobs.length === 0) {
       pending.delete(keyOf(person));
-      return o.reply(person, 'orchestrator.no_job_for_photo');
+      return o.reply(person, noOrderKey(kind));
     }
-    return o.reply(person, 'meter.which_job', { lines: jobs.map((j) => t('meter.job_line', j)).join('\n'), ref: jobs[0].ref });
+    const [ask, line] = kind === 'meter_job' ? ['meter.which_job', 'meter.job_line'] : ['challan.which_order', 'challan.order_line'];
+    return o.reply(person, ask, { lines: jobs.map((j) => t(line, j)).join('\n'), ref: jobs[0].ref });
   }
 
   /**
@@ -1083,15 +1099,15 @@ export function createConversation(o) {
   /**
    * A photo from the supplier is the challan of the order that is booked and not yet delivered. The
    * model reads it; code matches what it read to the order's items; the supplier confirms what was
-   * read, or types the quantities when the photo is not clear.
-   * @param {Person} person
-   * @param {{mime: string, bytes: Uint8Array}} image
+   * read, or types the quantities when the photo is not clear. With several booked, the order is asked
+   * for as for a meter photo (orderForPhoto).
+   * @param {Person} person @param {Photo} image @param {string} [chosen] the order the person said this photo is for
    */
-  async function onChallanImage(person, image) {
+  async function onChallanImage(person, image, chosen) {
     if (!o.readChallan) return o.reply(person, 'orchestrator.try_again');
     if (image.mime !== 'image/jpeg' && image.mime !== 'image/png' && image.mime !== 'image/webp') return o.reply(person, 'challan.not_challan');
-    const picked = pickOrder(orderRefs(o.ledger), null, ['booked']);
-    if (typeof picked === 'string') return o.reply(person, picked === 'common.wrong_state' ? 'challan.no_order_for_photo' : picked);
+    const picked = await orderForPhoto(person, 'challan_job', image, chosen);
+    if (!picked) return;
     const items = requestedItems(o.ledger.events(picked.orderId));
     const sha256 = createHash('sha256').update(image.bytes).digest('hex');
     const learnt = await readLearned('challan', person.role, picked.orderId, o.readChallan, { mime: image.mime, bytes: image.bytes },
