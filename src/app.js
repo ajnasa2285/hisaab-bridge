@@ -289,7 +289,7 @@ export function createApp(cfg) {
         if (text !== null) return entry.talk.onText(person, text, { atMs: msg.atMs });
         if (msg.kind === 'image' && msg.mediaId) {
           const media = await /** @type {any} */ (clients.get(person.line)).fetchMedia(msg.mediaId, { expectedSha256: undefined });
-          return entry.talk.onImage(person, { mime: media.mimeType, bytes: new Uint8Array(media.bytes), takenAt: null, forwarded: msg.forwarded === true });
+          return entry.talk.onImage(person, { mime: media.mimeType, bytes: new Uint8Array(media.bytes), takenAt: null, forwarded: msg.forwarded === true, ...(msg.caption ? { caption: msg.caption } : {}) });
         }
         if (msg.kind === 'audio' && msg.mediaId && entry.transcribe) {
           // A voice note is read as the text it says; the same read-back follows before anything commits.

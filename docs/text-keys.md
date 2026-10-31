@@ -513,3 +513,10 @@ original key and text remain unchanged. Judge labels live in `web/texts.js` in b
 | `ask.jcb_separately` | none | a message naming the JCB came back twice as material only: nothing sent, written separately |
 | `site.which_site` | name, lines, new | a request names a site this agent does not know: numbered recent sites, then `new` = the number of "नई साइट" |
 | `site.forgot_name` | name | "भूल जाओ <नाम>": a saved site name is dropped, and asked about again next time |
+
+## Meter photo with several jobs open (31 Oct)
+
+| Key | Parameters | When |
+|---|---|---|
+| `meter.which_job` | lines, ref | a meter photo with several jobs open (or a caption naming a job not open): the photo waits; `ref` is the first job's reference, as the example of the reply |
+| `meter.job_line` | n, ref, site, day | one job in that list |

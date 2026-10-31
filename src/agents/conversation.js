@@ -23,6 +23,8 @@
 // through the office's gate on its own. A request naming a site this agent does not know asks once
 // which site it is, before the read-back; the answer is kept for everyone on this agent
 // (src/agents/site-names.js). Code decides from exact matches only.
+// A meter photo with several jobs open is held as the open question: the jobs are listed by number,
+// reference, site and day, and a number or a reference (or a reference in the photo's caption) says which.
 // People decide; the model only proposes.
 
 import { createHash } from 'node:crypto';
@@ -33,7 +35,7 @@ import { displayDateWrong, jobDay } from './meter-guard.js';
 import { challanQuantities, countDifferences, delivery, invoiceFromReading, requestedItems, sameChallanNo, siteCount, unitFromOrder } from './material.js';
 import { exactReply, saysCash, yesNo } from './replies.js';
 import { balanceText, owedPaise, payableOrders, paymentLine, shares, summaryOf, todayIst, utrUses } from './pay.js';
-import { openRefs, parseRef } from '../ledger/refs.js';
+import { openRefs, parseRef, refsIn } from '../ledger/refs.js';
 import { no, runTool } from './common.js';
 import { parseCommand } from './office.js';
 import { siteKey } from './site-names.js';
@@ -56,6 +58,7 @@ import { plain, promptBlock, voiceParty } from '../learn/corrections.js';
  *   {kind: 'site_name', name: string, options: string[], steps: Step[], at: number} |
  *   {kind: 'two_requests', steps: Step[], at: number} |
  *   {kind: 'photo_kind', image: Photo, at: number} |
+ *   {kind: 'meter_job', image: Photo, orderIds: string[], at: number} |
  *   {kind: 'pay_choice', orderIds: string[], group: boolean, amountPaise: number, base: Record<string, any>, at: number}} Pending
  */
 /** @typedef {import('../orchestrator/orchestrator.js').PairPart} PairPart */
@@ -67,8 +70,8 @@ import { plain, promptBlock, voiceParty } from '../learn/corrections.js';
  * "नकद", completes it. Kept apart from the open question, so the photo flow does not end it.
  * @typedef {{orderIds: string[] | null, amountPaise: number, at: number}} PayWait
  */
-/** `forwarded`: WhatsApp marked the message as forwarded (src/wa/webhook.js).
- * @typedef {{mime: string, bytes: Uint8Array, takenAt?: string | null, forwarded?: boolean}} Photo */
+/** `forwarded`: WhatsApp marked the message as forwarded (src/wa/webhook.js); `caption`: the words sent with the photo.
+ * @typedef {{mime: string, bytes: Uint8Array, takenAt?: string | null, forwarded?: boolean, caption?: string}} Photo */
 /** @typedef {'meter' | 'upi' | 'challan' | 'cash_receipt'} PhotoKind */
 /** @typedef {NonNullable<ReturnType<typeof invoiceFromReading>>} Invoice */
 /** @typedef {(image: {mime: 'image/jpeg' | 'image/png' | 'image/webp', bytes: Uint8Array}) =>
@@ -113,6 +116,8 @@ const isImageMime = (mime) => mime === 'image/jpeg' || mime === 'image/png' || m
 
 /** @param {string} text */
 const norm = (text) => text.trim().toLowerCase().replace(/[।.!?,]+$/u, '').replace(/\s+/g, ' ');
+/** "१२" → "12" @param {string} s */
+const latinDigits = (s) => s.replace(/[०-९]/gu, (d) => String(d.charCodeAt(0) - 0x0966));
 // "भूल जाओ P-1": drop what was learnt from that order's corrections (owner or contractor).
 const FORGET = /^(?:भूल\s*जाओ|भूल\s*जाइए|भूल\s*जाइये|bhool\s*jao|bhul\s*jao|forget)\s+(.+)$/iu;
 const FORGET_ROLES = new Set(['jcb_owner', 'supplier', 'contractor']);
@@ -460,6 +465,14 @@ export function createConversation(o) {
       if (kind) return routePhoto(person, p.image, kind);
       // Not an answer: the question lapses, the photo with it, and the message is read as a new one.
     }
+    if (p && p.kind === 'meter_job') {
+      const answer = jobAnswer(said, p.orderIds);
+      if (answer?.again) return askJob(person, p.orderIds);
+      pending.delete(keyOf(person));
+      if (answer) return onMeterImage(person, p.image, answer.orderId);
+      if (NO.has(said)) return o.reply(person, 'step.cancelled');
+      // Not an answer: the question lapses, the photo with it, and the message is read as a new one.
+    }
     const waitingPay = payWait(person);
     if (waitingPay) {
       payWaits.delete(keyOf(person));
@@ -736,7 +749,7 @@ export function createConversation(o) {
     if (NEW_SITE_WORDS.has(said)) return {};
     const named = options.find((site) => siteKey(site) === siteKey(text));
     if (named) return { site: named };
-    const digits = said.replace(/[०-९]/gu, (d) => String(d.charCodeAt(0) - 0x0966));
+    const digits = latinDigits(said);
     const q = /^\d{1,2}$/.test(digits) ? Number(digits) * 100 : parseQuantity(digits);
     if (typeof q !== 'number' || q <= 0 || q % 100 !== 0) return null;
     const n = q / 100;
@@ -905,16 +918,28 @@ export function createConversation(o) {
    * A meter photo from the JCB side is a meter reading for the job that is booked or working. Before
    * anything is recorded: a forwarded photo is refused; a photo of another machine than the other
    * reading's (Muse Spark compares the two) is refused, and an unsure comparison is read back once; a
-   * date on the display that is not the job's day is refused. Then the existing checks.
-   * @param {Person} person @param {Photo} image
+   * date on the display that is not the job's day is refused. Then the existing checks. The job is the
+   * one named in the caption, else the one open; with several open (or a caption naming a job that is
+   * not open) the photo waits, unread, as the open question (askJob).
+   * @param {Person} person @param {Photo} image @param {string} [chosen] the order the person said this photo is for
    */
-  async function onMeterImage(person, image) {
+  async function onMeterImage(person, image, chosen) {
     if (!o.readMeter) return o.reply(person, 'orchestrator.try_again');
     if (image.mime !== 'image/jpeg' && image.mime !== 'image/png' && image.mime !== 'image/webp') return o.reply(person, 'meter.not_meter');
     // A forwarded photo can be of any day and any machine (live, 29 Oct): only a photo taken now counts.
     if (image.forwarded) return o.reply(person, 'meter.forwarded');
-    const picked = pickOrder(orderRefs(o.ledger), null, ['booked', 'working']);
-    if (typeof picked === 'string') return o.reply(person, picked === 'common.wrong_state' ? 'orchestrator.no_job_for_photo' : picked);
+    const open = meterJobs();
+    if (open.length === 0) return o.reply(person, chosen ? 'common.wrong_state' : 'orchestrator.no_job_for_photo');
+    const named = refsIn(image.caption ?? '');
+    const picked = chosen ? open.find((r) => r.orderId === chosen)
+      : named.length === 1 ? open.find((r) => r.ref === named[0]) : named.length === 0 && open.length === 1 ? open[0] : undefined;
+    // The job moved on while the question was open: nothing is put on another one.
+    if (!picked && chosen) return o.reply(person, 'common.wrong_state');
+    if (!picked) {
+      const orderIds = open.map((r) => r.orderId);
+      pending.set(keyOf(person), { kind: 'meter_job', image, orderIds, at: o.now() });
+      return askJob(person, orderIds);
+    }
     let events = o.ledger.events(picked.orderId);
     let r = meterReadings(events);
     /** @type {'start' | 'end'} */
@@ -979,6 +1004,42 @@ export function createConversation(o) {
     // Memory changed the figure: read back, never recorded silently.
     if (learnt.differs) return propose(person, 'record_meter', args, { key: 'learn.read_back_meter', params: { reading: tenths(read.valueTenths) } });
     return commitNow(person, 'record_meter', args);
+  }
+
+  /** The jobs a meter photo can be for, oldest first. */
+  const meterJobs = () => orderRefs(o.ledger).filter((r) => r.state === 'booked' || r.state === 'working');
+
+  /**
+   * Which job is this meter photo for? The jobs still open, numbered as first listed.
+   * @param {Person} person @param {string[]} orderIds
+   */
+  function askJob(person, orderIds) {
+    const open = meterJobs();
+    const jobs = orderIds.flatMap((id, i) => open.filter((r) => r.orderId === id).map((r) => ({ n: i + 1, ref: r.ref, site: r.site, day: /^\d{4}-/.test(r.day) ? dayName(r.day) : r.day })));
+    if (jobs.length === 0) {
+      pending.delete(keyOf(person));
+      return o.reply(person, 'orchestrator.no_job_for_photo');
+    }
+    return o.reply(person, 'meter.which_job', { lines: jobs.map((j) => t('meter.job_line', j)).join('\n'), ref: jobs[0].ref });
+  }
+
+  /**
+   * The reply to "which job?", read by code: a number on the list or a listed job's reference. A number
+   * or reference off the list, or a yes, does not say which (`again`); anything else null.
+   * @param {string} said @param {string[]} orderIds @returns {{orderId?: string, again?: boolean} | null}
+   */
+  function jobAnswer(said, orderIds) {
+    const digits = latinDigits(said);
+    if (/^\d{1,2}$/.test(digits)) {
+      const orderId = orderIds[Number(digits) - 1];
+      return orderId ? { orderId } : { again: true };
+    }
+    const want = parseRef(said);
+    if (want !== null) {
+      const orderId = openRefs(o.ledger).orderOfRef(want);
+      return orderId && orderIds.includes(orderId) ? { orderId } : { again: true };
+    }
+    return YES.has(said) ? { again: true } : null;
   }
 
   /**

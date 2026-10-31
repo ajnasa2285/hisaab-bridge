@@ -222,7 +222,7 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'step.site_challan': ['ref', 'site', 'items', 'names'], 'step.site_challan_challan': ['ref', 'site', 'challan', 'items', 'names'],
     'what.jcb': ['site', 'day'], 'what.jcb_time': ['site', 'day', 'time'], 'what.jcb_hours': ['site', 'day', 'hours'],
     'what.jcb_time_hours': ['site', 'day', 'time', 'hours'], 'what.material': ['site', 'day', 'items'], 'what.material_time': ['site', 'day', 'time', 'items'],
-    'reply.which_order': ['refs', 'ref'],
+    'reply.which_order': ['refs', 'ref'], 'meter.which_job': ['lines', 'ref'], 'meter.job_line': ['n', 'ref', 'site', 'day'],
     ...Object.fromEntries(['buyer', 'seller'].flatMap((side) => ['requested', 'offered', 'declined', 'booked', 'working', 'delivered', 'billed', 'disputed', 'accepted', 'payment_claimed', 'settled']
       .map((s) => [`office.await.${side}.${s}`, []]))),
   };

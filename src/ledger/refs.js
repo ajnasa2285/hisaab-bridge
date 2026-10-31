@@ -48,6 +48,18 @@ export function parseRef(text) {
   return `${kind}-${n}`;
 }
 
+// A reference standing on its own among other words: not the end of a word ("pump 12") or the start of a number.
+const REF_IN_TEXT = /(?<![\p{L}\p{N}])(?:j|p|जे|पी)\s*-?\s*\d{1,6}(?![\p{L}\p{N}])/giu;
+
+/**
+ * Every reference in free words (a photo's caption), each once: "J-2 शुरू" → ["J-2"].
+ * @param {string} text @returns {string[]}
+ */
+export function refsIn(text) {
+  const found = (text.normalize('NFC').match(REF_IN_TEXT) ?? []).map(parseRef).filter((r) => r !== null);
+  return [...new Set(found)];
+}
+
 // Numbers as a voice note writes them after "पी"/"जे" (live, 30 Oct: "P-1" came back as "पीवन").
 /** @type {Record<string, number>} */
 const SPOKEN = { 'वन': 1, 'एक': 1, 'टू': 2, 'दो': 2, 'थ्री': 3, 'तीन': 3, 'फोर': 4, 'फ़ोर': 4, 'चार': 4, 'फाइव': 5, 'फ़ाइव': 5, 'पाँच': 5, 'पांच': 5,

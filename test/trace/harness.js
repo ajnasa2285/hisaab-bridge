@@ -104,11 +104,11 @@ export async function startService(o = {}) {
     [SUPERVISOR]: ['site', 'line-site', 'secret-site'], [CONTRACTOR]: ['site', 'line-site', 'secret-site'],
   });
   let n = 0;
-  /** @param {string} from @param {string | null} text @param {string} [mediaId] */
-  async function say(from, text, mediaId) {
+  /** @param {string} from @param {string | null} text @param {string} [mediaId] @param {string} [caption] */
+  async function say(from, text, mediaId, caption) {
     n += 1;
     const [name, line, secret] = who[from];
-    const m = text === null ? { type: 'image', image: { id: mediaId ?? `media-${n}`, mime_type: 'image/jpeg' } } : { type: 'text', text: { body: text } };
+    const m = text === null ? { type: 'image', image: { id: mediaId ?? `media-${n}`, mime_type: 'image/jpeg', ...(caption ? { caption } : {}) } } : { type: 'text', text: { body: text } };
     const body = JSON.stringify({
       object: 'whatsapp_business_account',
       entry: [{ id: 'w', changes: [{ field: 'messages', value: { metadata: { phone_number_id: line }, messages: [{ from, id: `wamid.t${n}`, timestamp: String(Math.floor(Date.now() / 1000)), ...m }] } }] }],

@@ -335,6 +335,8 @@ export const hi = Object.freeze({
   'meter.ask_person_blank': 'मीटर के अंक पक्के नहीं पढ़े गए। कृपया अंक लिखकर भेजें, जैसे 3677.7।',
   // Photo guards (docs/BUILD2.md "Photo guards and owner consent"; Claude drafted, Fable polished 29 Oct).
   'meter.forwarded': 'मीटर की फ़ोटो अभी खींचकर भेजें, फ़ॉरवर्ड की हुई फ़ोटो नहीं चलेगी।',
+  'meter.which_job': 'मीटर की फ़ोटो मिली। यह किस काम की है? नंबर लिखें या {ref} जैसा:\n{lines}\nफ़ोटो छोड़नी हो तो "नहीं" लिखें।',
+  'meter.job_line': '{n}. {ref}: {site}, {day} का काम',
   'meter.other_machine': 'यह फ़ोटो उस JCB के मीटर की नहीं लगती जिसकी पहली फ़ोटो आई थी ({reason})। कुछ दर्ज नहीं हुआ। उसी JCB के मीटर की अभी की फ़ोटो भेजें।',
   'meter.differs.display': 'मीटर का डिस्प्ले अलग है',
   'meter.differs.make': 'मशीन की कंपनी अलग है',
