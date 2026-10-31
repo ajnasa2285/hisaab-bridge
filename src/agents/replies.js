@@ -257,7 +257,9 @@ function sellerReply(o) {
       return h === null || h === 0 ? null : { kind: 'step', tool: 'send_correction', args: { orderId: p.orderId, hoursTenths: h }, confirm: true };
     }
     const q = figures.map(parseHundredths);
-    if (q.some((n) => n === null || n === 0)) return null;
+    if (q.some((n) => n === null)) return null;
+    // An item may go to 0 (it never came); all of them would be a ₹0 bill, which could never be settled.
+    if (q.every((n) => n === 0)) return { kind: 'ask', key: 'supplier.correction_nothing', params: { ref: p.ref } };
     return { kind: 'step', tool: 'send_correction', args: { orderId: p.orderId, qtysHundredths: q }, confirm: true };
   }
 
@@ -383,8 +385,9 @@ function disputeReply(o) {
     args.totalPaise = paise;
     if (RUPEE_UNIT.has(rest[i] ?? '')) i += 1;
   } else if (material) {
+    // 0 is a figure here: "नहीं 0 बोरी नहीं आई".
     const q = parseHundredths(figure);
-    if (q === null || q === 0) return null;
+    if (q === null) return null;
     args.qtyHundredths = q;
     const units = new Set(requestedItems(o.ledger.events(p.orderId)).map((it) => it.unit.normalize('NFC').toLowerCase()));
     if (units.has(rest[i] ?? '')) i += 1;

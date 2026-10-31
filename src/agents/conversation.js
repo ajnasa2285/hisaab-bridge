@@ -724,7 +724,9 @@ export function createConversation(o) {
       const parts = pair.parts.map((part, i) => (i === pair.index ? filled : part));
       return twoRequests(person, text, shareFilled({ person, orders: orderRefs(o.ledger), nowMs: o.now() }, parts));
     }
-    if (proposal.kind === 'step' && proposal.tool === 'dispute_bill' && (proposal.args.itemFigures || (proposal.args.qtyHundredths && billLines(proposal.args.orderId).length > 1))) return disputeByItems(person, text, proposal.args);
+    if (proposal.kind === 'step' && proposal.tool === 'dispute_bill' && (proposal.args.itemFigures || (proposal.args.qtyHundredths !== undefined && billLines(proposal.args.orderId).length > 1))) return disputeByItems(person, text, proposal.args);
+    // Every item at 0 from the model's reading: refused here, never read back with a dash.
+    if (proposal.kind === 'step' && proposal.tool === 'send_correction' && proposal.args.qtysHundredths?.every((/** @type {number} */ q) => q === 0)) return o.reply(person, 'supplier.correction_nothing', { ref: refOfId(proposal.args.orderId) });
     const noRate = proposal.kind === 'step' ? rateMissing(proposal) : null;
     if (noRate) return o.reply(person, noRate.key, noRate.params);
     if (proposal.kind === 'help') return o.reply(person, `help.${person.role}`);

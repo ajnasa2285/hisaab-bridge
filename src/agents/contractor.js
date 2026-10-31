@@ -418,7 +418,7 @@ export function createContractorAgent(o) {
         params: {
           ref: refOf(a.orderId),
           site: siteOf(a.orderId),
-          their: posInt(a.hoursTenths) ? hours(a.hoursTenths) : posInt(a.qtyHundredths) ? qtyOf(a.orderId, a.qtyHundredths) : posInt(a.totalPaise) ? rupees(a.totalPaise) : '—',
+          their: posInt(a.hoursTenths) ? hours(a.hoursTenths) : nonNegInt(a.qtyHundredths) ? qtyOf(a.orderId, a.qtyHundredths) : nonNegInt(a.totalPaise) ? rupees(a.totalPaise) : '—',
           reason: typeof a.reason === 'string' ? a.reason : '—',
         },
       }),
@@ -427,10 +427,11 @@ export function createContractorAgent(o) {
       async run(_p, a) {
         if (!known(a.orderId)) return no('common.no_such_order');
         if (typeof a.reason !== 'string' || !a.reason.trim() || a.reason.length > 500) return no('site.reason_needed');
-        // Exactly one figure: in what the order is measured in (hours or a quantity), or a total.
+        // Exactly one figure: in what the order is measured in (hours or a quantity), or a total. On
+        // material it may be 0: the objection says nothing came. It is a claim, never a ₹0 bill.
         const measure = isMaterial(a.orderId) ? 'qtyHundredths' : 'hoursTenths';
         const given = ['hoursTenths', 'qtyHundredths', 'totalPaise'].filter((k) => a[k] !== undefined);
-        if (given.length !== 1 || (given[0] !== measure && given[0] !== 'totalPaise') || !posInt(a[given[0]])) return no(keyFor(a.orderId, 'site.figure_needed'));
+        if (given.length !== 1 || (given[0] !== measure && given[0] !== 'totalPaise') || !(posInt(a[given[0]]) || (isMaterial(a.orderId) && a[given[0]] === 0))) return no(keyFor(a.orderId, 'site.figure_needed'));
         const view = ledger.view(a.orderId);
         if (view.currentBill === null) return no('common.wrong_state');
         if (a.bill !== undefined && a.bill !== view.currentBill) return billChanged(a.orderId, view.currentBill);

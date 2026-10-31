@@ -159,6 +159,7 @@ export const hi = Object.freeze({
   'supplier.bill_accepted': '{ref}: {site} का बिल ठेकेदार ने मंज़ूर किया।',
   'supplier.bill_disputed': "{ref}: {site} के बिल पर ठेकेदार सहमत नहीं। उनका आँकड़ा: {their}। कारण: {reason}। सुधार भेजना हो तो लिखें: 'सुधार {example}'",
   'supplier.correction_sent': 'सुधरा बिल भेजा: {lines}, कुल {total}।',
+  'supplier.correction_nothing': '{ref}: सब कुछ 0 का सुधरा बिल नहीं बनता। जो आया उसकी मात्रा लिखें, जो नहीं आया उसकी जगह 0। कुछ भी नहीं आया तो सुधार न भेजें, ठेकेदार से सीधे बात करें; ठेकेदार के "हाँ" के बिना यह बिल पक्का नहीं होता।',
   'supplier.payment_claimed': '{ref}: ठेकेदार का कहना है कि {site} के लिए {amount} का भुगतान {day} को किया, UTR {utr}। कृपया अपना खाता देखें; आया हो तो "हाँ" लिखें, नहीं तो "नहीं"।',
   'supplier.settled_sent': 'आपने {amount} मिलना पक्का किया। इस सामान का हिसाब पूरा।',
   'challan.not_challan': 'इस फ़ोटो में चालान नहीं दिखा। कृपया सामान के चालान की फ़ोटो भेजें।',

@@ -192,7 +192,7 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'site.material_correction_received_invoice_match': ['yes', 'ref', 'site', 'lines', 'total', 'example'],
     'site.material_correction_received_invoice_differs': ['yes', 'ref', 'site', 'lines', 'total', 'invoiceTotal', 'example'],
     'bill.line_gst': ['percent', 'gst', 'amount'], 'bill.rate_gst': ['percent'],
-    'supplier.bill_accepted': ['ref', 'site'], 'supplier.bill_disputed': ['ref', 'site', 'their', 'reason', 'example'], 'supplier.correction_sent': ['lines', 'total'],
+    'supplier.bill_accepted': ['ref', 'site'], 'supplier.bill_disputed': ['ref', 'site', 'their', 'reason', 'example'], 'supplier.correction_nothing': ['ref'], 'supplier.correction_sent': ['lines', 'total'],
     'supplier.payment_claimed': ['ref', 'site', 'amount', 'utr', 'day'], 'supplier.settled_sent': ['amount'],
     'challan.not_challan': [], 'challan.ask_person': ['raw', 'items'], 'challan.no_order_for_photo': [],
     'photo.ask_kind': ['forms'], 'photo.other': ['kinds'], 'photo.none': [], 'photo.sent_by_meter': ['kinds'],

@@ -245,9 +245,9 @@ export const SPECS = [
   {
     name: 'send_correction', roles: ['supplier'], states: ['billed', 'disputed'],
     description: 'Send a corrected material bill with different quantities after the contractor objected.',
-    properties: { order: ORDER, quantities: FIGURES(false, 'The corrected quantity of each delivered item, in the order of the bill, exactly as written like "48".') },
+    properties: { order: ORDER, quantities: FIGURES(false, 'The corrected quantity of each delivered item, in the order of the bill, exactly as written like "48"; "0" for an item that never came.') },
     toArgs: (a) => {
-      const q = figures(a.quantities, parseHundredths, false);
+      const q = figures(a.quantities, parseHundredths, true);
       return q === null ? null : { qtysHundredths: q };
     },
   },
@@ -350,7 +350,7 @@ export const SPECS = [
       their_total_rupees: NULLABLE_TEXT(12, 'Total in rupees the contractor says, exactly as written, or null.'),
       their_items: {
         type: ['array', 'null'], minItems: 1, maxItems: 20,
-        description: 'For a material bill when the person names quantities of items: only the items they name, each with the name exactly as the bill lists it and the quantity exactly as written; quantity null when the unit they say differs from the bill or the figure cannot be tied to that item. Else null. Never calculate a total from these.',
+        description: 'For a material bill when the person names quantities of items: only the items they name, each with the name exactly as the bill lists it and the quantity exactly as written ("0" for an item that never came); quantity null when the unit they say differs from the bill or the figure cannot be tied to that item. Else null. Never calculate a total from these.',
         items: { type: 'object', additionalProperties: false, required: ['item', 'quantity'], properties: { item: { type: 'string', maxLength: 80 }, quantity: { type: ['string', 'null'], maxLength: 12 } } },
       },
       reason: { type: 'string', minLength: 1, maxLength: 300, description: 'The reason in the words of the person.' },
@@ -366,7 +366,7 @@ export const SPECS = [
       }
       if (given[0] === 'their_quantity') {
         const q = parseHundredths(a.their_quantity);
-        return q === null || q === 0 ? null : { qtyHundredths: q, reason: a.reason };
+        return q === null ? null : { qtyHundredths: q, reason: a.reason };
       }
       const p = parsePaise(a.their_total_rupees);
       return p === null ? null : { totalPaise: p, reason: a.reason };

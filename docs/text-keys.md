@@ -119,6 +119,7 @@ Supplier side (`supplier`):
 | `supplier.bill_accepted` | ref, site | the contractor accepted the bill |
 | `supplier.bill_disputed` | ref, site, their, reason, example | the contractor disputes; their figure and reason; how to send a correction ("सुधार {example}", 30 Oct) |
 | `supplier.correction_sent` | lines, total | corrected bill sent |
+| `supplier.correction_nothing` | ref | a correction with every item at 0 is refused: a ₹0 bill could never be settled; says what to do instead |
 | `supplier.payment_claimed` | ref, site, amount, utr, day | the contractor says they paid; please check your account ("हाँ" = confirm_payment) |
 | `supplier.settled_sent` | amount | you confirmed receipt; settled |
 

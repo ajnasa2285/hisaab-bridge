@@ -208,7 +208,7 @@ Signature: Ed25519 over the RFC 8785 canonical JSON of the message without `sig`
 | `RECEIPT` | receiver → sender | `receipt_for: msg_id`, `entry_hash`, `chain_head` |
 | `ACCEPT` | buyer → seller | `bill: msg_id` |
 | `DISPUTE` | buyer → seller | `bill: msg_id`, `theirFigure: {hoursTenths?|qtyHundredths?|totalPaise}` (exactly one: hours for a JCB bill, a quantity only for a single-line material bill, else the total), `reason` |
-| `CORRECTION` | seller → buyer | a `BILL` body that always has `replaces: msg_id` (the bill or correction it replaces) |
+| `CORRECTION` | seller → buyer | a `BILL` body that always has `replaces: msg_id` (the bill or correction it replaces). A material line may carry `qtyHundredths: 0` (the item never came; amount 0, the line stays in its place), not every line. A first `BILL` never has one |
 | `PAYMENT_CLAIM` | buyer → seller | `bill: msg_id`, `amountPaise`, `utr`, `paidOn`, `paidAt?` (`HH:MM` on 24 hours as printed on the receipt, `null` or left out when not visible; a claim without it stays valid), `screenshot: {sha256}` |
 | `SETTLED` | seller → buyer | `bill: msg_id`, `payment: msg_id`, `amountPaise` |
 | `REFUSE` | either | `refers_to: msg_id`, `code` |
