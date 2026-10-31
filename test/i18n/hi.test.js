@@ -123,6 +123,7 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'common.try_again': [], 'common.media_too_large': [], 'common.undelivered': ['ref', 'site'], 'common.delivery_unsure': ['ref', 'site'], 'common.question_waits': [], 'common.records_disagree': [],
     'site.bill_copy': ['ref', 'site', 'what'], 'site.bill_contractor_accepts': [], 'pay.payee': ['name'], 'jcb.meter_which_stale': [], 'learn.voice_replaced': ['words'], 'learn.forgot_word': ['word', 'n'], 'site.bill_changed': ['ref', 'site', 'bill'], 'site.bill_changed_check': ['ref', 'site', 'bill'], 'site.bill_is_material': ['lines', 'total'], 'site.bill_is_jcb': ['hours', 'rate', 'total'],
     'pay.seller.utr_seen': ['utr', 'before'], 'pay.seller.claim_waiting': ['ref', 'payment'], 'payment.forwarded': [],
+    'pay.seller.same_recorded': ['ref', 'amount', 'before'], 'pay.seller.claim_same_confirmed': ['ref', 'amount', 'before'], 'step.deny_payment': ['site', 'amount'],
     'payment.at_time': ['time'],'jcb.payment_claimed_at': ['ref', 'site', 'amount', 'day', 'time', 'utr'],
     'supplier.payment_claimed_at': ['ref', 'site', 'amount', 'day', 'time', 'utr'],
     // Payments: part, cash, advance, clubbed (claude/payments, CONTRACTS 4.1).

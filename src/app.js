@@ -159,8 +159,10 @@ export function createApp(cfg) {
    * A person writes after notices to them could not be sent: first what is still waiting for them,
    * each notice once, as the agent rebuilds it from its ledger now (an order that moved on is not told
    * again; a notice that is not about an open request of theirs is dropped). Then their message is
-   * handled as usual. What could not be sent is kept for the next time. On the contractor's agent such
-   * a notice sets no expectation: it asks for "हाँ <ref>", and a plain "हाँ" right after it decides nothing.
+   * handled as usual. What could not be sent is kept for the next time. Such a notice sets no expectation:
+   * it asks for "हाँ <ref>", and a plain "हाँ" right after it decides nothing, one whose send failed too (a
+   * seller's plain yes would otherwise confirm a payment never seen). A clubbed payment counts under all its
+   * references.
    * A decision on a supervisor's step (`toldOnly`) asks nothing, so that "हाँ" is left as it was.
    * @param {Person} person @param {{cfg: AgentConfig, core: any, talk: ReturnType<typeof createConversation>, office: ReturnType<typeof createOffice>,
    *   agent: {waiting?: (role: string) => {key: string, params: Record<string, string | number>, also?: RegExp}[]}}} entry
@@ -177,15 +179,15 @@ export function createApp(cfg) {
       const notices = missedWaiting(missed, open);
       unsent = missed.filter((m) => missedWaiting([m], notices).length > 0);
       for (const n of notices) {
+        if (!n.toldOnly) told.push(...String('refs' in n.params ? n.params.refs : n.params.ref).split(', '));
         if (!(await sendTo(person, t(n.key, n.params)))) continue;
-        if (!n.toldOnly) told.push(String(n.params.ref));
         unsent = unsent.filter((m) => missedWaiting([m], [n]).length === 0);
       }
     } catch (e) {
       log(`missed notices to ${person.role} ${maskPhone(person.phone)} not told: ${e instanceof Error ? e.message : 'error'}`);
     }
     for (const m of unsent) store.missed(person.line, person.phone, m.ref, m.key, now());
-    if (entry.cfg.kind === 'contractor' && told.length) entry.talk.replayed(person, told);
+    if (told.length) entry.talk.replayed(person, [...new Set(told)]);
   }
 
   /** @type {Map<string, {cfg: AgentConfig, core: any, agent: {tools: any, onApplied: (m: any) => Promise<void>, waiting?: (role: string) => {key: string, params: Record<string, string | number>, also?: RegExp}[]}, link: ReturnType<typeof createLink>, talk: ReturnType<typeof createConversation>, office: ReturnType<typeof createOffice>, a2a: ReturnType<typeof createA2AHandler>,
