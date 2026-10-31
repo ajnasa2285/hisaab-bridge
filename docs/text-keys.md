@@ -19,6 +19,7 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `common.undelivered` | ref, site | a message of ours expired before it reached the other side; it does not count, send it again if still needed (src/agents/link.js) |
 | `common.question_waits` | — | added under a notice that asks something while another question is open: a bare हाँ/नहीं answers the open one, this one is asked after it (src/app.js) |
 | `common.delivery_unsure` | ref, site | a message of ours is past its expiry with no answer; it may have arrived, so it still counts and goes on being sent until a signed answer decides (src/agents/link.js) |
+| `common.records_disagree` | — | to the owner-level person of each agent concerned: the ledger check found records that no longer agree; once per failure, no figures (src/app.js, docs/BUILD2.md) |
 | `payment.forwarded` | — | a forwarded UPI screenshot or cash receipt; nothing read, nothing recorded |
 | `wa.unknown_sender` | — | someone not registered wrote to the number |
 

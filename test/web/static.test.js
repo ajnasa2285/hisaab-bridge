@@ -25,7 +25,7 @@ test('the front door lets through every source module the judge page imports, an
   assert.ok(line);
   const paths = line.trim().split(/\s+/).slice(2);
   for (const m of imported) assert.ok(paths.includes(m), `${m} is not let through`);
-  assert.deepEqual(paths.filter((p) => p.startsWith('/src')).sort(), ['/src/ledger/payments.js', '/src/ledger/usual.js']);
+  assert.deepEqual(paths.filter((p) => p.startsWith('/src')).sort(), ['/src/ledger/cross-check.js', '/src/ledger/payments.js', '/src/ledger/usual.js']);
 });
 
 /** An app with no agents and no lines: enough for the page. */
@@ -111,6 +111,13 @@ test('the page and its own files are served at /judge/ with the headers and the 
       checkHeaders(shared);
       assert.match(await shared.text(), /usualFigures/);
     }
+    const compare = await fetch(`${s.base}/src/ledger/cross-check.js`);
+    assert.equal(compare.status, 200);
+    assert.equal(compare.headers.get('content-type'), 'text/javascript; charset=utf-8');
+    checkHeaders(compare);
+    assert.match(await compare.text(), /crossCheck/);
+    assert.equal((await fetch(`${s.base}/src/ledger/cross-check.js`, { method: 'POST' })).status, 405);
+    assert.equal((await fetch(`${s.base}/src/ledger/integrity.js`)).status, 404, 'the node-only check stays private');
     assert.equal((await fetch(`${s.base}/src/ledger/usual.js`, { method: 'POST' })).status, 405);
     assert.equal((await fetch(`${s.base}/src/ledger/payments.js`, { method: 'POST' })).status, 405);
 

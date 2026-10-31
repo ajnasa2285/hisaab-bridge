@@ -56,6 +56,7 @@ Labels are in Hindi; the button at the top switches to English for judges. Texts
   their other orders with the same group total, and each order shows only its own share;
 - the chain check of each ledger and, per order, the state replayed from its events (the
   material path included; a history that breaks the state rules is marked ❌);
+- **the cross-check through receipts**, under the ledger cards: for the contractor with each seller, receipts compared, signatures checked and each mismatch (row, order, kind), from the pure `src/ledger/cross-check.js`; rows after the last receipt are not covered;
 - a results panel from `eval/results/*.json` (aggregate numbers only); "—" when there are none;
 - **inside the agent** (below), under each side's column;
 - **learning from corrections** (below), inside each ledger card at the top.
@@ -140,8 +141,9 @@ cash claim acknowledged by the seller, one UPI payment allocated across both ord
 claim, a denied claim and credit. Both exported sides contain the same signed payment messages.
 These extra events are constructed for the export; they do not bypass runtime ledger checks.
 
-The browser imports the exact pure balance module at `/src/ledger/payments.js`; the app serves
-only this source path, alongside its explicit judge-file allow-list. No other source is exposed.
+The browser imports the exact pure modules at `/src/ledger/payments.js`, `/src/ledger/usual.js` and
+`/src/ledger/cross-check.js`; the app serves only these source paths, alongside its explicit
+judge-file allow-list. No other source is exposed.
 
 ## Inside the agent
 
