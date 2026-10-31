@@ -10,7 +10,7 @@ import { billUsualNotes, requestUsualNotes, withUsual } from './usual.js';
 import { tenths as hours, rupees, day as dayName, qty } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, plainRupees, posInt } from './common.js';
 import { safeName } from '../protocol/names.js';
-import { agreedRates, billFollows, countDifferences, delivery, gstPaise, invoiceCheck, isGstPercent, itemsText, itemsTotalPaise, lineAmountPaise, linesText, materialBillBody, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, siteHours, validItems } from './material.js';
+import { agreedRates, billFollows, countDifferences, delivery, gstPaise, invoiceCheck, isGstPercent, itemsText, itemsTotalPaise, lineAmountPaise, lineMathWarning, linesText, materialBillBody, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, siteHours, validItems } from './material.js';
 import { openRefs } from '../ledger/refs.js';
 import { t, variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
@@ -99,11 +99,15 @@ export function createContractorAgent(o) {
   };
   /**
    * The site's count against the supplier's signed delivery: the quantity of each item and, when both
-   * are known, the challan numbers. Code compares; a difference is told with both figures.
-   * @param {string} orderId @param {Item[]} count @param {string | null} siteNo
+   * are known, the challan numbers. Code compares; a difference is told with both figures. `samePhoto`:
+   * the count was read from the very photo the supplier sent (the same bytes), so it is no second check.
+   * @param {string} orderId @param {Item[]} count @param {{sha256: string, number: string | null} | null} siteCopy
+   * the site's challan photo, when the count came from one
    * @param {NonNullable<ReturnType<typeof delivery>>} d
    */
-  const compareCount = (orderId, count, siteNo, d) => {
+  const compareCount = (orderId, count, siteCopy, d) => {
+    const siteNo = siteCopy?.number ?? null;
+    const samePhoto = siteCopy?.sha256 === d.sha256;
     const numbersDiffer = siteNo !== null && d.number !== null && !sameChallanNo(siteNo, d.number);
     const itemsDiffer = countDifferences(count, d.items).length > 0;
     traceCheck(`site count vs signed delivery ${itemsDiffer ? '✗ differs' : '✓ matches'}: ${itemsText(count)} / ${itemsText(d.items)}`, !itemsDiffer,
@@ -111,8 +115,13 @@ export function createContractorAgent(o) {
     if (siteNo !== null && d.number !== null) {
       traceCheck(`challan number ${numbersDiffer ? '✗' : '✓'} ${siteNo} ${numbersDiffer ? '≠' : '='} ${d.number}`, !numbersDiffer, { name: 'challan_number', site: siteNo, delivery: d.number }, orderId);
     }
+    if (siteCopy) {
+      traceCheck(`site's photo vs supplier's photo ${samePhoto ? '✗ the same photo, not a second check' : '✓ different photos'}`, !samePhoto,
+        { name: 'site_photo_independent', site: { sha256: siteCopy.sha256 }, delivery: { sha256: d.sha256 } }, orderId);
+    }
     return {
       same: countDifferences(count, d.items).length === 0 && !numbersDiffer,
+      samePhoto,
       params: { ref: refOf(orderId), site: siteOf(orderId), count: itemsText(count), siteNo: siteNo ?? '—', challan: itemsText(d.items), challanNo: d.number ?? '—' },
     };
   };
@@ -662,16 +671,17 @@ export function createContractorAgent(o) {
     const d = delivery(ledger.events(a.orderId));
     if (d !== null) await sendSiteReceipt(a.orderId);
     if (d === null) return ok(variant('site.challan_count_saved', { challan: challan.number }), { ref, site, items: itemsText(items), ...(challan.number ? { challan: challan.number } : {}) });
-    const c = compareCount(a.orderId, items, challan.number, d);
+    const c = compareCount(a.orderId, items, challan, d);
     const number = d.number ?? challan.number;
     if (c.same) {
-      if (person.role !== 'contractor') await tell('contractor', 'site.count_told_photo', { ref, site, items: itemsText(items) });
-      return ok(variant('site.challan_count_matches', { challan: number }), { ref, site, items: itemsText(items), ...(number ? { challan: number } : {}) });
+      if (person.role !== 'contractor') await tell('contractor', variant('site.count_told_photo', { same_photo: c.samePhoto }), { ref, site, items: itemsText(items) });
+      return ok(variant('site.challan_count_matches', { challan: number, same_photo: c.samePhoto }), { ref, site, items: itemsText(items), ...(number ? { challan: number } : {}) });
     }
     await o.evidence?.countDifference(a.orderId);
     // Code compares; the contractor is told both figures (in the reply, when the contractor counted).
-    if (person.role !== 'contractor') await tell('contractor', 'site.challan_count_differs', c.params);
-    return ok('site.challan_count_differs', c.params);
+    const key = variant('site.challan_count_differs', { same_photo: c.samePhoto });
+    if (person.role !== 'contractor') await tell('contractor', key, c.params);
+    return ok(key, c.params);
   }
 
   /**
@@ -842,10 +852,14 @@ export function createContractorAgent(o) {
         const events = ledger.events(m.order_id);
         const count = siteCount(events);
         const d = delivery(events);
+        // A tax invoice's printed line that does not add up: a clause in the contractor's notice, from the signed items.
+        const math = lineMathWarning(b.items, m.order_id);
+        /** @type {Record<string, string>} */
+        const mathParam = math ? { math } : {};
         if (count !== null && d !== null) {
-          const c = compareCount(m.order_id, count, siteChallan(events)?.number ?? null, d);
-          const key = c.same ? 'site.delivery_matches_count' : 'site.challan_count_differs';
-          await tell('contractor', key, c.params);
+          const c = compareCount(m.order_id, count, siteChallan(events), d);
+          const key = variant(c.same ? 'site.delivery_matches_count' : 'site.challan_count_differs', { same_photo: c.samePhoto });
+          await tell('contractor', variant(key, { math }), { ...c.params, ...mathParam });
           await tell('supervisor', key, c.params);
           await sendSiteReceipt(m.order_id);
           if (!c.same) await o.evidence?.countDifference(m.order_id);
@@ -856,7 +870,7 @@ export function createContractorAgent(o) {
         const asked = deliveryNotice(m, t('site.yes_word'));
         const expect = { tool: 'confirm_count', args: { orderId: m.order_id, qtysHundredths: b.items.map((/** @type {Item} */ it) => it.qtyHundredths), sameAsChallan: true } };
         await tell('supervisor', asked.key, asked.params, expect);
-        await tell('contractor', variant('site.delivery_info', { challan: b.challan?.number }), asked.params);
+        await tell('contractor', variant('site.delivery_info', { challan: b.challan?.number, math }), { ...asked.params, ...mathParam });
         break;
       }
       case 'BILL':

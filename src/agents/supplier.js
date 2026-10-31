@@ -7,7 +7,7 @@
 import { rupees, day as dayName, qty } from '../i18n/format.js';
 import { rateUsualNotes, withUsual } from './usual.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, posInt } from './common.js';
-import { agreedRates, countDifferences, delivery, invoiceCheck, isGstPercent, itemsText, linesText, materialBillBody, rateFor, ratesText, requestedItems, sameChallanNo, signedWord, validItems } from './material.js';
+import { agreedRates, countDifferences, delivery, invoiceCheck, isGstPercent, itemsText, lineMathWarning, linesText, materialBillBody, rateFor, ratesText, requestedItems, sameChallanNo, signedWord, validItems } from './material.js';
 import { t } from '../i18n/index.js';
 import { openRefs } from '../ledger/refs.js';
 import { variant } from '../i18n/index.js';
@@ -149,8 +149,10 @@ export function createSupplierAgent(o) {
         });
         const grand = a.invoice?.grandTotalPaise;
         const body = { items, challan, deliveredAt: new Date(agent.now()).toISOString(), ...(posInt(grand) ? { grandTotalPaise: grand } : {}) };
+        // A printed line that does not add up is told with the receipt; it stops nothing.
+        const math = lineMathWarning(items, a.orderId);
         const d = await link.send({ type: 'DELIVERY', to: /** @type {string} */ (counterparty(a.orderId)), orderId: a.orderId, body });
-        return deliveryResult(d, 'supplier.delivery_sent', { ref: refOf(a.orderId), site: siteOf(a.orderId), items: itemsText(items) });
+        return deliveryResult(d, variant('supplier.delivery_sent', { math }), { ref: refOf(a.orderId), site: siteOf(a.orderId), items: itemsText(items), ...(math ? { math } : {}) });
       },
     },
 

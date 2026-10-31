@@ -10,6 +10,7 @@ import { refusedIds } from '../ledger/states.js';
 import { MAX_UNIT, safeName } from '../protocol/names.js';
 import { parseQuantity } from '../orchestrator/units.js';
 import { canonicalUnit } from '../readers/challan.js';
+import { traceCheck } from '../trace/trace.js';
 
 /** @typedef {import('../ledger/store.js').LedgerEvent} LedgerEvent */
 /** @typedef {{name: string, qtyHundredths: number, unit: string, gstPercent?: number}} Item */
@@ -173,6 +174,47 @@ export function invoiceCheck(invoicePaise, totalPaise) {
   if (invoicePaise === totalPaise) return 'match';
   if (invoicePaise % 100 === 0 && invoicePaise === Math.floor((totalPaise + 50) / 100) * 100) return 'match';
   return 'differs';
+}
+
+// Printed rounding: a tax invoice's line may differ from quantity × rate by this much either way.
+const LINE_MATH_SLACK_PAISE = 100;
+
+/**
+ * A tax invoice's printed arithmetic, line by line: delivered quantity × the invoice's rate against the
+ * invoice's taxable value, as a DELIVERY's items carry them. A line missing any of the three is skipped;
+ * null when no line could be checked. The quantity is the delivered one, so a quantity the person typed
+ * that differs from the invoice shows here too. Only ever a warning: the bill is quantity × agreed rate.
+ * @param {{name: string, qtyHundredths: number, unit: string, invoiceRatePaise?: number, taxablePaise?: number}[]} items
+ * @returns {{checked: number, differs: {name: string, qtyHundredths: number, unit: string, ratePaise: number, printedPaise: number, computedPaise: number}[]} | null}
+ */
+export function invoiceLineMath(items) {
+  let checked = 0;
+  /** @type {{name: string, qtyHundredths: number, unit: string, ratePaise: number, printedPaise: number, computedPaise: number}[]} */
+  const differs = [];
+  for (const it of items) {
+    const { invoiceRatePaise: ratePaise, taxablePaise: printedPaise } = it;
+    if (!posInt(ratePaise) || !posInt(printedPaise)) continue;
+    const computedPaise = lineAmountPaise(it.qtyHundredths, ratePaise);
+    if (computedPaise === null) continue;
+    checked += 1;
+    if (Math.abs(computedPaise - printedPaise) > LINE_MATH_SLACK_PAISE) differs.push({ name: it.name, qtyHundredths: it.qtyHundredths, unit: it.unit, ratePaise, printedPaise, computedPaise });
+  }
+  return checked === 0 ? null : { checked, differs };
+}
+
+/**
+ * The trace check of a delivery's invoice lines, and the clause for its notices when a line does not
+ * agree: "सीमेंट 40 बोरी × ₹380 = ₹15,200, पर इनवॉइस पर ₹19,000". Null when there is nothing to say.
+ * @param {Parameters<typeof invoiceLineMath>[0]} items @param {string} orderId @returns {string | null}
+ */
+export function lineMathWarning(items, orderId) {
+  const check = invoiceLineMath(items);
+  if (check === null) return null;
+  const agrees = check.differs.length === 0;
+  traceCheck(`invoice lines: quantity × rate ${agrees ? '✓ = taxable value' : '✗ ≠ taxable value'} (${check.checked} checked)`, agrees,
+    { name: 'invoice_line_math', checked: check.checked, differs: check.differs }, orderId);
+  return agrees ? null : check.differs.map((l) => t('bill.invoice_line_math', { item: l.name, qty: qty(l.qtyHundredths, l.unit).trim(),
+    rate: rupees(l.ratePaise), computed: rupees(l.computedPaise), printed: rupees(l.printedPaise) })).join('; ');
 }
 
 /**

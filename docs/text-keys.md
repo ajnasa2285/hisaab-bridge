@@ -592,3 +592,19 @@ The bill and correction notices with a one-word answer, and `site.delivery_recei
 | `site.yes_word` | | the word itself, for `yes` |
 | `site.no_needs_ref` | ref, refs | a bare "नहीं" in the same moment: nothing recorded, write the reference with it |
 | `site.yes_needs_ref` | ref, refs | (every role with open questions) a bare "हाँ" right after notices were told again: nothing recorded, write the reference with it; `refs` are those still open |
+
+## The same photo, and a printed line that does not add up (31 Oct)
+
+Warnings only, inside notices that exist already. Nothing is asked. `same_photo`: the site's count was read from the very photo the supplier sent. `math`: the clause `bill.invoice_line_math`, one per line that does not add up.
+
+| Key | Parameters | Meaning |
+|---|---|---|
+| `site.count_told_photo_same_photo` | ref, site, items | `site.count_told_photo`, and it is the same photo, so no second check |
+| `site.challan_count_matches_same_photo` / `site.challan_count_matches_challan_same_photo` | ref, site, items, [challan] | to the person who sent the site's photo: recorded, matches, and the supplier sent this same photo |
+| `site.challan_count_differs_same_photo` | ref, site, count, siteNo, challan, challanNo | `site.challan_count_differs`, and it is the same photo |
+| `site.delivery_matches_count_same_photo` | ref, site, challan, challanNo | `site.delivery_matches_count`, and it is the same photo |
+| `site.delivery_info_math` / `site.delivery_info_challan_math` | ref, site, items, [challan], math | `site.delivery_info`, with the line that does not add up |
+| `site.delivery_matches_count_math` / `site.delivery_matches_count_same_photo_math` | ref, site, challan, challanNo, math | to the contractor only, when the site counted first |
+| `site.challan_count_differs_math` / `site.challan_count_differs_same_photo_math` | ref, site, count, siteNo, challan, challanNo, math | to the contractor only, when the site counted first |
+| `supplier.delivery_sent_math` | ref, site, items, math | the supplier's receipt, with the line that does not add up |
+| `bill.invoice_line_math` | item, qty, rate, computed, printed | the clause: delivered quantity × the invoice's rate, and the taxable value printed |
