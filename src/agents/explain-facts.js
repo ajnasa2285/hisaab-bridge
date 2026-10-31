@@ -4,7 +4,7 @@ import { t } from '../i18n/index.js';
 import { qty, rupees, tenths } from '../i18n/format.js';
 import { parseTenths } from '../orchestrator/units.js';
 import { ofType } from './common.js';
-import { agreedRates, billLine, billLines, delivery, requestedItems, siteChallan, siteCount } from './material.js';
+import { agreedRates, billLine, billLines, delivery, requestedItems, siteChallan, siteCount, siteHours } from './material.js';
 import { cleanEvidenceReading, hasReceivedEvidence } from './evidence-readings.js';
 import { paymentSummary } from '../ledger/payments.js';
 import { openRefs } from '../ledger/refs.js';
@@ -145,6 +145,10 @@ export function differenceFacts(ledger, orderId, ref) {
       return money(sum);
     })(),
   } : null;
+  // The site's own hours on a JCB job, on this ledger only, at the rate of the owner's yes.
+  const noted = siteHours(events);
+  const yesRate = ofType(events, 'BOOKING_REPLY', 'in').filter((e) => e.body.body.answer === 'yes').at(-1)?.body.body.ratePaise;
+  const localSiteHours = noted ? { hours: hours(noted.hoursTenths), totalAtAgreedRate: Number.isSafeInteger(yesRate) ? money(Math.round((noted.hoursTenths * yesRate) / 10)) : null } : null;
   // The remote site's count is an attributed signed commitment in the current dispute. It is
   // kept separate from this agent's own confirmed count and from the fresh reading of its photo.
   const siteCommitment = ofType(events, 'DISPUTE', 'in').filter((e) => e.body.body.bill === current?.msgId)
@@ -190,7 +194,7 @@ export function differenceFacts(ledger, orderId, ref) {
   const paymentBalance = { ...(summary.billTotalPaise !== null ? { billed: money(summary.billTotalPaise), due: money(/** @type {number} */ (summary.duePaise)) } : {}),
     confirmed: money(summary.confirmedPaise), waiting: money(summary.waitingPaise), credit: money(summary.creditPaise) };
   const context = { ref: identifier(ref), site: order.site, kind: order.kind, currentBill, meterEvidence,
-    signedDelivery, deliveryAtAgreedRates, localSiteCount, peerSiteCount, receivedEvidence, disputes, corrections,
+    signedDelivery, deliveryAtAgreedRates, localSiteCount, localSiteHours, peerSiteCount, receivedEvidence, disputes, corrections,
     payments, paymentBalance, usualFigures: usual,
     agreedRates: rates?.map((r) => ({ item: r.name, unit: r.unit, rate: money(r.ratePaise) })) ?? null };
 
@@ -213,6 +217,7 @@ export function differenceFacts(ledger, orderId, ref) {
   if (localSiteCount) figures.push(t(localSiteCount.fromSiteChallanPhoto ? 'explain.figures.sitePhoto' : 'explain.figures.siteCount', {
     number: localSiteCount.challanNumber ?? t('records.not_recorded'), items: showItems(localSiteCount.items), total: localSiteCount.totalAtAgreedRates ?? t('records.not_recorded'),
   }));
+  if (localSiteHours) figures.push(t('explain.figures.siteHours', { hours: localSiteHours.hours, total: localSiteHours.totalAtAgreedRate ?? t('records.not_recorded') }));
   if (peerSiteCount) figures.push(t('explain.figures.sitePhoto', {
     number: peerSiteCount.challanNumber ?? t('records.not_recorded'), items: showItems(peerSiteCount.items), total: t('records.not_recorded'),
   }));

@@ -250,6 +250,7 @@ function bodyOf(e, t, ctx) {
       if (Number.isSafeInteger(b.grandTotalPaise)) row(grid, t.invoice_total, rupees(b.grandTotalPaise));
       break;
     case 'NOTE': {
+      if (b.kind === 'site_hours') { row(grid, t.site_hours, `${tenths(b.hoursTenths)} ${t.hours}`); break; }
       if (b.kind !== 'site_count') { row(grid, '', JSON.stringify(b), 'mono'); break; }
       const items = Array.isArray(b.items) ? b.items : [];
       const delivered = Array.isArray(ctx.delivery?.items) ? ctx.delivery.items : [];
@@ -326,6 +327,7 @@ function typeLabel(e, t) {
   const types = /** @type {Record<string, string>} */ (t.types);
   if (e.type === 'BOOKING_REQUEST' && b.kind === 'material') return types.MATERIAL_REQUEST;
   if (e.type === 'NOTE' && b.kind === 'site_count') return types.SITE_COUNT;
+  if (e.type === 'NOTE' && b.kind === 'site_hours') return types.SITE_HOURS;
   return types[e.type] ?? e.type;
 }
 

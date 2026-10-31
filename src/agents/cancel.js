@@ -3,7 +3,10 @@
 // An exact command read by code (src/agents/office.js parseCommand), read back, one "हाँ", one signed
 // message; the other side's agent records it without a yes and tells its people. Refused, with the
 // reason, once the order has meter evidence, a delivery, a site count, a bill or money on it. What this
-// side cannot see (the JCB side's meter photos) the other side's state refuses.
+// side cannot see (the JCB side's meter photos) the other side's state refuses. The site's own hours on a
+// JCB job (a `site_hours` NOTE) do not refuse: they are entered with no read-back and cannot be changed, so
+// one mistyped reference must not lock an order, no bill can follow a cancel, and a refusal to the JCB owner
+// would give away a note that is ours alone.
 
 import { CANCELLABLE } from '../ledger/states.js';
 import { openRefs } from '../ledger/refs.js';

@@ -63,6 +63,7 @@ export function brief(c, audience) {
   if (c?.deliveryAtAgreedRates) out.push(`डिलीवरी तय दरों पर: कुल ${c.deliveryAtAgreedRates.total}`);
   const s = c?.localSiteCount;
   if (s) out.push(`साइट की अपनी गिनती (${s.fromSiteChallanPhoto ? `साइट के चालान${s.challanNumber ? ` ${s.challanNumber}` : ''} की फ़ोटो से` : 'लिखकर दी गई'}): ${itemsLine(s.items)}${s.totalAtAgreedRates ? `; तय दरों पर कुल ${s.totalAtAgreedRates}` : ''}`);
+  if (c?.localSiteHours) out.push(`साइट के अपने दर्ज घंटे: ${c.localSiteHours.hours} घंटे${c.localSiteHours.totalAtAgreedRate ? `; तय दर पर कुल ${c.localSiteHours.totalAtAgreedRate}` : ''}`);
   const peer = c?.peerSiteCount;
   if (peer) out.push(`दूसरे पक्ष की हस्ताक्षरित आपत्ति में साइट की गिनती${peer.challanNumber ? `, चालान ${peer.challanNumber}` : ''}: ${itemsLine(peer.items)}`);
   for (const observed of c?.receivedEvidence ?? []) {

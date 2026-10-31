@@ -9,7 +9,7 @@ import { billUsualNotes, requestUsualNotes, withUsual } from './usual.js';
 import { tenths as hours, rupees, day as dayName, qty } from '../i18n/format.js';
 import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, plainRupees, posInt } from './common.js';
 import { safeName } from '../protocol/names.js';
-import { agreedRates, billFollows, countDifferences, delivery, gstPaise, invoiceCheck, isGstPercent, itemsText, itemsTotalPaise, lineAmountPaise, linesText, materialBillBody, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, validItems } from './material.js';
+import { agreedRates, billFollows, countDifferences, delivery, gstPaise, invoiceCheck, isGstPercent, itemsText, itemsTotalPaise, lineAmountPaise, linesText, materialBillBody, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, siteHours, validItems } from './material.js';
 import { openRefs } from '../ledger/refs.js';
 import { t, variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
@@ -17,6 +17,7 @@ import { differenceFacts } from './explain-facts.js';
 import { traceCheck } from '../trace/trace.js';
 import { PAYABLE, balanceText, newGroupId, paymentLine, shares, summaryOf, utrUses } from './pay.js';
 import { cancelTool, orderWords } from './cancel.js';
+import { MAX_JOB_TENTHS } from './jcb.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -27,7 +28,7 @@ import { cancelTool, orderWords } from './cancel.js';
 const UTR_RE = /^[A-Za-z0-9-]{6,64}$/;
 // The keys a bill or correction may have been missed under. What is told again is the bill in force, so
 // a key from a bill since replaced, or from before the "usual" line came or went, leads to it too.
-const BILL_KEYS = /^(?:usual\.notice|site\.(?:material_)?(?:bill_received|correction_received|bill_no_count|bill_count_differs|bill_mismatch)(?:_invoice_(?:match|differs))?)$/u;
+const BILL_KEYS = /^(?:usual\.notice|site\.(?:(?:bill|correction)_(?:received_hours_match|hours_differs)|(?:material_)?(?:bill_received|correction_received|bill_no_count|bill_count_differs|bill_mismatch)(?:_invoice_(?:match|differs))?))$/u;
 
 /**
  * @param {{
@@ -381,6 +382,33 @@ export function createContractorAgent(o) {
       },
     },
 
+    // The hours a JCB worked as the site saw them, kept on our side only (a local NOTE), for the contractor
+    // to set beside the bill; the JCB owner's agent never sees it. Nobody is asked for it. Recorded once,
+    // and never with a bill in force: after that a different figure is an objection to the bill.
+    record_site_hours: {
+      roles: ['supervisor', 'contractor'],
+      commits: true,
+      stillOpen: (a) => known(a.orderId) && !isMaterial(a.orderId) && ledger.view(a.orderId).currentBill === null && siteHours(ledger.events(a.orderId)) === null,
+      describe: (a) => ({ key: 'step.record_site_hours', params: { ref: refOf(a.orderId), site: siteOf(a.orderId), hours: posInt(a.hoursTenths) ? hours(a.hoursTenths) : '—' } }),
+      async run(person, a) {
+        if (!known(a.orderId)) return no('common.no_such_order');
+        const ref = refOf(a.orderId);
+        if (isMaterial(a.orderId)) return no('site.hours_jcb_only', { ref });
+        const view = ledger.view(a.orderId);
+        if (view.currentBill !== null) return no('site.hours_closed', { ref });
+        const before = siteHours(ledger.events(a.orderId));
+        if (before !== null) return no('site.hours_already', { ref, hours: hours(before.hoursTenths) });
+        if (!['booked', 'working'].includes(view.state)) return no('site.hours_not_open', { ref });
+        if (!posInt(a.hoursTenths) || a.hoursTenths > MAX_JOB_TENTHS) return no('site.hours_figure', { ref });
+        const stored = ledger.append({
+          orderId: a.orderId, direction: 'local', type: 'NOTE', msgId: randomUUID(),
+          body: { kind: 'site_hours', hoursTenths: a.hoursTenths, by: person.role }, at: new Date(agent.now()).toISOString(),
+        });
+        if (stored === null) return no('common.wrong_state');
+        return ok('site.hours_saved', { ref, site: siteOf(a.orderId), hours: hours(a.hoursTenths) });
+      },
+    },
+
     // Only the contractor calls off an order never carried out; the supervisor is told.
     cancel_order: cancelTool({ ledger, link, tell, roles: ['contractor'], team: { role: 'supervisor', key: 'site.order_cancelled_own' } }),
 
@@ -553,12 +581,26 @@ export function createContractorAgent(o) {
   }
 
   /**
-   * Whether a plain "हाँ" may accept this bill: a JCB bill, or a material bill that follows from the
-   * delivery, the agreed rates and the site's count.
+   * The site's recorded hours against a JCB bill, and what they come to at the agreed rate; null when
+   * none were recorded. @param {string} orderId @param {Record<string, any>} b
+   */
+  function hoursCheck(orderId, b) {
+    const events = ledger.events(orderId);
+    const noted = siteHours(events);
+    const billed = b.lines[0]?.hoursTenths;
+    if (noted === null || billed === undefined) return null;
+    const yes = ofType(events, 'BOOKING_REPLY', 'in').filter((e) => e.body.body.answer === 'yes').at(-1)?.body.body.ratePaise;
+    const rate = posInt(yes) ? yes : b.lines[0].ratePaise;
+    return { differs: noted.hoursTenths !== billed, hoursTenths: noted.hoursTenths, totalPaise: Math.round((noted.hoursTenths * rate) / 10) };
+  }
+
+  /**
+   * Whether a plain "हाँ" may accept this bill: a JCB bill the site's hours do not differ from, or a
+   * material bill that follows from the delivery, the agreed rates and the site's count.
    * @param {string} orderId @param {Record<string, any>} b @param {string} type
    */
   function mayAcceptOnYes(orderId, b, type) {
-    if (!isMaterial(orderId)) return true;
+    if (!isMaterial(orderId)) return !hoursCheck(orderId, b)?.differs;
     const c = materialBillCheck(b, type, orderId);
     if (!c.follows || !c.d) return false;
     const d = c.d;
@@ -637,8 +679,9 @@ export function createContractorAgent(o) {
   /**
    * What the contractor is told about a bill or correction, when first told and when told again after a
    * missed 24-hour window (waiting()). A material bill is checked against the signed delivery and the
-   * agreed rates, then against the site's own count. `armed`: a bill that follows from both (or a JCB
-   * bill) is offered for a one-word "हाँ" when first told; the others ask for "हाँ {ref}" in their own words.
+   * agreed rates, then against the site's own count; a JCB bill against the site's hours, when recorded.
+   * `armed`: a bill that follows from these is offered for a one-word "हाँ" when first told; the others
+   * ask for "हाँ {ref}" in their own words.
    * @param {string} orderId @param {Record<string, any>} b @param {string} type
    * @returns {{key: string, params: Record<string, string | number>, armed: boolean}}
    */
@@ -649,6 +692,13 @@ export function createContractorAgent(o) {
     const yes = t('site.yes_word');
     if (!isMaterial(orderId)) {
       const line = b.lines[0];
+      const noted = hoursCheck(orderId, b);
+      if (noted) {
+        const word = type === 'BILL' ? 'bill' : 'correction';
+        const shown = { ref, site, yes, total, hours: hours(line.hoursTenths), rate: rupees(line.ratePaise), photos: Array.isArray(b.evidence) ? b.evidence.length : 0 };
+        if (!noted.differs) return { key: `site.${word}_received_hours_match`, armed: true, params: shown };
+        return { key: `site.${word}_hours_differs`, armed: false, params: { ...shown, siteHours: hours(noted.hoursTenths), siteTotal: rupees(noted.totalPaise) } };
+      }
       return { key: type === 'BILL' ? 'site.bill_received' : 'site.correction_received', armed: true, params: {
         ref, site, yes, total, hours: line.hoursTenths !== undefined ? hours(line.hoursTenths) : '—', rate: rupees(line.ratePaise), photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
       } };
@@ -763,7 +813,8 @@ export function createContractorAgent(o) {
       case 'BOOKING_REPLY': {
         const { key, params } = bookingNotice(m);
         await tell('contractor', key, params);
-        await tell('supervisor', key, params);
+        // The supervisor's yes on a JCB job says once that the hours may be noted; nothing is asked.
+        await tell('supervisor', key.replace(/^site\.booking_yes(?=$|_time$)/u, 'site.booking_yes_hours'), params);
         break;
       }
       case 'DELIVERY': {
@@ -795,7 +846,13 @@ export function createContractorAgent(o) {
           break;
         }
         const n = billNotice(m.order_id, b, m.type);
-        await tellBill(m.order_id, b, n.key, n.params, { tool: 'accept_bill', args: { orderId: m.order_id, bill: m.msg_id } });
+        await tellBill(m.order_id, b, n.key, n.params, n.armed ? { tool: 'accept_bill', args: { orderId: m.order_id, bill: m.msg_id } } : undefined);
+        const noted = hoursCheck(m.order_id, b);
+        if (noted) traceCheck(`site's hours ${noted.differs ? '✗ ≠' : '✓ ='} bill: ${hours(noted.hoursTenths)} / ${hours(b.lines[0].hoursTenths)}`, !noted.differs, { name: 'site_hours_vs_bill', site: noted.hoursTenths, bill: b.lines[0].hoursTenths }, m.order_id);
+        if (noted?.differs) {
+          const explanation = await explainDifference({ spark: o.spark, audience: 'buyer', facts: differenceFacts(ledger, m.order_id, ref) });
+          await tell('contractor', explanation.key, explanation.params);
+        }
         await tell('supervisor', 'site.bill_copy', { ref, site, what: billText(m.order_id, b) });
         break;
       }

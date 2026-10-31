@@ -250,6 +250,12 @@ export function siteCountEntry(events) {
   return n && typeof n.body.by === 'string' && typeof n.body.how === 'string' ? { by: n.body.by, how: n.body.how } : null;
 }
 
+/** The hours the site recorded for a JCB job and who entered them (a local NOTE, once), or null. @param {LedgerEvent[]} events @returns {{hoursTenths: number, by: string} | null} */
+export function siteHours(events) {
+  const n = ofType(events, 'NOTE', 'local').find((e) => e.body.kind === 'site_hours');
+  return n ? { hoursTenths: n.body.hoursTenths, by: n.body.by } : null;
+}
+
 /** The challan the site's count in force was read from (its photo), or null. @param {LedgerEvent[]} events @returns {{sha256: string, number: string | null} | null} */
 export function siteChallan(events) {
   const n = ofType(events, 'NOTE', 'local').filter((e) => e.body.kind === 'site_count').at(-1);

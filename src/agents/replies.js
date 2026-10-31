@@ -6,7 +6,7 @@
 
 import { orderRefs, pickOrder } from '../orchestrator/orchestrator.js';
 import { dayWord, parsePaise, parseTenths, parseHundredths, parseTime, resolveDay } from '../orchestrator/units.js';
-import { parseRef } from '../ledger/refs.js';
+import { openRefs, parseRef } from '../ledger/refs.js';
 import { agreedRates, delivery, invoiceCheck, isGstPercent, itemsText, materialBillBody, requestedItems } from './material.js';
 import { PAYABLE, todayIst } from './pay.js';
 
@@ -177,8 +177,35 @@ function afterYes(w) {
 export function exactReply(o) {
   const role = o.person.role;
   if (role === 'jcb_owner' || role === 'supplier') return sellerReply(o);
+  if (role === 'contractor' || role === 'supervisor') {
+    const hours = siteHoursReply(o);
+    if (hours) return hours;
+  }
   if (role === 'contractor') return payReply(o) ?? disputeReply(o);
   return null;
+}
+
+const SITE_HOURS_UNIT = ['घंटे', 'घंटा', 'घण्टे', 'घण्टा', 'ghante', 'ghanta', 'hours', 'hrs', 'hr', 'h'].join('|');
+const REF_WORD = String.raw`(?:j|p|जे|पी)\s*-?\s*\d{1,6}`;
+const HOURS_WORD = String.raw`(\d{1,3}(?:\.\d)?)\s*(?:${SITE_HOURS_UNIT})`;
+const SITE_HOURS = [new RegExp(`^(${REF_WORD})\\s+${HOURS_WORD}$`, 'u'), new RegExp(`^${HOURS_WORD}\\s+(${REF_WORD})$`, 'u')];
+
+/**
+ * The hours a JCB worked as the site saw them, a reference and hours and nothing else: "J-2 6 घंटे",
+ * "5.5 घंटे J-2". The tool says when it is too late or the order is not a JCB job.
+ * @param {{ledger: any, text: string}} o @returns {Exact | null}
+ */
+function siteHoursReply(o) {
+  const said = tokens(o.text).join(' ').replace(/[०-९]/gu, (d) => String(d.charCodeAt(0) - 0x0966));
+  const first = SITE_HOURS[0].exec(said);
+  const last = first ? null : SITE_HOURS[1].exec(said);
+  if (!first && !last) return null;
+  const ref = parseRef(first ? first[1] : /** @type {RegExpExecArray} */ (last)[2]);
+  const hoursTenths = parseTenths(first ? first[2] : /** @type {RegExpExecArray} */ (last)[1]);
+  if (ref === null || hoursTenths === null) return null;
+  const orderId = openRefs(o.ledger).orderOfRef(ref);
+  if (orderId === null) return { kind: 'ask', key: 'common.no_such_order' };
+  return { kind: 'step', tool: 'record_site_hours', args: { orderId, hoursTenths } };
 }
 
 /**

@@ -54,6 +54,15 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `site.booking_yes` / `_no` / `_other_time` | ref, site, day, time, rate | the JCB owner's answer |
 | `site.bill_received` | ref, site, yes, hours, rate, total, photos | a bill arrived (with this many meter photos) |
 | `site.correction_received` | ref, site, yes, hours, rate, total, photos | a corrected bill arrived |
+| `site.bill_received_hours_match` / `site.correction_received_hours_match` | ref, site, yes, hours, rate, total, photos, example | a JCB bill or correction equal to the site's recorded hours; "हाँ" accepts |
+| `site.bill_hours_differs` / `site.correction_hours_differs` | ref, site, hours, rate, total, photos, siteHours, siteTotal | a JCB bill or correction beside the site's different hours and what they come to at the agreed rate (no "हाँ" offered) |
+| `site.booking_yes_hours` / `_time` | ref, site, day, time, rate | `site.booking_yes` as the supervisor gets it: says the hours may be noted; asks nothing |
+| `site.hours_saved` | ref, site, hours | the site's hours recorded on a JCB job |
+| `site.hours_already` | ref, hours | the hours are recorded once |
+| `site.hours_closed` | ref | not with a bill in force |
+| `site.hours_not_open` | ref | before the owner's yes, or a job called off or closed |
+| `site.hours_jcb_only` | ref | a reference of a material order |
+| `site.hours_figure` | ref | hours above 0, 24 at most |
 | `site.bill_accepted` | ref, site | you accepted the bill |
 | `site.bill_disputed` | ref, site | your objection was sent |
 | `site.reason_needed` | — | an objection needs a reason |
@@ -153,6 +162,7 @@ Read-backs (each ends with "हाँ / नहीं"):
 | `step.send_material_correction` | site, lines, total | supplier: confirm the corrected bill |
 | `step.request_material` | site, day, time, items | contractor/supervisor: confirm the material request |
 | `step.confirm_count` | site, items | supervisor/contractor: confirm the site's count |
+| `step.record_site_hours` | ref, site, hours | supervisor/contractor: the site's hours understood from free words |
 | `step.site_challan` | ref, site, challan, items, names | supervisor/contractor: confirm what was read from the photo of the site's challan, or type the right figures in order (Claude drafted, Fable polished 29 Oct) |
 | `step.confirm_payment` | site, amount | (shared with the JCB owner) the supplier confirms the money arrived |
 
@@ -220,6 +230,8 @@ The model writes only `{explanation}`. All `{figures}` fragments below come from
 | `explain.figures.deliveryAmount` | total | delivery valued at the agreed rates by code |
 | `explain.figures.sitePhoto` | number, items, total | local count confirmed from the site's challan photo |
 | `explain.figures.siteCount` | items, total | local typed count, without inferring a photo |
+| `explain.figures.siteHours` | hours, total | the site's recorded hours on a JCB job, at the agreed rate |
+| `records.hours_entered` | by | who entered the site's hours, in the order lookup |
 | `explain.figures.dispute` / `explain.figures.previousDispute` | figure | attributed objection to the current / previous bill |
 | `explain.figures.correction` | before, after | previous and replacement bill figures |
 

@@ -369,3 +369,30 @@ test('a bill first told with the "usual" line is found under that key, and under
     assert.deepEqual(s.site.waiting('supervisor'), [], 'a bill is not the supervisor\'s');
   } finally { await s.close(); }
 });
+
+test('the hours on a JCB job through the whole app: the exact form, a bill that differs told when the contractor next writes, no one-word yes', async (tc) => {
+  const d = await desk(tc);
+  await d.run(d.siteEntry, contractor, 'request_jcb', { site: 'Rampur', day: '2026-10-30' });
+  const orderId = String(d.siteEntry.core.ledger.orders()[0].order_id);
+  await d.run(d.jcbEntry, owner, 'reply_booking', { orderId, answer: 'yes', ratePaise: 120000 });
+  await d.say(SUPERVISOR, 'J-1 5.5 घंटे');
+  assert.ok(d.to(SUPERVISOR).some((x) => x.includes('5.5')), d.to(SUPERVISOR).join(' | '));
+  assert.equal(d.state.sparks, 0, 'no model');
+  const notes = () => ofType(d.siteEntry.core.ledger.events(orderId), 'NOTE', 'local').filter((e) => e.body.kind === 'site_hours');
+  assert.deepEqual(notes().map((e) => e.body), [{ kind: 'site_hours', hoursTenths: 55, by: 'supervisor' }]);
+  await d.run(d.jcbEntry, operator, 'record_meter', { orderId, which: 'start', valueTenths: 1000, sha256: SHA_A });
+  await d.run(d.jcbEntry, operator, 'record_meter', { orderId, which: 'end', valueTenths: 1060, sha256: SHA_B });
+  await d.run(d.jcbEntry, owner, 'send_bill', { orderId });
+  await d.say(SUPERVISOR, 'J-1 7 घंटे');
+  assert.equal(notes().length, 1, 'closed with a bill in force');
+  await d.say(CONTRACTOR, 'बाक़ी');
+  const told = d.to(CONTRACTOR).find((x) => x.includes('₹7,200') && x.includes('₹6,600'));
+  assert.ok(told, d.to(CONTRACTOR).join(' | '));
+  assert.ok(told.includes('हाँ J-1'));
+  await d.say(CONTRACTOR, 'हाँ');
+  assert.equal(d.accepts(orderId), 0, 'a bare yes accepts nothing');
+  await d.say(CONTRACTOR, 'हाँ J-1');
+  await d.say(CONTRACTOR, 'हाँ');
+  assert.equal(d.accepts(orderId), 1);
+  assert.equal(JSON.stringify(d.jcbEntry.core.ledger.events(orderId)).includes('site_hours'), false, 'the JCB side never sees the note');
+});
