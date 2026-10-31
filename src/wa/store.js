@@ -16,7 +16,11 @@ export function openWaStore(file) {
     CREATE TABLE IF NOT EXISTS wa_window (line TEXT NOT NULL, phone TEXT NOT NULL, last_in_ms INTEGER NOT NULL, PRIMARY KEY (line, phone));
     CREATE TABLE IF NOT EXISTS wa_missed (line TEXT NOT NULL, phone TEXT NOT NULL, ref TEXT NOT NULL, key TEXT NOT NULL, at_ms INTEGER NOT NULL,
       PRIMARY KEY (line, phone, ref, key));
+    CREATE TABLE IF NOT EXISTS wa_integrity_told (line TEXT NOT NULL, phone TEXT NOT NULL, failure TEXT NOT NULL, at_ms INTEGER NOT NULL,
+      PRIMARY KEY (line, phone, failure));
   `);
+  const insertTold = db.prepare('INSERT OR IGNORE INTO wa_integrity_told (line, phone, failure, at_ms) VALUES (?, ?, ?, ?)');
+  const getTold = db.prepare('SELECT 1 FROM wa_integrity_told WHERE line = ? AND phone = ? AND failure = ?');
   const insertMissed = db.prepare('INSERT OR IGNORE INTO wa_missed (line, phone, ref, key, at_ms) VALUES (?, ?, ?, ?, ?)');
   const listMissed = db.prepare('SELECT ref, key FROM wa_missed WHERE line = ? AND phone = ? ORDER BY at_ms, ref, key');
   const dropMissed = db.prepare('DELETE FROM wa_missed WHERE line = ? AND phone = ?');
@@ -62,6 +66,18 @@ export function openWaStore(file) {
       const rows = /** @type {{ref: string, key: string}[]} */ (listMissed.all(line, phone)).map((r) => ({ ref: String(r.ref), key: String(r.key) }));
       if (rows.length) dropMissed.run(line, phone);
       return rows;
+    },
+    /**
+     * Has this person been told of this ledger-check failure (src/ledger/integrity.js)? Kept here so a
+     * restart does not tell them again.
+     * @param {string} line @param {string} phone @param {string} failure its id, which holds no figures
+     */
+    integrityTold(line, phone, failure) {
+      return getTold.get(line, phone, failure) !== undefined;
+    },
+    /** @param {string} line @param {string} phone @param {string} failure @param {number} atMs */
+    markIntegrityTold(line, phone, failure, atMs) {
+      insertTold.run(line, phone, failure, atMs);
     },
     close: () => db.close(),
   };

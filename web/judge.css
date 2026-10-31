@@ -35,6 +35,12 @@ h2 { font-size: 1.05rem; margin: 0 0 8px; color: var(--accent); }
 .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 @media (max-width: 860px) { .cards { grid-template-columns: 1fr; } }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+.cross { margin-top: 12px; }
+.cross h4 { margin: 8px 0 2px; font-size: 0.9rem; }
+.cross p { margin: 2px 0; }
+.cross .ok { color: var(--accent); }
+.cross .bad { color: var(--bad); }
+.cross ul { margin: 2px 0; padding-left: 18px; font-family: var(--mono); font-size: 0.85rem; }
 .card h3 { font-size: 0.95rem; margin: 0 0 6px; color: var(--accent); }
 .card.missing { color: var(--muted); }
 .order { margin-bottom: 16px; }

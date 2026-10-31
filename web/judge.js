@@ -11,6 +11,9 @@
 // every code check, every decision, each signed message linked to its ledger row), from the export's
 // `trace` or live from `../agents/<name>/trace`; "live" polls every 3 s while a key is entered.
 //
+// The receipts cross-check: under the ledger cards, each pair of connected ledgers compared through the
+// signed receipts they hold (src/ledger/cross-check.js), each receipt's signature checked first.
+//
 // Learning from corrections: each ledger card at the top carries that agent's counts from the
 // export's optional `learning` field (web/learning-view.js), nothing when the field is absent.
 
@@ -20,6 +23,7 @@ import { paymentPanel } from './payments-view.js';
 import { stateOf } from './order-state.js';
 import { learningCard, readLearning } from './learning-view.js';
 import { usualPanels } from './usual-view.js';
+import { crossCheck } from '../src/ledger/cross-check.js';
 
 /** @typedef {'hi'|'en'} Lang */
 /** @typedef {typeof TEXTS['hi']} Texts */
@@ -29,7 +33,7 @@ import { usualPanels } from './usual-view.js';
  */
 /** @typedef {{order_id: string, kind: string, counterparty: string, site: string, created_at: string}} Order */
 /** @typedef {import('./trace-view.js').TraceEntry} TraceEntry */
-/** @typedef {{agentId: string, publicKey: string, orders: Order[], events: Ev[], chain: {ok: boolean, events?: number, brokenAt?: number}, refs?: Record<string, string>, trace?: TraceEntry[], learning?: unknown}} LedgerExport */
+/** @typedef {{agentId: string, exportedAt?: string, publicKey: string, orders: Order[], events: Ev[], chain: {ok: boolean, events?: number, brokenAt?: number}, refs?: Record<string, string>, trace?: TraceEntry[], learning?: unknown}} LedgerExport */
 /** @typedef {'jcb'|'contractor'|'supplier'} SideName */
 /** @typedef {{v: string, exportedAt: string, jcb?: LedgerExport|null, contractor?: LedgerExport|null, supplier?: LedgerExport|null}} Export */
 /** @typedef {{kind: 'sample'|'file'|'live', missing: SideName[]}} Source */
@@ -422,6 +426,55 @@ function ledgerCard(name, side, t, chain) {
 }
 
 /**
+ * One pair of ledgers: receipts compared, how many match, and each mismatch with its row and order.
+ * Live, each side is fetched at its own moment, so its own exportedAt keeps a receipt newer than the
+ * other side's copy out of the comparison.
+ * @param {Export} x @param {SideName} seller @param {Texts} t
+ */
+async function crossPair(x, seller, t) {
+  const box = el('section');
+  box.append(el('h4', undefined, `${sideTitle('contractor', t)} ↔ ${sideTitle(seller, t)}`));
+  const [a, b] = [x.contractor, x[seller]];
+  if (!a || !b) {
+    box.append(el('p', 'hint', t.cross_missing));
+    return box;
+  }
+  /** @type {Map<unknown, boolean | null>} */
+  const signed = new Map();
+  for (const [holder, peer] of [[a, b], [b, a]]) {
+    for (const e of holder.events) {
+      if (e.direction !== 'in' || e.type !== 'RECEIPT' || e.body?.from !== peer.agentId) continue;
+      const result = await verifySignature(e.body, peer.publicKey);
+      signed.set(e, result === 'ok' ? true : result === 'bad' ? false : null);
+    }
+  }
+  /** @param {LedgerExport} s */
+  const side = (s) => ({ id: s.agentId, events: s.events, ...(s.exportedAt ? { exportedAt: s.exportedAt } : {}) });
+  const r = crossCheck(side(a), side(b), { verify: (e) => signed.get(e) ?? null });
+  const n = String(r.receipts);
+  box.append(r.mismatches.length
+    ? el('p', 'bad', t.cross_bad.replace('{n}', n).replace('{m}', String(r.mismatches.length)))
+    : el('p', 'ok', t.cross_ok.replace('{n}', n)));
+  box.append(el('p', 'hint', t.cross_signatures.replace('{n}', String(r.signaturesChecked)).replace('{total}', n)));
+  if (r.notYet) box.append(el('p', 'hint', t.cross_not_yet.replace('{n}', String(r.notYet))));
+  if (r.mismatches.length) {
+    const list = el('ul');
+    for (const m of r.mismatches) {
+      const holder = m.holder === a.agentId ? a : b;
+      list.append(el('li', 'bad', t.cross_line.replace('{side}', holder === a ? sideTitle('contractor', t) : sideTitle(seller, t)).replace('{seq}', String(m.seq)).replace('{kind}', t.cross_kinds[m.kind]).replace('{order}', holder.refs?.[m.orderId] ?? short(m.orderId, 8))));
+    }
+    box.append(list);
+  }
+  return box;
+}
+
+/** @param {Export} x @param {Texts} t */
+async function renderCrossCheck(x, t) {
+  const pairs = [await crossPair(x, 'jcb', t), await crossPair(x, 'supplier', t)];
+  /** @type {HTMLElement} */ (document.getElementById('cross-check')).replaceChildren(el('h3', undefined, t.cross_title), el('p', 'hint', t.cross_hint), ...pairs);
+}
+
+/**
  * The agent's "learning from corrections" box: memory on or off, a small table per kind, the note.
  * @param {import('./learning-view.js').Learning} l @param {Texts} t
  */
@@ -676,6 +729,7 @@ async function render(x) {
   // Live: each timeline shows its newest entry.
   if (liveTimer !== null) scrollTimelines();
   await verifyAll(x);
+  await renderCrossCheck(x, t);
 }
 
 // --- Results panel: eval/results/*.json as the server lists them at results/, else "—" --------

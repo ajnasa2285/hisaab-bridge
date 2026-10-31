@@ -41,11 +41,15 @@ import { createCloudClient } from './wa/cloud.js';
 import { maskPhone } from './wa/webhook.js';
 import { toWav } from './wa/audio.js';
 import { t } from './i18n/index.js';
+import { checkLedgers } from './ledger/integrity.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 
 // The reason src/wa/wa.js gives when a person has not written in the last 24 hours.
 const OUTSIDE_WINDOW = 'outside 24h window';
 const RETRY_MS = 60 * 1000;
+// How often the ledgers are checked. Under WhatsApp's 24 hours on purpose: someone who was outside the
+// window when told is told at the first check after they next write, while it is open.
+const INTEGRITY_CHECK_MS = 6 * 60 * 60 * 1000;
 
 // The judge page is served from web/ by the app itself, file by file from this list and nothing
 // else: no directory listing, no `web/serve.js`, no `web/sample/make-sample.js`, no path that is
@@ -65,6 +69,13 @@ const JUDGE_FILES = {
   'learning-view.js': 'text/javascript; charset=utf-8',
   'sample/export.json': 'application/json; charset=utf-8',
 };
+// The only source files the browser may read: the pure ledger modules the page imports.
+/** @type {Record<string, string>} path → module */
+const JUDGE_SOURCES = {
+  '/src/ledger/payments.js': './ledger/payments.js',
+  '/src/ledger/usual.js': './ledger/usual.js',
+  '/src/ledger/cross-check.js': './ledger/cross-check.js',
+};
 const RESULT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.json$/;
 const JUDGE_HEADERS = {
   'content-security-policy': "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'",
@@ -78,6 +89,11 @@ const JUDGE_HEADERS = {
  * @param {AgentConfig['kind']} kind @returns {import('./wa/directory.js').Role[]}
  */
 const senderRoles = (kind) => (kind === 'contractor' ? ['contractor', 'supervisor'] : kind === 'jcb' ? ['jcb_owner'] : ['supplier']);
+/**
+ * The person who owns an agent's records.
+ * @param {AgentConfig['kind']} kind @returns {import('./wa/directory.js').Role}
+ */
+const ownerRole = (kind) => (kind === 'contractor' ? 'contractor' : kind === 'jcb' ? 'jcb_owner' : 'supplier');
 
 /** @typedef {import('./protocol/messages.js').Peer} Peer */
 /** @typedef {import('./wa/directory.js').Person} Person */
@@ -111,6 +127,7 @@ const senderRoles = (kind) => (kind === 'contractor' ? ['contractor', 'superviso
  *   fetch?: typeof globalThis.fetch,
  *   transport?: (baseUrl: string, m: any) => Promise<unknown>,
  *   exportToken?: string,
+ *   integrityCheckMs?: number,
  *   traceText?: boolean,
  *   learn?: boolean,
  *   now?: () => number,
@@ -348,6 +365,58 @@ export function createApp(cfg) {
   }, RETRY_MS);
   timer.unref();
 
+  // The ledgers are checked at start and every few hours (src/ledger/integrity.js). A healthy check sends
+  // nothing. The check never touches message handling and catches its own errors.
+  let closed = false;
+  let checking = false;
+  /** @param {import('./ledger/integrity.js').Failure[]} failures */
+  async function tellFailures(failures) {
+    /** @type {Map<string, {person: Person, failures: Set<string>}>} */
+    const told = new Map();
+    for (const f of failures) {
+      for (const id of f.agents) {
+        const entry = agents.get(id);
+        if (!entry) continue;
+        for (const person of directory.people(id, ownerRole(entry.cfg.kind))) {
+          const key = `${person.line}|${person.phone}`;
+          const seen = told.get(key) ?? { person, failures: new Set() };
+          seen.failures.add(f.id);
+          told.set(key, seen);
+        }
+      }
+    }
+    // One message per person, however many rows one edit disturbed; only a new failure tells them again.
+    // What could not be sent stays untold, for the next check.
+    for (const { person, failures: ids } of told.values()) {
+      const fresh = [...ids].filter((id) => !store.integrityTold(person.line, person.phone, id));
+      if (!fresh.length) continue;
+      const r = await wa.send(person.line, person.phone, t('common.records_disagree'));
+      if (!r.ok) { log(`integrity: ${person.role} not told yet: ${r.reason}`); continue; }
+      for (const id of fresh) store.markIntegrityTold(person.line, person.phone, id, now());
+    }
+  }
+  async function checkIntegrity() {
+    if (checking || closed) return;
+    checking = true;
+    try {
+      const checked = [...agents.values()].map((x) => ({ name: x.cfg.name, id: x.cfg.id, ledger: x.core.ledger, peers: x.core.peers }));
+      const r = await checkLedgers(checked, { onError: (name, e) => { if (!closed) log(`integrity: ${name} could not be checked (${e instanceof Error ? e.name : 'error'})`); } });
+      if (closed) return;
+      if (!r.failures.length) { log(`integrity: ok, ${checked.length} ledgers, ${r.receipts} receipts compared`); return; }
+      log(`integrity: ${r.failures.length} problem(s), ${r.receipts} receipts compared: ${r.failures.slice(0, 10).map((f) => f.text).join('; ')}`);
+      await tellFailures(r.failures);
+    } catch (e) {
+      // Only the name: a parser's message can quote a row.
+      if (!closed) log(`integrity: check failed (${e instanceof Error ? e.name : 'error'})`);
+    } finally {
+      checking = false;
+    }
+  }
+  const firstCheck = setImmediate(() => { void checkIntegrity(); });
+  firstCheck.unref();
+  const integrityTimer = setInterval(() => { void checkIntegrity(); }, cfg.integrityCheckMs ?? INTEGRITY_CHECK_MS);
+  integrityTimer.unref();
+
   /**
    * @param {import('node:http').IncomingMessage} req
    * @param {import('node:http').ServerResponse} res
@@ -359,7 +428,7 @@ export function createApp(cfg) {
       return;
     }
     if (await wa.handle(req, res)) return;
-    if (path === '/judge' || path.startsWith('/judge/') || path === '/src/ledger/payments.js' || path === '/src/ledger/usual.js') {
+    if (path === '/judge' || path.startsWith('/judge/') || Object.hasOwn(JUDGE_SOURCES, path)) {
       await serveJudge(path, req, res);
       return;
     }
@@ -411,10 +480,9 @@ export function createApp(cfg) {
       res.writeHead(status, { ...JUDGE_HEADERS, 'content-type': type });
       res.end(req.method === 'HEAD' ? undefined : body);
     };
-    // Only the two pure ledger modules used by the browser, no general source-directory serving.
-    if (path === '/src/ledger/payments.js' || path === '/src/ledger/usual.js') {
-      const module = path === '/src/ledger/payments.js' ? './ledger/payments.js' : './ledger/usual.js';
-      try { send(200, 'text/javascript; charset=utf-8', await readFile(new URL(module, import.meta.url))); }
+    // Only the pure ledger modules used by the browser, no general source-directory serving.
+    if (Object.hasOwn(JUDGE_SOURCES, path)) {
+      try { send(200, 'text/javascript; charset=utf-8', await readFile(new URL(JUDGE_SOURCES[path], import.meta.url))); }
       catch { send(404, 'text/plain; charset=utf-8', 'not found'); }
       return;
     }
@@ -501,7 +569,10 @@ export function createApp(cfg) {
     /** For tests and the judge export. @param {string} id */
     agent: (id) => agents.get(id),
     close() {
+      closed = true;
       clearInterval(timer);
+      clearInterval(integrityTimer);
+      clearImmediate(firstCheck);
       for (const { core, trace, learn, siteNames } of agents.values()) {
         core.ledger.close();
         trace.close();

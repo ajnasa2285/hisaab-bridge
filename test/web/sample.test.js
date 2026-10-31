@@ -10,6 +10,7 @@ import { canonicalize } from '../../src/protocol/canonical.js';
 import { buildSample } from '../../web/sample/make-sample.js';
 import { paymentSummary } from '../../src/ledger/payments.js';
 import { stateOf } from '../../web/order-state.js';
+import { crossCheck } from '../../src/ledger/cross-check.js';
 
 /** @typedef {import('../../web/sample/make-sample.js').Export} Export */
 
@@ -127,4 +128,15 @@ test('the committed sample export verifies: signatures and all three chains', ()
 
 test('make-sample builds a fresh export that verifies too', async () => {
   checkExport(await buildSample());
+});
+
+test('the committed sample passes the receipts cross-check, for every pair and each signature', () => {
+  const x = JSON.parse(readFileSync(new URL('../../web/sample/export.json', import.meta.url), 'utf8'));
+  for (const seller of [x.jcb, x.supplier]) {
+    const keys = new Map([x.contractor, seller].map((s) => [s.agentId, publicKeyFromText(s.publicKey)]));
+    const r = crossCheck({ id: x.contractor.agentId, events: x.contractor.events }, { id: seller.agentId, events: seller.events }, { verify: (e) => verifyMessage(e.body, /** @type {any} */ (keys.get(e.body.from))) });
+    assert.deepEqual(r.mismatches, []);
+    assert.ok(r.receipts > 0);
+    assert.equal(r.signaturesChecked, r.receipts);
+  }
 });

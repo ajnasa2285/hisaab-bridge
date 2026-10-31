@@ -120,7 +120,7 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'supplier.site_receipt_signed_yes': [], 'supplier.site_receipt_signed_no': [], 'supplier.site_receipt_signed_unsure': [],
     'office.status_with_receipt': ['ref', 'what', 'site', 'day', 'state', 'rate', 'payments', 'receipt', 'awaited'],
     'office.site_receipt': ['challanNo', 'count', 'signed'], 'office.signed_yes': [], 'office.signed_no': [], 'office.signed_unsure': [],
-    'common.try_again': [], 'common.media_too_large': [], 'common.undelivered': ['ref', 'site'], 'common.delivery_unsure': ['ref', 'site'], 'common.question_waits': [],
+    'common.try_again': [], 'common.media_too_large': [], 'common.undelivered': ['ref', 'site'], 'common.delivery_unsure': ['ref', 'site'], 'common.question_waits': [], 'common.records_disagree': [],
     'site.bill_copy': ['ref', 'site', 'what'], 'site.bill_contractor_accepts': [], 'pay.payee': ['name'], 'jcb.meter_which_stale': [], 'learn.voice_replaced': ['words'], 'learn.forgot_word': ['word', 'n'], 'site.bill_changed': ['ref', 'site', 'bill'], 'site.bill_changed_check': ['ref', 'site', 'bill'], 'site.bill_is_material': ['lines', 'total'], 'site.bill_is_jcb': ['hours', 'rate', 'total'],
     'pay.seller.utr_seen': ['utr', 'before'], 'pay.seller.claim_waiting': ['ref', 'payment'], 'payment.forwarded': [],
     'payment.at_time': ['time'],'jcb.payment_claimed_at': ['ref', 'site', 'amount', 'day', 'time', 'utr'],
