@@ -279,19 +279,47 @@ export function challanQuantities(orderItems, seen) {
   return challanMatches(orderItems, seen).map((s) => (s && posInt(s.qtyHundredths) ? s.qtyHundredths : null));
 }
 
+// Orders are often in Hindi and printed challans in English: the same material under its usual names.
+/** @type {Record<string, string>} */
+const SAME_MATERIAL = {
+  'सीमेंट': 'cement', 'रेत': 'sand', 'बालू': 'sand', 'रेता': 'sand', balu: 'sand', baalu: 'sand', ret: 'sand', reta: 'sand',
+  'गिट्टी': 'gitti', 'ईंट': 'brick', 'ईंटें': 'brick', bricks: 'brick', 'सरिया': 'steel', sariya: 'steel',
+};
+
 /**
- * The challan line read for each of the order's items (undefined where none): by name, or by position
- * when the challan lists exactly as many items as the order.
+ * The challan line read for each of the order's items (undefined where none), each line used once: by
+ * name, then by the words of the name ("ACC Cement (Bags)" is the order's "cement"), and when the
+ * challan lists as many items as the order, the one item left takes the one line left. Two or more
+ * left unnamed are not guessed by position: a challan may list them in another order (live, 31 Oct: its
+ * sand line became 40 bags of cement on a signed delivery). The person is asked instead.
  * @template {{name: string}} T
  * @param {{name: string}[]} orderItems
  * @param {T[]} seen
  * @returns {(T | undefined)[]}
  */
 export function challanMatches(orderItems, seen) {
-  return orderItems.map((it, i) => {
-    const byName = seen.find((s) => typeof s.name === 'string' && norm(s.name) === norm(it.name));
-    return byName ?? (seen.length === orderItems.length ? seen[i] : undefined);
+  /** @type {(T | undefined)[]} */
+  const found = orderItems.map(() => undefined);
+  const free = new Set(seen);
+  /** @param {(a: string, b: string) => boolean} same */
+  const pass = (same) => orderItems.forEach((it, i) => {
+    if (found[i]) return;
+    const hits = [...free].filter((s) => typeof s.name === 'string' && same(norm(s.name), norm(it.name)));
+    // A line that fits two of the order's items, or two lines that fit one item, is not this item's.
+    if (hits.length !== 1 || orderItems.some((o, j) => j !== i && !found[j] && same(norm(/** @type {any} */ (hits[0]).name), norm(o.name)))) return;
+    found[i] = hits[0];
+    free.delete(hits[0]);
   });
+  pass((a, b) => a === b);
+  /** @param {string} s */
+  const words = (s) => s.split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean).map((w) => SAME_MATERIAL[w] ?? w);
+  pass((a, b) => {
+    const [x, y] = [words(a), words(b)];
+    return x.length > 0 && y.length > 0 && (y.every((w) => x.includes(w)) || x.every((w) => y.includes(w)));
+  });
+  const left = found.flatMap((f, i) => (f ? [] : [i]));
+  if (seen.length === orderItems.length && left.length === 1 && free.size === 1) found[left[0]] = [...free][0];
+  return found;
 }
 
 /**

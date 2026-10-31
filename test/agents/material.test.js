@@ -49,12 +49,25 @@ test('the rounding rule: qty × rate / 100 to the nearest paisa, half up, intege
   assert.equal(billFollows({ ...bill, lines: [{ ...bill.lines[0], qtyHundredths: 4800, amountPaise: 1680000 }] }, [CEMENT], rates, { sameQty: false }), true, 'a correction may change the quantity');
 });
 
-test('a challan is matched to the order by name, or by position when it lists as many items', () => {
+test('a challan is matched to the order by name, or by position only for the one item left', () => {
   const order = [{ name: 'सीमेंट', unit: 'बोरी' }, { name: 'Sand', unit: 'trolley' }];
   assert.deepEqual(challanQuantities(order, [{ name: ' sand ', qtyHundredths: 200 }, { name: 'सीमेंट', qtyHundredths: 5000 }]), [5000, 200]);
-  assert.deepEqual(challanQuantities(order, [{ name: 'OPC 53', qtyHundredths: 5000 }, { name: 'Balu', qtyHundredths: 200 }]), [5000, 200]);
+  assert.deepEqual(challanQuantities(order, [{ name: 'OPC 53', qtyHundredths: 5000 }, { name: 'Sand', qtyHundredths: 200 }]), [5000, 200], 'one left: the one line left');
+  assert.deepEqual(challanQuantities(order, [{ name: 'OPC 53', qtyHundredths: 5000 }, { name: 'Balu', qtyHundredths: 200 }]), [5000, 200], 'balu is sand: then the one left');
+  assert.deepEqual(challanQuantities(order, [{ name: 'OPC 53', qtyHundredths: 5000 }, { name: 'Stone', qtyHundredths: 200 }]), [null, null], 'two unknown names: nothing guessed');
   assert.deepEqual(challanQuantities(order, [{ name: 'OPC 53', qtyHundredths: 5000 }]), [null, null], 'unknown names and a different count: nothing guessed');
   assert.deepEqual(challanQuantities(order, [{ name: 'सीमेंट', qtyHundredths: null }, { name: 'Sand', qtyHundredths: 200 }]), [null, 200]);
+});
+
+test('a challan listing the items in another order keeps each quantity on its own item (live, 31 Oct)', () => {
+  const order = [{ name: 'cement', unit: 'bori' }, { name: 'sand', unit: 'ton' }];
+  const seen = [{ name: 'Sand', qtyHundredths: 4000 }, { name: 'ACC Cement (Bags)', qtyHundredths: 5000 }];
+  assert.deepEqual(challanQuantities(order, seen), [5000, 4000]);
+  assert.deepEqual(challanQuantities(order, [...seen].reverse()), [5000, 4000]);
+  assert.deepEqual(challanQuantities([{ name: 'सीमेंट', unit: 'बोरी' }, { name: 'रेत', unit: 'टन' }], seen), [5000, 4000], 'the usual Hindi names, other order');
+  assert.deepEqual(challanQuantities([{ name: 'पत्थर', unit: 'टन' }, { name: 'मिट्टी', unit: 'टन' }], [{ name: 'Stone', qtyHundredths: 100 }, { name: 'Soil', qtyHundredths: 200 }]), [null, null], 'names it does not know: asked');
+  assert.deepEqual(challanQuantities(order, [{ name: 'Cement sand mix', qtyHundredths: 100 }, { name: 'Gravel', qtyHundredths: 200 }]), [null, null], 'one line fits two items: not guessed');
+  assert.deepEqual(challanQuantities(order, [{ name: 'White cement', qtyHundredths: 100 }, { name: 'Grey cement', qtyHundredths: 200 }]), [null, null], 'two lines fit one item: not guessed');
 });
 
 test('a whole material order, from request to settled, leaves both ledgers in agreement', async () => {
