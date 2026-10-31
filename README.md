@@ -144,6 +144,16 @@ Not built yet; this is where the same design goes.
 5. **A track record that travels.** Settled jobs, on-time deliveries and resolved disputes are signed by both sides; a business can show that history to a new partner, with its consent.
 6. **Each business on its own number.** Today all agents share one Meta test number, routed per phone; in production each business has its own WhatsApp number, with approved templates for the first message.
 
+## Business model
+
+Not charging anyone yet, and no price is set; this is the plan we will test.
+
+- **Who pays:** the seller, a JCB owner or a supplier, by the month or per settled job. They gain most from fewer disputes and from bills that get accepted.
+- **Who does not:** the contractor's agent stays free, so each contractor brings their sellers into the network.
+- **First customers:** the builder's own JCB and supplier relationships, then those suppliers' other contractors. Keeping the first pairs active matters more to us than any new feature.
+- **What the price must cover:** the model calls and WhatsApp charges for each job. We have measured model cost only for reading: about US$0.11 for 10 meter photos. The cost of a whole job is not measured yet.
+- **Later:** with both sides' consent, a counter-signed history of settled jobs could help a small business show its record to a new partner or a lender. This is an idea, not something built or tested.
+
 ## Run it
 
 Requires Node 24.
@@ -180,7 +190,7 @@ Our previous private project is Bhatta Munshi, a WhatsApp bookkeeping agent runn
 
 Pilot users: a JCB owner and a contractor we work with, with their consent. All data in this repository is invented; real photos, phone numbers and payments stay on the private server.
 
-Built by the owner with AI coding tools, all disclosed: Claude Code (lead and integrator), Astra (readers and measurement), Fable (Hindi texts, contractor features, judge page) and Codex. Several sessions work in parallel, each in its own git worktree, and their work is merged in batches, which is why large tested commits can land minutes apart.
+Built by the owner with AI coding tools, all disclosed: Claude Code (lead and integrator), Astra (readers and measurement), Fable (Hindi texts, contractor features, judge page) and Codex. No code predates the event. Claude Code, Astra and Fable wrote it in parallel sessions, each in its own git worktree, and Astra's ultra mode itself runs parallel agents. Their work is merged in batches, which is why large tested commits can land minutes apart.
 
 ## Licence
 
