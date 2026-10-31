@@ -179,6 +179,16 @@ test('the contractor sends the same photo: their own reply says so, and no extra
   } finally { await c.s.close(); }
 });
 
+test('the site sends the supplier its own photo: the supplier is not told it is a match', async () => {
+  const c = await booked();
+  try {
+    await c.deliver();
+    await c.sitePhoto(supervisor, SHA_A);
+    const receipt = () => c.s.told.filter(([side, , key]) => side === 'supplier' && String(key).startsWith('supplier.site_receipt')).map((x) => x[2]);
+    assert.deepEqual(receipt(), ['supplier.site_receipt_matches_same_photo']);
+  } finally { await c.s.close(); }
+});
+
 test('the same photo before the DELIVERY: the notice that compares them says so, to contractor and supervisor', async () => {
   const c = await booked();
   try {

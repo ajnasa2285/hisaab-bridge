@@ -330,7 +330,8 @@ export function createApp(cfg) {
           return entry.talk.onImage(person, { mime: media.mimeType, bytes: new Uint8Array(media.bytes), takenAt: null, forwarded: msg.forwarded === true, ...(msg.caption ? { caption: msg.caption } : {}) });
         }
         if (msg.kind === 'audio' && msg.mediaId && entry.transcribe) {
-          // A voice note is read as the text it says; the same read-back follows before anything commits.
+          // A voice note is read as the text it says, and goes the way that text would: free words are read
+          // back, and an exact reply heard exactly acts at once (README, known limits).
           const media = await /** @type {any} */ (clients.get(person.line)).fetchMedia(msg.mediaId);
           const wav = await (cfg.toWav ?? toWav)(new Uint8Array(media.bytes));
           if (!wav.ok) {

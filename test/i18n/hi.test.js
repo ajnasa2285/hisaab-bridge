@@ -115,7 +115,7 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
   const AGENT_KEYS = {
     'common.unknown_step': [], 'common.not_allowed': [], 'common.bad_args': [], 'common.no_such_order': [], 'common.wrong_state': [],
     'common.pending': [], 'common.refused': [], 'wa.unknown_sender': [],
-    'supplier.site_receipt_matches': ['ref', 'challanNo', 'count', 'signed'], 'supplier.site_receipt_differs': ['ref', 'challanNo', 'count', 'challan', 'signed'],
+    'supplier.site_receipt_matches': ['ref', 'challanNo', 'count', 'signed'], 'supplier.site_receipt_matches_same_photo': ['ref', 'challanNo', 'count', 'signed'], 'supplier.site_receipt_differs': ['ref', 'challanNo', 'count', 'challan', 'signed'],
     'supplier.site_receipt_number_differs': ['ref', 'siteNo', 'challanNo', 'count', 'challan', 'signed'],
     'supplier.site_receipt_number_unknown': ['ref', 'count', 'challanNo', 'challan', 'siteNo', 'signed'],
     'supplier.site_receipt_other_delivery': ['ref', 'siteNo', 'count', 'challanNo', 'challan', 'signed'],

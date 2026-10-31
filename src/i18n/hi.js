@@ -614,6 +614,7 @@ export const hi = Object.freeze({
   'state.cancelled': 'रद्द',
 
   // --- Signed copy of the challan and payment time (claude/challan-copy; drafted, Fable polished 29 Oct) ---
+  'supplier.site_receipt_matches_same_photo': '{ref}: साइट ने वही फ़ोटो भेजी है जो आपने भेजी थी (चालान {challanNo}), इसलिए यह दूसरी जाँच नहीं है। उसमें लिखा है: {count}। {signed}',
   'supplier.site_receipt_matches': '{ref}: साइट की कॉपी (चालान {challanNo}) में लिखा है: {count}। आपके चालान से मिलान ठीक। {signed}',
   'supplier.site_receipt_differs': '{ref}: साइट की कॉपी (चालान {challanNo}) में लिखा है: {count}। आपके चालान पर: {challan}। {signed}',
   'supplier.site_receipt_number_differs': '{ref}: साइट की कॉपी पर चालान नंबर {siteNo} है, आपके चालान पर {challanNo}। साइट की कॉपी में लिखा है: {count}। आपके चालान पर: {challan}। {signed}',

@@ -246,6 +246,8 @@ export function createSupplierAgent(o) {
     else if (siteNo !== null && d.number !== null && !sameChallanNo(siteNo, d.number)) key = 'supplier.site_receipt_number_differs';
     else if (siteNo === null || d.number === null) key = 'supplier.site_receipt_number_unknown';
     else if (countDifferences(b.items, d.items).length > 0) key = 'supplier.site_receipt_differs';
+    // The very photo the supplier sent coming back agrees with itself: that is no check by the site.
+    else if (b.challan.sha256 === d.sha256) key = 'supplier.site_receipt_matches_same_photo';
     traceCheck(`site's signed copy: ${key.replace('supplier.site_receipt_', '').replaceAll('_', ' ')} (challan ${siteNo ?? '?'} / ${d?.number ?? '?'})`,
       key === 'supplier.site_receipt_matches', { name: 'site_receipt', site: siteNo, delivery: d?.number ?? null, signed: typeof b.signed === 'boolean' ? b.signed : null }, m.order_id);
     await tell('supplier', key, params);

@@ -109,7 +109,7 @@ The figure that matters most is the "wrong but confident" column: across all rea
 
 Not yet measured: UPI on unseen screenshots and other UPI apps, the challan reader and the photo-kind reader on real challans. Sample sizes are small and stated as such.
 
-**Tests:** 956 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and the repeat is answered with a fresh receipt for the same entry), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, exact replies and clear photos that act at once, evidence exchange with hash checks, the site's signed copy, the explanation and answer checks, and the judge page's file serving.
+**Tests:** 975 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and the repeat is answered with a fresh receipt for the same entry), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, exact replies and clear photos that act at once, evidence exchange with hash checks, the site's signed copy, the explanation and answer checks, and the judge page's file serving.
 
 ## What works today, honestly
 
@@ -152,7 +152,7 @@ An independent audit found no critical or high issue. A later AI red-team review
 - **The same-amount warning relies on exact amounts.** A seller's entry equal to money already confirmed on that order is asked about first. The same money written as a different figure, or put on another order, is not noticed.
 - **A voice note heard exactly as an exact reply or command acts with no read-back.** It takes the same path as typed text (a few steps, such as a correction or a cancel, are still read back), so a mishearing that still reads as a valid reply commits, and the receipt is the only sign.
 - **One person is the only operator of this system.** There is nobody else to watch it or fix it if they are away.
-- **The two sides' challan checks are not independent when both send the same photo.** On 31 October a live challan listing its items in another order put 40 bags instead of 50 on a signed delivery, and both checks agreed. The matching is fixed, and the invoice's grand total still differed from the bill's, but a person's own count is the real check.
+- **The two sides' challan checks are not independent when both send the same photo.** On 31 October a live challan listing its items in another order put 40 bags instead of 50 on a signed delivery, and both checks agreed. The matching is fixed, and the invoice's grand total still differed from the bill's, but a person's own count is the real check. Identical photos are now flagged in the notices; a re-photographed or recompressed copy of the same paper cannot be detected.
 
 ## Roadmap: how the network grows
 

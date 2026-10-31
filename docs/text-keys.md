@@ -141,6 +141,7 @@ Supplier side (`supplier`):
 
 | Key | Params | When |
 |---|---|---|
+| `supplier.site_receipt_matches_same_photo` | ref, challanNo, count, signed | the site's copy is the supplier's own photo, byte for byte: says it is no second check |
 | `supplier.site_receipt_matches` | ref, challanNo, count, signed | the site's signed copy agrees with our DELIVERY (number and every item) |
 | `supplier.site_receipt_differs` | ref, challanNo, count, challan, signed | same challan, the site wrote other quantities; both shown, no verdict |
 | `supplier.site_receipt_number_differs` | ref, siteNo, challanNo, count, challan, signed | the site's copy carries another challan number; both shown, never accepted silently |
