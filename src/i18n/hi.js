@@ -88,6 +88,8 @@ export const hi = Object.freeze({
   'site.material_booking_other_time_time': '{ref}: सप्लायर {site} के लिए {day} को {time} बजे सामान भेज सकते हैं। ठीक हो तो उसी दिन के लिए फिर माँग भेजें।',
   'site.delivery_received': '{ref}: {site} पर सामान पहुँचा। सप्लायर के चालान में: {items}। साइट पर गिनकर देखें: इतना ही आया है तो "हाँ" लिखें, कम-ज़्यादा हो तो अपनी गिनती उसी क्रम में लिखें, जैसे 48।',
   'site.delivery_received_challan': '{ref}: {site} पर सामान पहुँचा। चालान {challan} में: {items}। साइट पर गिनकर देखें: इतना ही आया है तो "हाँ" लिखें, कम-ज़्यादा हो तो अपनी गिनती उसी क्रम में लिखें, जैसे 48।',
+  'site.delivery_info': '{ref}: {site} पर सामान पहुँचा। सप्लायर के चालान में: {items}। गिनती सुपरवाइज़र करेंगे, आपको अभी कुछ नहीं करना।',
+  'site.delivery_info_challan': '{ref}: {site} पर सामान पहुँचा। चालान {challan} में: {items}। गिनती सुपरवाइज़र करेंगे, आपको अभी कुछ नहीं करना।',
   'site.count_figures': 'हर चीज़ की गिनती उसी क्रम में लिखें: {items}।',
   'site.count_matches': '{ref}: {site} की गिनती दर्ज: {items}। चालान जितनी ही है।',
   'site.count_saved_differs': '{ref}: {site} की गिनती दर्ज: {count}। चालान में: {challan}। बिल आने पर दोनों सामने रखे जाएँगे।',

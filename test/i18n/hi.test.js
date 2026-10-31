@@ -170,6 +170,7 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'site.no_supplier': [], 'site.material_requested': ['ref', 'site', 'day', 'items'],
     'site.material_booking_yes': ['ref', 'site', 'day', 'time', 'rates'], 'site.material_booking_no': ['ref', 'site', 'day', 'time', 'rates'],
     'site.material_booking_other_time': ['ref', 'site', 'day', 'time', 'rates'], 'site.delivery_received': ['ref', 'site', 'items', 'challan'],
+    'site.delivery_info': ['ref', 'site', 'items'], 'site.delivery_info_challan': ['ref', 'site', 'items', 'challan'],
     'site.count_figures': ['items'], 'site.count_matches': ['ref', 'site', 'items'], 'site.count_saved_differs': ['ref', 'site', 'challan', 'count'],
     'site.count_differs': ['ref', 'site', 'challan', 'count'], 'site.count_already': ['ref', 'count'],
     'site.count_changed': ['ref', 'site', 'old', 'count', 'challan'], 'site.material_bill_received': ['ref', 'site', 'lines', 'total', 'photos'],

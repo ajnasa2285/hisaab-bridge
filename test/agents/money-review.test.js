@@ -96,10 +96,9 @@ test('money1: through the conversation, the first हाँ answers the first bi
   try {
     const orderId = await d.order(50, 'billed');
     await until(() => d.toldCount('site:contractor', 'site.material_bill_received') === 1);
-    // The delivery's count question came first and is still open: its yes answers that.
-    await d.siteTalk.onText(contractor, 'हाँ');
-    assert.ok(d.said.some(([, k]) => k === 'site.count_matches'));
-    assert.equal(d.last()[1], 'site.material_bill_received', 'then the bill is asked');
+    // The delivery's count question is the supervisor's alone, so the contractor's yes is for the bill.
+    assert.ok(!d.told('site:contractor', 'site.delivery_received_challan'));
+    await runTool(d.s.site.tools, person('supervisor', 'agent:contractor-1'), { tool: 'confirm_count', args: { orderId, qtysHundredths: [5000], sameAsChallan: true } });
     // A new bill replaces it (the same figures here, so it still agrees with the site's count).
     await runTool(d.s.sup.tools, supplier, { tool: 'send_correction', args: { orderId, qtysHundredths: [5000] } });
     await until(() => d.toldCount('site:contractor', 'site.material_correction_received') === 1);

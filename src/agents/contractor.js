@@ -727,12 +727,12 @@ export function createContractorAgent(o) {
           if (!c.same) await o.evidence?.countDifference(m.order_id);
           break;
         }
-        // The site is asked for its own count; a plain "हाँ" means "the same as the challan".
+        // The supervisor is asked for the site's count; a plain "हाँ" means "the same as the challan". The
+        // contractor is only told: a question put to them must not be closed by someone else's answer.
         const params = { ref, site, items: itemsText(b.items), ...(b.challan?.number ? { challan: b.challan.number } : {}) };
         const expect = { tool: 'confirm_count', args: { orderId: m.order_id, qtysHundredths: b.items.map((/** @type {Item} */ it) => it.qtyHundredths), sameAsChallan: true } };
-        const key = variant('site.delivery_received', { challan: b.challan?.number });
-        await tell('supervisor', key, params, expect);
-        await tell('contractor', key, params, expect);
+        await tell('supervisor', variant('site.delivery_received', { challan: b.challan?.number }), params, expect);
+        await tell('contractor', variant('site.delivery_info', { challan: b.challan?.number }), params);
         break;
       }
       case 'BILL':

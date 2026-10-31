@@ -334,8 +334,8 @@ test('mixed, two bills to pay: a challan photo goes to the site challan flow; th
     assert.equal(c.reads(), 1);
     const saved = c.said.find(([, k]) => k === 'site.challan_count_saved_challan');
     assert.ok(saved?.[2].includes('P-3') && saved?.[2].includes('गिट्टी 2 brass'), saved?.[2]);
-    // The two deliveries' own count questions waited behind each other: the next one is asked now.
-    assert.equal(c.last()?.[1], 'step.confirm_count');
+    // The deliveries' count questions are the supervisor's: nothing further is asked of the contractor.
+    assert.equal(c.last()?.[1], 'site.challan_count_saved_challan');
   } finally {
     await c.s.close();
   }

@@ -137,9 +137,11 @@ test('commands leave an open challan or count question open; the first count clo
     assert.ok(d.last('supplier')[2].includes('सीमेंट 50 बोरी, रेत 2 ट्रॉली'));
     await settle();
 
-    // Site: the count question is open for the supervisor and the contractor.
+    // Site: the count question is the supervisor's; the contractor is only told, with nothing to answer.
     assert.equal(d.last('site:supervisor')[1], 'site.delivery_received_challan');
     assert.equal(d.last('site:supervisor')[3].ref, 'P-1');
+    assert.equal(d.last('site:contractor')[1], 'site.delivery_info_challan');
+    assert.ok(!d.last('site:contractor')[2].includes('हाँ'), d.last('site:contractor')[2]);
     // The contractor's "बाक़ी" shows the delivery waiting for the site's count.
     await d.site(contractor, 'बाक़ी');
     assert.equal(d.last('contractor')[1], 'office.pending');

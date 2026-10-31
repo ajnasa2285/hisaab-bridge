@@ -72,7 +72,8 @@ Contractor side (contractor, supervisor):
 | `site.no_supplier` | — | no supplier agent is configured |
 | `site.material_requested` | ref, site, day, items | material request sent to the supplier |
 | `site.material_booking_yes` / `_no` / `_other_time` | ref, site, day, time, rates | the supplier's answer, with the rate per item on a yes |
-| `site.delivery_received` | ref, site, items, challan | a DELIVERY arrived: what the challan says; asks for the site's count ("हाँ" = same as the challan, or figures in order). The first count recorded closes everyone else's question |
+| `site.delivery_received` | ref, site, items, challan | a DELIVERY arrived: what the challan says; asks the supervisor for the site's count ("हाँ" = same as the challan, or figures in order) |
+| `site.delivery_info` / `_challan` | ref, site, items, [challan] | the same delivery, to the contractor: told only, nothing to answer |
 | `site.count_figures` | items | the count needs one figure per delivered item, in order |
 | `site.count_matches` | ref, site, items | the site's count is saved and equals the challan |
 | `site.count_saved_differs` | ref, site, challan, count | to the person who counted: saved, differs from the challan |
