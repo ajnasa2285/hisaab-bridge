@@ -142,17 +142,34 @@ export function createApp(cfg) {
    * A person writes after notices to them could not be sent: first what is still waiting for them,
    * each notice once, as the agent rebuilds it from its ledger now (an order that moved on is not told
    * again; a notice that is not about an open request of theirs is dropped). Then their message is
-   * handled as usual.
-   * @param {Person} person @param {{core: any, agent: {waiting?: (role: string) => {key: string, params: Record<string, string | number>}[]}}} entry
+   * handled as usual. What could not be sent is kept for the next time. On the contractor's agent such
+   * a notice sets no expectation: it asks for "हाँ <ref>", and a plain "हाँ" right after it decides nothing.
+   * @param {Person} person @param {{cfg: AgentConfig, core: any, talk: ReturnType<typeof createConversation>, office: ReturnType<typeof createOffice>,
+   *   agent: {waiting?: (role: string) => {key: string, params: Record<string, string | number>, also?: RegExp}[]}}} entry
    */
   async function tellWaiting(person, entry) {
     const missed = store.takeMissed(person.line, person.phone);
     if (!missed.length) return;
-    const open = [...(entry.agent.waiting?.(person.role) ?? []), ...undeliveredNotices(entry.core.ledger), ...unsureNotices(entry.core.ledger)];
-    for (const n of missedWaiting(missed, open)) await sendTo(person, t(n.key, n.params));
+    let unsent = missed;
+    /** @type {string[]} */
+    const told = [];
+    try {
+      const open = [...(entry.agent.waiting?.(person.role) ?? []), ...entry.office.waiting(person), ...undeliveredNotices(entry.core.ledger), ...unsureNotices(entry.core.ledger)];
+      const notices = missedWaiting(missed, open);
+      unsent = missed.filter((m) => missedWaiting([m], notices).length > 0);
+      for (const n of notices) {
+        if (!(await sendTo(person, t(n.key, n.params)))) continue;
+        told.push(String(n.params.ref));
+        unsent = unsent.filter((m) => missedWaiting([m], [n]).length === 0);
+      }
+    } catch (e) {
+      log(`missed notices to ${person.role} ${maskPhone(person.phone)} not told: ${e instanceof Error ? e.message : 'error'}`);
+    }
+    for (const m of unsent) store.missed(person.line, person.phone, m.ref, m.key, now());
+    if (entry.cfg.kind === 'contractor' && told.length) entry.talk.replayed(person, told);
   }
 
-  /** @type {Map<string, {cfg: AgentConfig, core: any, agent: {tools: any, onApplied: (m: any) => Promise<void>, waiting?: (role: string) => {key: string, params: Record<string, string | number>}[]}, link: ReturnType<typeof createLink>, talk: ReturnType<typeof createConversation>, a2a: ReturnType<typeof createA2AHandler>,
+  /** @type {Map<string, {cfg: AgentConfig, core: any, agent: {tools: any, onApplied: (m: any) => Promise<void>, waiting?: (role: string) => {key: string, params: Record<string, string | number>, also?: RegExp}[]}, link: ReturnType<typeof createLink>, talk: ReturnType<typeof createConversation>, office: ReturnType<typeof createOffice>, a2a: ReturnType<typeof createA2AHandler>,
    *   trace: import('./trace/trace.js').Recorder, learn: import('./learn/corrections.js').Learn, siteNames: import('./agents/site-names.js').SiteNames, transcribe: ((req: {audio: Uint8Array, mime: string, language?: 'hi'}) => Promise<{ok: true, text: string} | {ok: false, transient: boolean, reason: string}>) | undefined}>} */
   const agents = new Map();
   // People's own words go into the trace only when asked for (the demo), digits masked.
@@ -265,7 +282,7 @@ export function createApp(cfg) {
       },
       onReceived: traceReceived(trace),
     });
-    const entry = { cfg: a, core, agent, link, talk, a2a, trace, learn, siteNames, transcribe: traceTranscribe(cfg.transcribe, trace) };
+    const entry = { cfg: a, core, agent, link, talk, office, a2a, trace, learn, siteNames, transcribe: traceTranscribe(cfg.transcribe, trace) };
     agents.set(a.id, entry);
   }
 

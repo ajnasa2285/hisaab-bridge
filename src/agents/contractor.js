@@ -25,6 +25,9 @@ import { cancelTool, orderWords } from './cancel.js';
 
 // The same shape the UPI reader accepts (src/readers/upi.js): a clear reading must not dead-end here.
 const UTR_RE = /^[A-Za-z0-9-]{6,64}$/;
+// The keys a bill or correction may have been missed under. What is told again is the bill in force, so
+// a key from a bill since replaced, or from before the "usual" line came or went, leads to it too.
+const BILL_KEYS = /^(?:usual\.notice|site\.(?:material_)?(?:bill_received|correction_received|bill_no_count|bill_count_differs|bill_mismatch)(?:_invoice_(?:match|differs))?)$/u;
 
 /**
  * @param {{
@@ -166,13 +169,17 @@ export function createContractorAgent(o) {
       quantity: it.qtyHundredths, rate: lastMaterialRate(peer, it) })), 'quantity', a.orderId, estimate) : '';
   };
 
-  /** Append the usual context to the contractor's existing bill notice, preserving its decision.
+  /** The contractor's bill notice with the usual context, preserving its decision. A real example of
+   * the exact objection, with this bill's figure unless a site's figure is given.
    * @param {string} orderId @param {Record<string, any>} body @param {string} key
+   * @param {Record<string, string | number>} params
+   */
+  const billShown = (orderId, body, key, params) => withUsual({ key, params: { example: plainRupees(body.totalPaise), ...params } }, billUsualNotes(ledger, orderId, body));
+  /** @param {string} orderId @param {Record<string, any>} body @param {string} key
    * @param {Record<string, string | number>} params @param {Parameters<Tell>[3]} [expect]
    */
   const tellBill = (orderId, body, key, params, expect) => {
-    // A real example of the exact objection, with this bill's figure unless a site's figure is given.
-    const notice = withUsual({ key, params: { example: plainRupees(body.totalPaise), ...params } }, billUsualNotes(ledger, orderId, body));
+    const notice = billShown(orderId, body, key, params);
     return tell('contractor', notice.key, notice.params, expect);
   };
 
@@ -627,24 +634,29 @@ export function createContractorAgent(o) {
   }
 
   /**
-   * A material bill or correction: checked against the signed delivery and the agreed rates, then
-   * against the site's own count. Only a bill that follows from both is offered for a one-word "हाँ".
-   * @param {Message} m
+   * What the contractor is told about a bill or correction, when first told and when told again after a
+   * missed 24-hour window (waiting()). A material bill is checked against the signed delivery and the
+   * agreed rates, then against the site's own count. `armed`: a bill that follows from both (or a JCB
+   * bill) is offered for a one-word "हाँ" when first told; the others ask for "हाँ {ref}" in their own words.
+   * @param {string} orderId @param {Record<string, any>} b @param {string} type
+   * @returns {{key: string, params: Record<string, string | number>, armed: boolean}}
    */
-  async function onMaterialBill(m) {
-    const b = m.body;
-    const site = siteOf(m.order_id);
-    const ref = refOf(m.order_id);
-    const { d, rates, count, above, follows } = materialBillCheck(b, m.type, m.order_id);
+  function billNotice(orderId, b, type) {
+    const ref = refOf(orderId);
+    const site = siteOf(orderId);
     const total = rupees(b.totalPaise);
+    const yes = t('site.yes_word');
+    if (!isMaterial(orderId)) {
+      const line = b.lines[0];
+      return { key: type === 'BILL' ? 'site.bill_received' : 'site.correction_received', armed: true, params: {
+        ref, site, yes, total, hours: line.hoursTenths !== undefined ? hours(line.hoursTenths) : '—', rate: rupees(line.ratePaise), photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
+      } };
+    }
+    const { d, rates, count, follows } = materialBillCheck(b, type, orderId);
     const lines = linesText(b.lines, d?.items ?? []);
-    traceCheck(`bill = delivered × agreed rate ${follows ? '✓' : '✗'} ${total}${above ? ' (above the signed delivery)' : ''}`, follows, { name: 'bill_follows', totalPaise: b.totalPaise, delivered: d?.items ?? null }, m.order_id);
     if (!follows || !d || !rates) {
       const want = d && rates ? materialBillBody(d.items, rates, { sha256: d.sha256, number: d.number, sentAt: d.at }) : null;
-      await tellBill(m.order_id, b, 'site.material_bill_mismatch', { ref, site, lines, total, expected: want && d ? linesText(want.lines, d.items) : '—', expectedTotal: want ? rupees(want.totalPaise) : '—' });
-      const explanation = await explainDifference({ spark: o.spark, audience: 'buyer', facts: differenceFacts(ledger, m.order_id, ref) });
-      await tell('contractor', explanation.key, explanation.params);
-      return;
+      return { key: 'site.material_bill_mismatch', armed: false, params: { ref, site, lines, total, expected: want && d ? linesText(want.lines, d.items) : '—', expectedTotal: want ? rupees(want.totalPaise) : '—' } };
     }
     /** @type {Item[]} */
     const billed = b.lines.map((/** @type {any} */ l, /** @type {number} */ i) => ({ name: l.what, qtyHundredths: l.qtyHundredths, unit: d.items[i].unit }));
@@ -652,7 +664,53 @@ export function createContractorAgent(o) {
       // What the site's count comes to at the agreed rates (an item counted as 0 adds nothing). A count
       // from the site's own challan may list other items than the delivery, so each is priced by name.
       const siteTotal = itemsTotalPaise(count, rates, d.items);
-      await tellBill(m.order_id, b, 'site.material_bill_count_differs', { ref, site, lines, total, count: itemsText(count), siteTotal: rupees(siteTotal), example: plainRupees(siteTotal) });
+      return { key: 'site.material_bill_count_differs', armed: false, params: { ref, site, lines, total, count: itemsText(count), siteTotal: rupees(siteTotal), example: plainRupees(siteTotal) } };
+    }
+    const check = invoiceCheck(d.grandTotalPaise, b.totalPaise);
+    const params = { ref, site, lines, total, yes, photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
+      ...(check === 'differs' ? { invoiceTotal: rupees(/** @type {number} */ (d.grandTotalPaise)) } : {}) };
+    if (count === null && type === 'BILL') return { key: variant('site.material_bill_no_count', { invoice_differs: check === 'differs' }), armed: false, params };
+    const key = variant(type === 'BILL' ? 'site.material_bill_received' : 'site.material_correction_received', { invoice_match: check === 'match', invoice_differs: check === 'differs' });
+    return { key, armed: true, params };
+  }
+
+  /** To the contractor and the supervisor: the seller's answer to a request. @param {Message} m */
+  function bookingNotice(m) {
+    const b = m.body;
+    // The day and time the answer is about: another day when offered, else what the order asked for.
+    const req = ofType(ledger.events(m.order_id), 'BOOKING_REQUEST', 'out').at(-1)?.body.body;
+    const day = b.day ?? req?.day;
+    const time = b.time ?? (b.answer === 'yes' ? req?.time : undefined);
+    /** @type {Record<string, string>} */
+    const params = { ref: refOf(m.order_id), site: siteOf(m.order_id) };
+    if (isDay(day)) params.day = dayName(day);
+    if (time) params.time = time;
+    if (isMaterial(m.order_id)) params.rates = Array.isArray(b.rates) ? ratesText(b.rates) : '—';
+    else if (b.ratePaise) params.rate = rupees(b.ratePaise);
+    return { key: variant(keyFor(m.order_id, `site.booking_${b.answer}`), { time: b.answer !== 'no' && time }), params };
+  }
+
+  /** To the supervisor: what the challan says, and the site's count is asked. @param {Message} m @param {string} yes the reply that means "the same" */
+  function deliveryNotice(m, yes) {
+    const b = m.body;
+    return { key: variant('site.delivery_received', { challan: b.challan?.number }), params: { ref: refOf(m.order_id), site: siteOf(m.order_id), yes, items: itemsText(b.items), ...(b.challan?.number ? { challan: b.challan.number } : {}) } };
+  }
+
+  /**
+   * A material bill or correction, as billNotice decides. Only a bill that follows from the delivery,
+   * the agreed rates and the site's count is offered for a one-word "हाँ".
+   * @param {Message} m
+   */
+  async function onMaterialBill(m) {
+    const b = m.body;
+    const site = siteOf(m.order_id);
+    const ref = refOf(m.order_id);
+    const { d, rates, follows, above } = materialBillCheck(b, m.type, m.order_id);
+    const total = rupees(b.totalPaise);
+    traceCheck(`bill = delivered × agreed rate ${follows ? '✓' : '✗'} ${total}${above ? ' (above the signed delivery)' : ''}`, follows, { name: 'bill_follows', totalPaise: b.totalPaise, delivered: d?.items ?? null }, m.order_id);
+    const n = billNotice(m.order_id, b, m.type);
+    if (n.key === 'site.material_bill_mismatch' || n.key === 'site.material_bill_count_differs' || !d || !rates) {
+      await tellBill(m.order_id, b, n.key, n.params);
       const explanation = await explainDifference({ spark: o.spark, audience: 'buyer', facts: differenceFacts(ledger, m.order_id, ref) });
       await tell('contractor', explanation.key, explanation.params);
       return;
@@ -663,16 +721,8 @@ export function createContractorAgent(o) {
       traceCheck(`bill total ${check === 'match' ? '✓ =' : '✗ ≠'} invoice grand total: ${total} / ${rupees(/** @type {number} */ (d.grandTotalPaise))}`,
         check === 'match', { name: 'invoice_total', billPaise: b.totalPaise, invoicePaise: d.grandTotalPaise }, m.order_id);
     }
-    const params = { ref, site, lines, total, photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
-      ...(check === 'differs' ? { invoiceTotal: rupees(/** @type {number} */ (d.grandTotalPaise)) } : {}) };
-    if (count === null && m.type === 'BILL') {
-      traceCheck('bill before the site count ✗ supplier figures unchecked', false, { name: 'bill_no_count' }, m.order_id);
-      await tellBill(m.order_id, b, variant('site.material_bill_no_count', { invoice_differs: check === 'differs' }), params);
-      await tell('supervisor', 'site.bill_copy', { ref, site, what: billText(m.order_id, b) });
-      return;
-    }
-    const key = variant(m.type === 'BILL' ? 'site.material_bill_received' : 'site.material_correction_received', { invoice_match: check === 'match', invoice_differs: check === 'differs' });
-    await tellBill(m.order_id, b, key, params, { tool: 'accept_bill', args: { orderId: m.order_id, bill: m.msg_id } });
+    if (!n.armed) traceCheck('bill before the site count ✗ supplier figures unchecked', false, { name: 'bill_no_count' }, m.order_id);
+    await tellBill(m.order_id, b, n.key, n.params, n.armed ? { tool: 'accept_bill', args: { orderId: m.order_id, bill: m.msg_id } } : undefined);
     await tell('supervisor', 'site.bill_copy', { ref, site, what: billText(m.order_id, b) });
   }
 
@@ -710,17 +760,7 @@ export function createContractorAgent(o) {
     const ref = refOf(m.order_id);
     switch (m.type) {
       case 'BOOKING_REPLY': {
-        // The day and time the answer is about: another day when offered, else what the order asked for.
-        const req = ofType(ledger.events(m.order_id), 'BOOKING_REQUEST', 'out').at(-1)?.body.body;
-        const day = b.day ?? req?.day;
-        const time = b.time ?? (b.answer === 'yes' ? req?.time : undefined);
-        /** @type {Record<string, string>} */
-        const params = { ref, site };
-        if (isDay(day)) params.day = dayName(day);
-        if (time) params.time = time;
-        if (isMaterial(m.order_id)) params.rates = Array.isArray(b.rates) ? ratesText(b.rates) : '—';
-        else if (b.ratePaise) params.rate = rupees(b.ratePaise);
-        const key = variant(keyFor(m.order_id, `site.booking_${b.answer}`), { time: b.answer !== 'no' && time });
+        const { key, params } = bookingNotice(m);
         await tell('contractor', key, params);
         await tell('supervisor', key, params);
         break;
@@ -741,10 +781,10 @@ export function createContractorAgent(o) {
         }
         // The supervisor is asked for the site's count; a plain "हाँ" means "the same as the challan". The
         // contractor is only told: a question put to them must not be closed by someone else's answer.
-        const params = { ref, site, items: itemsText(b.items), ...(b.challan?.number ? { challan: b.challan.number } : {}) };
+        const asked = deliveryNotice(m, t('site.yes_word'));
         const expect = { tool: 'confirm_count', args: { orderId: m.order_id, qtysHundredths: b.items.map((/** @type {Item} */ it) => it.qtyHundredths), sameAsChallan: true } };
-        await tell('supervisor', variant('site.delivery_received', { challan: b.challan?.number }), params, expect);
-        await tell('contractor', variant('site.delivery_info', { challan: b.challan?.number }), params);
+        await tell('supervisor', asked.key, asked.params, expect);
+        await tell('contractor', variant('site.delivery_info', { challan: b.challan?.number }), asked.params);
         break;
       }
       case 'BILL':
@@ -753,17 +793,8 @@ export function createContractorAgent(o) {
           await onMaterialBill(m);
           break;
         }
-        const line = b.lines[0];
-        const params = {
-          ref,
-          site,
-          hours: line.hoursTenths !== undefined ? hours(line.hoursTenths) : '—',
-          rate: rupees(line.ratePaise),
-          total: rupees(b.totalPaise),
-          photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
-        };
-        const key = m.type === 'BILL' ? 'site.bill_received' : 'site.correction_received';
-        await tellBill(m.order_id, b, key, params, { tool: 'accept_bill', args: { orderId: m.order_id, bill: m.msg_id } });
+        const n = billNotice(m.order_id, b, m.type);
+        await tellBill(m.order_id, b, n.key, n.params, { tool: 'accept_bill', args: { orderId: m.order_id, bill: m.msg_id } });
         await tell('supervisor', 'site.bill_copy', { ref, site, what: billText(m.order_id, b) });
         break;
       }
@@ -790,5 +821,41 @@ export function createContractorAgent(o) {
     }
   }
 
-  return { tools, onApplied };
+  /**
+   * What is still waiting for a person of this role, rebuilt from the ledger, for someone whose 24-hour
+   * window was closed when told (src/app.js tellWaiting): the contractor's bill in force not yet
+   * accepted or objected to, and another day a seller offered; the supervisor's delivery still waiting
+   * for the site's count, and that other day. Told-only notices are not here. No expectation is set: a
+   * plain "हाँ" may have been meant for something else, so the texts ask for "हाँ {ref}", which names
+   * this order and is bound to the bill in force when read back.
+   * @param {string} role @returns {{key: string, params: Record<string, string | number>, also?: RegExp}[]}
+   */
+  function waiting(role) {
+    if (role !== 'contractor' && role !== 'supervisor') return [];
+    /** @type {{key: string, params: Record<string, string | number>, also?: RegExp}[]} */
+    const out = [];
+    for (const order of /** @type {{order_id: string}[]} */ (ledger.orders())) {
+      const id = order.order_id;
+      const view = ledger.view(id);
+      const events = ledger.events(id);
+      const answer = `${t('site.yes_word')} ${refOf(id)}`;
+      if (view.state === 'offered') {
+        const e = ofType(events, 'BOOKING_REPLY', 'in').at(-1);
+        if (e) out.push(bookingNotice(/** @type {Message} */ (e.body)));
+      }
+      if (role === 'contractor' && view.state === 'billed' && view.currentBill) {
+        const e = /** @type {NonNullable<ReturnType<typeof ledger.eventOfMessage>>} */ (ledger.eventOfMessage(view.currentBill));
+        const b = e.body.body;
+        const n = billNotice(id, b, e.type);
+        out.push({ ...billShown(id, b, n.key, { ...n.params, yes: answer }), also: BILL_KEYS });
+      }
+      if (role === 'supervisor' && view.state === 'delivered' && siteCount(events) === null) {
+        const e = ofType(events, 'DELIVERY', 'in').at(-1);
+        if (e) out.push(deliveryNotice(/** @type {Message} */ (e.body), answer));
+      }
+    }
+    return out;
+  }
+
+  return { tools, onApplied, waiting };
 }

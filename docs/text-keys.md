@@ -52,8 +52,8 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 |---|---|---|
 | `site.jcb_requested` | ref, site, day, time | JCB request sent |
 | `site.booking_yes` / `_no` / `_other_time` | ref, site, day, time, rate | the JCB owner's answer |
-| `site.bill_received` | ref, site, hours, rate, total, photos | a bill arrived (with this many meter photos) |
-| `site.correction_received` | ref, site, hours, rate, total, photos | a corrected bill arrived |
+| `site.bill_received` | ref, site, yes, hours, rate, total, photos | a bill arrived (with this many meter photos) |
+| `site.correction_received` | ref, site, yes, hours, rate, total, photos | a corrected bill arrived |
 | `site.bill_accepted` | ref, site | you accepted the bill |
 | `site.bill_disputed` | ref, site | your objection was sent |
 | `site.reason_needed` | — | an objection needs a reason |
@@ -72,7 +72,7 @@ Contractor side (contractor, supervisor):
 | `site.no_supplier` | — | no supplier agent is configured |
 | `site.material_requested` | ref, site, day, items | material request sent to the supplier |
 | `site.material_booking_yes` / `_no` / `_other_time` | ref, site, day, time, rates | the supplier's answer, with the rate per item on a yes |
-| `site.delivery_received` | ref, site, items, challan | a DELIVERY arrived: what the challan says; asks the supervisor for the site's count ("हाँ" = same as the challan, or figures in order) |
+| `site.delivery_received` | ref, site, yes, items, challan | a DELIVERY arrived: what the challan says; asks the supervisor for the site's count ("हाँ" = same as the challan, or figures in order) |
 | `site.delivery_info` / `_challan` | ref, site, items, [challan] | the same delivery, to the contractor: told only, nothing to answer |
 | `site.count_figures` | items | the count needs one figure per delivered item, in order |
 | `site.count_matches` | ref, site, items | the site's count is saved and equals the challan |
@@ -88,8 +88,8 @@ Contractor side (contractor, supervisor):
 | `site.challan_count_matches` | ref, site, items, challan | recorded, and it agrees with the supplier's signed delivery (Claude drafted, Fable polished 29 Oct) |
 | `site.challan_count_differs` | ref, site, count, siteNo, challan, challanNo | the site's challan and the supplier's delivery differ (quantities or challan numbers): both figures; a dispute with the site's figure once the bill comes. To the person who counted and the contractor; on a later DELIVERY to contractor and supervisor (Claude drafted, Fable polished 29 Oct) |
 | `site.delivery_matches_count` | ref, site, count, siteNo, challan, challanNo | a DELIVERY arrived for an order the site already counted from its challan, and it agrees; nobody is asked again (Claude drafted, Fable polished 29 Oct) |
-| `site.material_bill_received` | ref, site, lines, total, photos | a material bill that follows from the delivery, the agreed rates and the site's count; "हाँ" accepts |
-| `site.material_correction_received` | ref, site, lines, total, photos | a corrected material bill; "हाँ" accepts |
+| `site.material_bill_received` | ref, site, yes, lines, total, photos | a material bill that follows from the delivery, the agreed rates and the site's count; "हाँ" accepts |
+| `site.material_correction_received` | ref, site, yes, lines, total, photos | a corrected material bill; "हाँ" accepts |
 | `site.bill_copy` | ref, site, what | to the supervisor: a copy of a bill, nothing to answer |
 | `site.bill_contractor_accepts` | — | a supervisor's हाँ while a bill is open: the contractor accepts bills |
 | `site.bill_changed` | ref, site, bill, total | the contractor's yes was for a bill no longer in force: nothing accepted, the new bill shown, "हाँ" accepts it |
@@ -346,7 +346,7 @@ A value that was not given is left out of the sentence, never shown as "—": co
 | `site.booking_other_time` / `_time` | ref, site, day, [time] | another day offered (the rate, never given on this answer, is gone) |
 | `site.material_booking_yes` / `_time` | ref, site, day, [time], rates | the supplier's yes; the day asked for when the yes carried none |
 | `site.material_booking_other_time` / `_time` | ref, site, day, [time] | another day offered |
-| `site.delivery_received` / `_challan` | ref, site, items, [challan] | the delivery notice, with or without a challan number |
+| `site.delivery_received` / `_challan` | ref, site, yes, items, [challan] | the delivery notice, with or without a challan number |
 | `site.challan_count_saved` / `_challan`, `site.challan_count_matches` / `_challan` | ref, site, items, [challan] | the site's count from its challan photo, recorded |
 | `site.challan_ask_person_blank` | ref, names | type the figures, when nothing was read to show |
 | `site.payment_claimed`, `site.material_payment_claimed` | ref, amount, utr | receipt of a payment claim (clear UPI photo, sent at once) |
@@ -384,8 +384,8 @@ times, UTRs and screenshots add no placeholder. Group references link to each or
 | `bill.rate_gst` | percent | after a rate: "₹380/बोरी + GST 28%" |
 | `step.send_material_bill_invoice_match` | site, lines, total | supplier's read-back (model route) when the invoice total matches |
 | `step.send_material_bill_invoice_differs` | site, lines, total, invoiceTotal | supplier: the bill differs from the invoice's grand total; send anyway? both figures |
-| `site.material_bill_received_invoice_match` / `_invoice_differs` | ref, site, lines, total, photos, (invoiceTotal) | contractor: bill with "मिलान ठीक" / with both figures |
-| `site.material_correction_received_invoice_match` / `_invoice_differs` | ref, site, lines, total, (invoiceTotal) | the same for a correction |
+| `site.material_bill_received_invoice_match` / `_invoice_differs` | ref, site, yes, lines, total, photos, (invoiceTotal) | contractor: bill with "मिलान ठीक" / with both figures |
+| `site.material_correction_received_invoice_match` / `_invoice_differs` | ref, site, yes, lines, total, (invoiceTotal) | the same for a correction |
 | `explain.figures.line_gst` | item, quantity, unit, rate, taxable, gst, amount | an explanation's bill line with GST as its own figure |
 
 `supplier.order_request(_time)` now shows the GST form ("हाँ 350 + 18%"). "GST" is an allowed Latin word in `test/i18n/hi.test.js`.
@@ -558,3 +558,12 @@ original key and text remain unchanged. Judge labels live in `web/texts.js` in b
 | `answer.unclear` | ref | read as the answer to that order's question, but its figures could not be used |
 
 The bill notices (`site.bill_received`, `site.correction_received`, `site.material_bill_*`, `site.material_correction_*`) take `example`, a figure for the exact objection `नहीं ₹{example} कारण`. `step.accept_bill` and `step.dispute_bill` take `ref`. `site.count_already` no longer invites a new count.
+
+## Missed notices told again
+
+The bill and correction notices with a one-word answer, and `site.delivery_received`, take `yes`: `site.yes_word` ("हाँ") when first told, "हाँ {ref}" when told again after a missed 24-hour window (no expectation is set then).
+
+| Key | Parameters | Meaning |
+|---|---|---|
+| `site.yes_word` | | the word itself, for `yes` |
+| `site.yes_needs_ref` | ref, refs | a bare "हाँ" right after notices were told again: nothing recorded, write the reference with it; `refs` are those still open |

@@ -69,6 +69,8 @@ const NEW_ORDER_REF = { request_jcb: 'J', request_material: 'P' };
 const AWAITING_CONTRACTOR = ['billed', 'offered'];
 const CLOSED = ['settled', 'declined', 'cancelled', 'none'];
 const MAX_NOTE = 300;
+// The keys an approval request may have been missed under: the estimate or the "usual" line can differ now.
+const APPROVAL_KEYS = /^(?:office\.approval_needed(?:_estimate)?|usual\.notice)$/u;
 
 /** @param {string[]} words */
 const wordSet = (words) => new Set(words.map((w) => w.normalize('NFC')));
@@ -238,6 +240,27 @@ export function createOffice(o) {
   }
 
   /**
+   * What a contractor is asked about a held step, when first told and when told again.
+   * @param {string} ref @param {Person} person @param {string} tool @param {Record<string, any>} args @param {number | null} estimate
+   */
+  function approvalNotice(ref, person, tool, args, estimate) {
+    return withUsual({ key: variant('office.approval_needed', { estimate: estimate !== null }),
+      params: { ref, by: nameOf(person), ...(estimate !== null ? { estimate: money(estimate) } : {}), step: stepText(tool, args) } },
+    o.tools[tool]?.hold?.usualNote?.(args) ?? '');
+  }
+
+  /**
+   * The held steps still waiting for this contractor's decision, for someone whose 24-hour window was
+   * closed when asked. The text asks for "OK {ref}", so nothing here can be decided by a plain "हाँ".
+   * @param {Person} person
+   */
+  function waiting(person) {
+    if (o.kind !== 'contractor' || person.role !== 'contractor') return [];
+    return q.all.all().map(toHeld).filter((h) => h.decision === null && !same(h.person, person))
+      .map((h) => ({ ...approvalNotice(h.ref, h.person, h.tool, h.args, h.estimatePaise), also: APPROVAL_KEYS }));
+  }
+
+  /**
    * Stores the step exactly as read back, with the reference its order has or will have, and asks
    * every contractor once.
    * @param {Person} person @param {string} tool @param {string} limit @param {Record<string, any>} args @param {number | null} estimate
@@ -246,9 +269,7 @@ export function createOffice(o) {
   async function hold(person, tool, limit, args, estimate) {
     const ref = knownOrder(args.orderId) ? refs.refOf(args.orderId) ?? refs.reserve('J') : refs.reserve(NEW_ORDER_REF[tool] ?? 'J');
     q.insertHeld.run(ref, JSON.stringify(person), tool, JSON.stringify(args), limit, estimate, nowIso());
-    const notice = withUsual({ key: variant('office.approval_needed', { estimate: estimate !== null }),
-      params: { ref, by: nameOf(person), ...(estimate !== null ? { estimate: money(estimate) } : {}), step: stepText(tool, args) } },
-    o.tools[tool]?.hold?.usualNote?.(args) ?? '');
+    const notice = approvalNotice(ref, person, tool, args, estimate);
     await o.tell('contractor', notice.key, notice.params);
     // One message to the supervisor: what was understood, and that it went for approval.
     const what = Object.hasOwn(o.tools, tool) ? o.tools[tool].summary?.(args) : undefined;
@@ -419,6 +440,7 @@ export function createOffice(o) {
     commit,
     holds,
     command,
+    waiting,
     /** Every held step with its decision, oldest first (for tests and the judge export). @returns {HeldStep[]} */
     held: () => q.all.all().map(toHeld),
   };

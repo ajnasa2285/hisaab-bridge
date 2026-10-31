@@ -434,7 +434,7 @@ and a tax summary printed once with a round-off; code's total matched the grand 
   objections, reported payments; operator — booked jobs not started; supplier — open orders,
   objections, reported payments) and sends each missed one that is still open, as its notice would
   say it now; then the message is handled. Each missed record is taken once, so nothing is told twice;
-  one about an order that moved on is dropped. Contractor-side notices are not rebuilt yet.
+  one about an order that moved on is dropped. Contractor-side notices: see "Missed notices on the contractor's side" below.
 * *Correction hint.* The seller's dispute notice ends "सुधार भेजना हो तो लिखें: 'सुधार 6.0 घंटे'" (the
   hours the contractor named, else billed) / "'सुधार 48 बोरी'" (the quantity named on a one-line bill,
   else the delivered quantities). Code reads "सुधार <figure(s)> [unit]" as `send_correction` and reads
@@ -743,3 +743,7 @@ person's whole message is the reason. A figure that cannot be tied is asked abou
 
 **The count** is recorded once and never with a bill in force: not offered to the model, refused by reference and at the tool. A different
 figure afterwards is an objection to the bill.
+
+**Missed notices on the contractor's side.** The contractor's agent and the office now have `waiting`, rebuilt from the ledger like the sellers': the contractor's bill or correction in force in state `billed`, and a held step not decided; the supervisor's delivery in state `delivered` with no site count; for both another day offered. The bill's notice is built by one function (`billNotice`) when first told and when told again. `tellBill` can make the recorded key `usual.notice`, and a replaced bill has another key, so a notice can name other keys of the same question on that reference (`also`, in `missedWaiting`), and the bill in force is what is told.
+
+A notice told again sets no expectation, because the person's own message runs after it and may be a "हाँ" written before they saw it. The one-word texts take `{yes}`, which is "हाँ" when first told and "हाँ P-1" when told again. `हाँ P-1` from the contractor is the existing read-back bound to the bill in force. From a supervisor on a delivery waiting for the count it records the count as the same as the challan (new; it answered "only the contractor" before). For 30 minutes after a replay a bare yes from that person, with no question open, gets `site.yes_needs_ref`: it decides nothing and reaches no model. After that, or after a restart, it goes the usual way (read against the latest open question, then a read-back). A notice whose send fails is put back and told at the next message; a crash between taking and sending still loses it.

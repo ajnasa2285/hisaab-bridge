@@ -167,6 +167,9 @@ const tenthsText = (/** @type {number} */ v) => `${Math.floor(v / 10)}.${v % 10}
 export function createConversation(o) {
   /** @type {Map<string, Pending>} */
   const pending = new Map();
+  // Notices told again after a closed 24-hour window: which references, and when (replayed()).
+  /** @type {Map<string, {refs: string[], at: number}>} */
+  const replayedRefs = new Map();
   /** Questions waiting behind the open one, per person, oldest first. @type {Map<string, Waiting[]>} */
   const waiting = new Map();
   /** The receiver's mark on a site challan photo, by its sha256 (see rememberSigned). @type {Map<string, boolean | null>} */
@@ -482,6 +485,9 @@ export function createConversation(o) {
       setAside(person);
       return askCancel(person, command.ref);
     }
+    // "हाँ P-1" from a supervisor, on a delivery waiting for the site's count: the same as the challan.
+    const counted = command ? countOfDecision(person, command) : null;
+    if (counted) return commitNow(person, 'confirm_count', counted);
     const onBill = command ? billOfDecision(person, command) : null;
     if (command && onBill) {
       if (command.cmd === 'ok') {
@@ -661,6 +667,11 @@ export function createConversation(o) {
       pending.delete(keyOf(person));
     }
     if (HELP.has(said)) return o.reply(person, `help.${person.role}`);
+
+    // Right after notices told again: a bare yes may have been written before they were read, and may
+    // not be about them. It decides nothing and goes to no model; the person is told how to name one.
+    const told = YES.has(said) ? replayedOpen(person) : [];
+    if (told.length) return o.reply(person, 'site.yes_needs_ref', { ref: told[0], refs: told.join(', ') });
 
     // A person's exact reply to a request open for them is read by code and runs at once (a correction,
     // or a bill that differs from the tax invoice, is read back once first).
@@ -948,6 +959,38 @@ export function createConversation(o) {
     const orderId = openRefs(o.ledger).orderOfRef(c.ref);
     const state = orderId === null ? null : o.ledger.view(orderId).state;
     return orderId !== null && state !== null && (state === 'billed' || state === 'disputed') ? { orderId, ref: c.ref, state } : null;
+  }
+
+  /**
+   * A supervisor's "हाँ <ref>" on a delivery still waiting for the site's count (the form a notice told
+   * again asks for): the count step for that order, one figure per delivered item. Null for anything
+   * else, which stays what it was (a held step's decision is the contractor's).
+   * @param {Person} person @param {import('./office.js').Command} c
+   */
+  function countOfDecision(person, c) {
+    if (c.cmd !== 'ok' || c.note || person.role !== 'supervisor' || o.office?.held().some((h) => h.ref === c.ref && h.decision === null)) return null;
+    const orderId = openRefs(o.ledger).orderOfRef(c.ref);
+    if (orderId === null || o.ledger.view(orderId).state !== 'delivered') return null;
+    const events = o.ledger.events(orderId);
+    const d = delivery(events);
+    if (!d || siteCount(events) !== null) return null;
+    return { orderId, qtysHundredths: d.items.map((it) => it.qtyHundredths), sameAsChallan: true };
+  }
+
+  /**
+   * The references told again to this person in the last while (PENDING_MS) that still wait for them.
+   * @param {Person} person @returns {string[]}
+   */
+  function replayedOpen(person) {
+    const r = replayedRefs.get(keyOf(person));
+    if (!r) return [];
+    if (o.now() - r.at > PENDING_MS) {
+      replayedRefs.delete(keyOf(person));
+      return [];
+    }
+    const open = new Set(openQuestions(o.ledger, person.role).map((q) => q.ref));
+    if (person.role === 'contractor') for (const h of o.office?.held() ?? []) if (h.decision === null) open.add(h.ref);
+    return r.refs.filter((ref) => open.has(ref));
   }
 
   /**
@@ -1617,5 +1660,14 @@ export function createConversation(o) {
     waiting.set(keyOf(person), queue);
   }
 
-  return { onText, onImage, expect, pending: (/** @type {Person} */ p) => current(p) };
+  /**
+   * Notices about these references were told again to this person (src/app.js tellWaiting). They set no
+   * expectation; for a while a bare yes only says how to answer them (replayedOpen).
+   * @param {Person} person @param {string[]} refs
+   */
+  function replayed(person, refs) {
+    replayedRefs.set(keyOf(person), { refs, at: o.now() });
+  }
+
+  return { onText, onImage, expect, replayed, pending: (/** @type {Person} */ p) => current(p) };
 }
