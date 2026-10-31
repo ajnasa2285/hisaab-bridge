@@ -50,10 +50,10 @@ test('the env example lists every variable src/ reads, and holds no secret', () 
   assert.equal(example.HB_WA_GRAPH_VERSION, '');
 });
 
-test('the Caddyfile proxies only /wa/*, /agents/*, /health and the judge page, and answers 404 to the rest', () => {
+test('the Caddyfile proxies only /wa/*, /agents/*, /health, the judge page and its two ledger modules, and answers 404 to the rest', () => {
   const c = read('Caddyfile');
   const matchers = [...c.matchAll(/^\s*@(\w+)\s+path\s+(.+)$/gm)].map((m) => [m[1], m[2].trim().split(/\s+/).sort()]);
-  assert.deepEqual(matchers, [['a2a', ['/agents/*/a2a']], ['app', ['/agents/*', '/health', '/judge', '/judge/*', '/wa/*']]], 'a2a first: Caddy tries named handles in order');
+  assert.deepEqual(matchers, [['a2a', ['/agents/*/a2a']], ['app', ['/agents/*', '/health', '/judge', '/judge/*', '/src/ledger/payments.js', '/src/ledger/usual.js', '/wa/*']]], 'a2a first: Caddy tries named handles in order');
   assert.equal(c.match(/reverse_proxy 127\.0\.0\.1:\{\$HB_PORT:8080\}/g)?.length, 2, 'both go to the app');
   assert.equal(c.match(/reverse_proxy/g)?.length, 2, 'and nowhere else');
   assert.match(c, /respond "Not found" 404/);
