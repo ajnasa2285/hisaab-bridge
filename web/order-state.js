@@ -34,7 +34,7 @@ export function stateOf(events) {
           break; // Signed photo exchanges are informational, including after settlement.
         }
         if (state === 'booked' && kind === 'jcb_hours') state = 'working';
-        else if (state === 'none' || state === 'declined' || state === 'settled') fits = false;
+        else if (state === 'none' || state === 'declined' || state === 'settled' || state === 'cancelled') fits = false;
         break;
       case 'DELIVERY':
         if (state !== 'booked' || kind !== 'material') fits = false;
@@ -56,7 +56,7 @@ export function stateOf(events) {
         state = 'disputed'; break;
       case 'PAYMENT_CLAIM':
       case 'PAYMENT_RECEIVED':
-        if (['none', 'requested', 'offered', 'declined', 'settled'].includes(state) || b.bill !== currentBill) fits = false;
+        if (['none', 'requested', 'offered', 'declined', 'settled', 'cancelled'].includes(state) || b.bill !== currentBill) fits = false;
         payment = e.msgId; break;
       case 'PAYMENT_ACK':
         if (!paymentSummary(counted.slice(0, -1)).pending.includes(b.payment)) fits = false;
@@ -68,9 +68,13 @@ export function stateOf(events) {
         if (!Array.isArray(b.payments) && b.payment !== payment) fits = false;
         state = 'settled'; break;
       }
+      case 'CANCEL':
+        if (state !== 'cancelled' && (!['requested', 'offered', 'booked'].includes(state)
+          || paymentSummary(counted.slice(0, -1)).payments.some((p) => p.status !== 'denied'))) fits = false;
+        state = 'cancelled'; break;
       case 'RECEIPT': case 'REFUSE': break;
       case 'SITE_RECEIPT':
-        if (kind !== 'material' || ['none', 'requested', 'offered', 'declined', 'booked'].includes(state)) fits = false;
+        if (kind !== 'material' || ['none', 'requested', 'offered', 'declined', 'booked', 'cancelled'].includes(state)) fits = false;
         break;
       case 'EVIDENCE_REQUEST':
         if (state === 'none') fits = false;

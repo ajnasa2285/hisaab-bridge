@@ -13,6 +13,7 @@ import { explainDifference } from './explain.js';
 import { differenceFacts } from './explain-facts.js';
 import { traceCheck } from '../trace/trace.js';
 import { createSellerPayments } from './pay.js';
+import { cancelTool, orderWords } from './cancel.js';
 import { paymentWaiting } from './payment-view.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
@@ -222,6 +223,8 @@ export function createJcbAgent(o) {
         return deliveryResult(d, 'jcb.correction_sent', { hours: hours(a.hoursTenths), total: rupees(body.totalPaise) });
       },
     },
+    // Calling off a job never carried out; the operator is told.
+    cancel_order: cancelTool({ ledger, link, tell, roles: ['jcb_owner'], team: { role: 'operator', key: 'jcb.order_cancelled_own' } }),
     // Payments: confirm_payment and record_received (src/agents/pay.js, the same for both sellers).
     ...seller.tools,
   };
@@ -291,6 +294,12 @@ export function createJcbAgent(o) {
       case 'PAYMENT_CLAIM':
         await seller.onApplied(m);
         break;
+      case 'CANCEL': {
+        const words = orderWords(ledger, m.order_id);
+        await tell('jcb_owner', 'jcb.order_cancelled', words);
+        await tell('operator', 'jcb.order_cancelled', words);
+        break;
+      }
       default:
         break;
     }

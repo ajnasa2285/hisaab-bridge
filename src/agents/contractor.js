@@ -16,6 +16,7 @@ import { explainDifference } from './explain.js';
 import { differenceFacts } from './explain-facts.js';
 import { traceCheck } from '../trace/trace.js';
 import { PAYABLE, balanceText, newGroupId, paymentLine, shares, summaryOf, utrUses } from './pay.js';
+import { cancelTool, orderWords } from './cancel.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
@@ -371,6 +372,9 @@ export function createContractorAgent(o) {
         return ok('site.count_saved_differs', params);
       },
     },
+
+    // Only the contractor calls off an order never carried out; the supervisor is told.
+    cancel_order: cancelTool({ ledger, link, tell, roles: ['contractor'], team: { role: 'supervisor', key: 'site.order_cancelled_own' } }),
 
     // Only the contractor accepts a bill.
     accept_bill: {
@@ -759,6 +763,12 @@ export function createContractorAgent(o) {
       case 'PAYMENT_ACK':
         await onPaymentAck(m);
         break;
+      case 'CANCEL': {
+        const words = { ...orderWords(ledger, m.order_id), from: toWhom(m.order_id) };
+        await tell('contractor', 'site.order_cancelled', words);
+        await tell('supervisor', 'site.order_cancelled', words);
+        break;
+      }
       case 'PAYMENT_RECEIVED':
         await tell('contractor', 'pay.site.received', { ref, from: toWhom(m.order_id), payment: paymentLine(b), balance: balanceText(summaryOf(ledger, m.order_id)) });
         break;

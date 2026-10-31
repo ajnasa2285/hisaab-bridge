@@ -15,7 +15,7 @@ const DAY_MS = 24 * 3600 * 1000;
 export const TYPES = /** @type {const} */ ([
   'BOOKING_REQUEST', 'BOOKING_REPLY', 'DELIVERY', 'BILL', 'RECEIPT', 'ACCEPT',
   'DISPUTE', 'CORRECTION', 'PAYMENT_CLAIM', 'SETTLED', 'REFUSE', 'SITE_RECEIPT', 'EVIDENCE_REQUEST', 'EVIDENCE',
-  'PAYMENT_ACK', 'PAYMENT_RECEIVED',
+  'PAYMENT_ACK', 'PAYMENT_RECEIVED', 'CANCEL',
 ]);
 /** @typedef {typeof TYPES[number]} MessageType */
 
@@ -159,6 +159,8 @@ const BODY_OK = {
     : b.payment === undefined && Array.isArray(b.payments) && b.payments.length > 0 && b.payments.length <= 200
       && b.payments.every(isUuid) && new Set(b.payments).size === b.payments.length),
   REFUSE: (b) => isUuid(b.refers_to) && REFUSAL_CODES.includes(b.code),
+  // Either party calls off an order never carried out; the envelope says everything.
+  CANCEL: (b) => only(b, []),
   // The site's signed copy of the challan, told back to the supplier: what the site wrote it received.
   SITE_RECEIPT: (b) => isUuid(b.delivery) && b.challan && typeof b.challan === 'object'
     && typeof b.challan.sha256 === 'string' && SHA256_RE.test(b.challan.sha256)

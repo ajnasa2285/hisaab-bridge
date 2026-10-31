@@ -15,6 +15,7 @@ import { explainDifference } from './explain.js';
 import { differenceFacts } from './explain-facts.js';
 import { traceCheck } from '../trace/trace.js';
 import { createSellerPayments } from './pay.js';
+import { cancelTool, orderWords } from './cancel.js';
 import { paymentWaiting } from './payment-view.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
@@ -214,6 +215,8 @@ export function createSupplierAgent(o) {
         return deliveryResult(sent, 'supplier.correction_sent', { lines: linesText(body.lines, items), total: rupees(body.totalPaise) });
       },
     },
+    // Calling off an order never carried out.
+    cancel_order: cancelTool({ ledger, link, tell, roles: ['supplier'] }),
     // Payments: confirm_payment and record_received (src/agents/pay.js, the same for both sellers).
     ...seller.tools,
   };
@@ -309,6 +312,9 @@ export function createSupplierAgent(o) {
       }
       case 'PAYMENT_CLAIM':
         await seller.onApplied(m);
+        break;
+      case 'CANCEL':
+        await tell('supplier', 'supplier.order_cancelled', orderWords(ledger, m.order_id));
         break;
       default:
         break;

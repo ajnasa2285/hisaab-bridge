@@ -38,6 +38,7 @@ import { balanceText, owedPaise, payableOrders, paymentLine, shares, summaryOf, 
 import { openRefs, parseRef, refsIn } from '../ledger/refs.js';
 import { no, runTool } from './common.js';
 import { parseCommand } from './office.js';
+import { cancelBlock } from './cancel.js';
 import { siteKey } from './site-names.js';
 import { traceCheck, tracePart } from '../trace/trace.js';
 import { answerQuestion } from './ask.js';
@@ -102,6 +103,8 @@ const LONG_JOB_TENTHS = 120;
 const YES = { has: (/** @type {string} */ said) => yesNo(said) === 'yes' };
 const NO = { has: (/** @type {string} */ said) => yesNo(said) === 'no' };
 const HELP = new Set(['मदद', 'help', 'madad', '?']);
+// Drops a held meter photo. Not a general "no": alone, to a seller, it must not decline an order at once.
+const DROP_WORDS = new Set(['रद्द', 'रद', 'radd', 'कैंसल', 'कैंसिल']);
 /** The replies to "यह फ़ोटो क्या है?"; the first of each is the form asked for. @type {Record<PhotoKind, string[]>} */
 const KIND_WORDS = {
   meter: ['मीटर', 'meter', 'mitar'],
@@ -449,6 +452,8 @@ export function createConversation(o) {
     // An exact command is answered first and leaves any open question as it was: a command always
     // has a command word, so it is never a figure, and typed figures are never a command.
     const command = o.office ? parseCommand(text) : null;
+    // "रद्द J-2" commits, so unlike the others it is read back: its question is the open one.
+    if (command?.cmd === 'cancel') return askCancel(person, command.ref);
     if (command && o.office) {
       const r = await o.office.command(person, command);
       if (r) {
@@ -470,7 +475,7 @@ export function createConversation(o) {
       if (answer?.again) return askJob(person, p.orderIds);
       pending.delete(keyOf(person));
       if (answer) return onMeterImage(person, p.image, answer.orderId);
-      if (NO.has(said)) return o.reply(person, 'step.cancelled');
+      if (NO.has(said) || DROP_WORDS.has(said)) return o.reply(person, 'step.cancelled');
       // Not an answer: the question lapses, the photo with it, and the message is read as a new one.
     }
     const waitingPay = payWait(person);
@@ -791,6 +796,18 @@ export function createConversation(o) {
       lines.push(r.ok ? t(r.key, r.params) : t('site.two_requests_failed', { what: stepWords(step), why: t(r.key, r.params) }));
     }
     return o.reply(person, 'site.two_requests_done', { first: lines[0], second: lines[1] });
+  }
+
+  /**
+   * "रद्द J-2": who may, and whether it can be, is said at once; else the read-back.
+   * @param {Person} person @param {string} ref
+   */
+  function askCancel(person, ref) {
+    if (!may(person, 'cancel_order')) return o.reply(person, 'cancel.not_allowed');
+    const orderId = openRefs(o.ledger).orderOfRef(ref);
+    if (orderId === null) return o.reply(person, o.office?.held().some((h) => h.ref === ref && h.decision === null) ? 'cancel.held' : 'office.no_such_ref', { ref });
+    const blocked = cancelBlock(o.ledger, orderId);
+    return blocked ? o.reply(person, blocked.key, blocked.params) : propose(person, 'cancel_order', { orderId });
   }
 
   /**

@@ -308,6 +308,8 @@ function bodyOf(e, t, ctx) {
       row(grid, t.payment, Array.isArray(b.payments) ? b.payments.map((/** @type {string} */ id) => short(id, 8)).join(', ') : short(b.payment, 8), 'mono');
       row(grid, t.amount, rupees(b.amountPaise));
       break;
+    case 'CANCEL':
+      break; // The envelope says everything: who, when, which order.
     case 'REFUSE':
       row(grid, t.msg_id, short(b.refers_to, 8), 'mono');
       row(grid, t.code, String(b.code ?? '—'));

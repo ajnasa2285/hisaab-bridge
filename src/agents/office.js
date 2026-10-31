@@ -24,7 +24,7 @@ import { withUsual } from './usual.js';
 /** @typedef {{procurementPaise?: number}} Limits */
 /**
  * @typedef {{cmd: 'status' | 'evidence', ref: string} | {cmd: 'pending'} | {cmd: 'stock', item: string | null} |
- *   {cmd: 'ok', ref: string, note: string | null} | {cmd: 'no', ref: string, reason: string | null}} Command
+ *   {cmd: 'ok', ref: string, note: string | null} | {cmd: 'no', ref: string, reason: string | null} | {cmd: 'cancel', ref: string}} Command
  */
 /**
  * @typedef {{id: number, ref: string, person: Person, tool: string, args: Record<string, any>, limit: string,
@@ -67,7 +67,7 @@ const NEW_ORDER_REF = { request_jcb: 'J', request_material: 'P' };
 // Orders that wait for the contractor's own decision (a bill to accept or dispute, another day offered);
 // a delivery the site has not counted yet waits for the site too (see pending()).
 const AWAITING_CONTRACTOR = ['billed', 'offered'];
-const CLOSED = ['settled', 'declined', 'none'];
+const CLOSED = ['settled', 'declined', 'cancelled', 'none'];
 const MAX_NOTE = 300;
 
 /** @param {string[]} words */
@@ -78,6 +78,9 @@ const PENDING = wordSet(['pending', 'पेंडिंग', 'बाकी', '�
 const STOCK = wordSet(['stock', 'स्टॉक', 'स्टाक']);
 const OK = wordSet(['ok', 'okay', 'ओके', 'हाँ', 'हां', 'मंज़ूर', 'मंजूर']);
 const NO = wordSet(['no', 'नहीं', 'नही', 'ना', 'नामंज़ूर', 'नामंजूर']);
+const CANCEL = wordSet(['रद्द', 'रद', 'radd', 'cancel', 'कैंसल', 'कैंसिल']);
+// May stand beside the word: "रद्द करो J-2", "J-2 रद्द कर दो".
+const CANCEL_FILLER = wordSet(['कर', 'करो', 'करें', 'दो', 'दें', 'दीजिए', 'kar', 'karo', 'do']);
 
 /**
  * An exact command, or null for anything else (which then goes to the model). Case and spacing do
@@ -91,6 +94,11 @@ export function parseCommand(text) {
   if (!m) return null;
   const word = m[1];
   const rest = m[2] ?? '';
+  const words = s.split(' ').filter((w) => !CANCEL_FILLER.has(w));
+  if (CANCEL.has(words[0]) || CANCEL.has(words.at(-1) ?? '')) {
+    const ref = parseRef((CANCEL.has(words[0]) ? words.slice(1) : words.slice(0, -1)).join(' '));
+    return ref === null ? null : { cmd: 'cancel', ref };
+  }
   if (PENDING.has(word) && rest === '') return { cmd: 'pending' };
   if (STOCK.has(word)) return rest.length > 40 ? null : { cmd: 'stock', item: rest || null };
   if (STATUS.has(word) || EVIDENCE.has(word)) {
@@ -389,6 +397,7 @@ export function createOffice(o) {
    * @returns {Promise<Said | null>}
    */
   async function command(person, c) {
+    // `cancel` is read back by the conversation (askCancel); it never reaches here.
     switch (c.cmd) {
       case 'evidence': {
         if (!['contractor', 'supervisor', 'jcb_owner', 'supplier'].includes(person.role)) return no('common.not_allowed');

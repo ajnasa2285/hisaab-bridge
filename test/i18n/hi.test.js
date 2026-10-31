@@ -78,7 +78,7 @@ test('the flows the brief names are covered', () => {
   for (const code of ['UNSUPPORTED', 'NOT_CONNECTED', 'BAD_SIGNATURE', 'NOT_FOR_ME', 'EXPIRED', 'WRONG_STATE', 'BAD_BODY']) assert.ok(hi[`refuse.${code}`], code);
   for (const role of ['jcb_owner', 'operator', 'contractor', 'supervisor', 'supplier']) assert.ok(hi[`help.${role}`] && hi[`role.${role}`], role);
   for (const s of ['requested', 'approved', 'declined', 'sent', 'done']) assert.ok(hi[`request.status.${s}`], s);
-  for (const s of ['requested', 'offered', 'declined', 'booked', 'working', 'delivered', 'billed', 'disputed', 'accepted', 'payment_claimed', 'settled']) assert.ok(hi[`state.${s}`], s);
+  for (const s of ['requested', 'offered', 'declined', 'booked', 'working', 'delivered', 'billed', 'disputed', 'accepted', 'payment_claimed', 'settled', 'cancelled']) assert.ok(hi[`state.${s}`], s);
   assert.ok(hi['meter.retake'] && hi['payment.retake'], 'retake requests');
 });
 
@@ -223,6 +223,10 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'what.jcb': ['site', 'day'], 'what.jcb_time': ['site', 'day', 'time'], 'what.jcb_hours': ['site', 'day', 'hours'],
     'what.jcb_time_hours': ['site', 'day', 'time', 'hours'], 'what.material': ['site', 'day', 'items'], 'what.material_time': ['site', 'day', 'time', 'items'],
     'reply.which_order': ['refs', 'ref'], 'meter.which_job': ['lines', 'ref'], 'meter.job_line': ['n', 'ref', 'site', 'day'],
+    'step.cancel_order': ['ref', 'site', 'day', 'what'], 'cancel.done': ['ref', 'site', 'day', 'what'], 'cancel.refused': ['ref'], 'cancel.not_allowed': [], 'cancel.held': ['ref'],
+    'cancel.already': ['ref'], 'cancel.closed': ['ref', 'state'], 'cancel.has_bill': ['ref'], 'cancel.has_payment': ['ref', 'amount'], 'cancel.has_delivery': ['ref'], 'cancel.has_count': ['ref'], 'cancel.has_meter': ['ref'],
+    'site.order_cancelled': ['from', 'ref', 'site', 'day', 'what'], 'site.order_cancelled_own': ['ref', 'site', 'day', 'what'], 'jcb.order_cancelled': ['ref', 'site', 'day'],
+    'jcb.order_cancelled_own': ['ref', 'site', 'day'], 'supplier.order_cancelled': ['ref', 'site', 'day', 'what'], 'state.cancelled': [], 'office.await.buyer.cancelled': [], 'office.await.seller.cancelled': [],
     ...Object.fromEntries(['buyer', 'seller'].flatMap((side) => ['requested', 'offered', 'declined', 'booked', 'working', 'delivered', 'billed', 'disputed', 'accepted', 'payment_claimed', 'settled']
       .map((s) => [`office.await.${side}.${s}`, []]))),
   };

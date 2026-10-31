@@ -33,9 +33,9 @@ import { sameMeter } from './readers/same-meter.js';
 /** @typedef {import('./protocol/messages.js').MessageType} MessageType */
 
 /** What a seller (the JCB agent or the supplier agent) accepts from the contractor's agent. @type {MessageType[]} */
-const TO_SELLER = ['BOOKING_REQUEST', 'ACCEPT', 'DISPUTE', 'PAYMENT_CLAIM', 'RECEIPT', 'REFUSE', 'EVIDENCE_REQUEST', 'EVIDENCE'];
+const TO_SELLER = ['BOOKING_REQUEST', 'ACCEPT', 'DISPUTE', 'PAYMENT_CLAIM', 'CANCEL', 'RECEIPT', 'REFUSE', 'EVIDENCE_REQUEST', 'EVIDENCE'];
 /** @type {MessageType[]} */
-const TO_CONTRACTOR = ['BOOKING_REPLY', 'BILL', 'CORRECTION', 'SETTLED', 'PAYMENT_ACK', 'PAYMENT_RECEIVED', 'RECEIPT', 'REFUSE', 'EVIDENCE_REQUEST', 'EVIDENCE'];
+const TO_CONTRACTOR = ['BOOKING_REPLY', 'BILL', 'CORRECTION', 'SETTLED', 'PAYMENT_ACK', 'PAYMENT_RECEIVED', 'CANCEL', 'RECEIPT', 'REFUSE', 'EVIDENCE_REQUEST', 'EVIDENCE'];
 /** Only the supplier delivers (material, with a challan). @type {MessageType[]} */
 const TO_CONTRACTOR_FROM_SUPPLIER = [...TO_CONTRACTOR, 'DELIVERY'];
 /** Only the supplier is told the site's signed copy of its challan. @type {MessageType[]} */

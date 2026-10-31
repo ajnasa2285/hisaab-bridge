@@ -28,9 +28,9 @@ export async function setup(o = {}) {
   let nowMs = Date.parse('2026-10-29T02:30:00Z');
   const now = () => nowMs;
   /** @type {MessageType[]} */
-  const toSeller = ['BOOKING_REQUEST', 'ACCEPT', 'DISPUTE', 'PAYMENT_CLAIM', 'RECEIPT', 'REFUSE'];
+  const toSeller = ['BOOKING_REQUEST', 'ACCEPT', 'DISPUTE', 'PAYMENT_CLAIM', 'CANCEL', 'RECEIPT', 'REFUSE'];
   /** @type {MessageType[]} */
-  const toContractor = ['BOOKING_REPLY', 'BILL', 'CORRECTION', 'SETTLED', 'PAYMENT_ACK', 'PAYMENT_RECEIVED', 'RECEIPT', 'REFUSE'];
+  const toContractor = ['BOOKING_REPLY', 'BILL', 'CORRECTION', 'SETTLED', 'PAYMENT_ACK', 'PAYMENT_RECEIVED', 'CANCEL', 'RECEIPT', 'REFUSE'];
   const pub = (/** @type {import('node:crypto').KeyObject} */ k) => publicKeyFromText(publicKeyText(k));
   const jcbCore = {
     self: { id: 'agent:jcb-1', privateKey: jk.privateKey },

@@ -151,11 +151,11 @@ export const TEXTS = {
     },
     states: {
       none: '—', requested: 'पूछा है', offered: 'दूसरा दिन सुझाया', declined: 'मना', booked: 'तय', working: 'काम चालू',
-      delivered: 'पहुँचा', billed: 'बिल आया', disputed: 'आपत्ति', accepted: 'मंज़ूर', part_paid: 'कुछ भुगतान मिला', payment_claimed: 'भुगतान बताया', settled: 'हिसाब पूरा',
+      delivered: 'पहुँचा', billed: 'बिल आया', disputed: 'आपत्ति', accepted: 'मंज़ूर', part_paid: 'कुछ भुगतान मिला', payment_claimed: 'भुगतान बताया', settled: 'हिसाब पूरा', cancelled: 'रद्द',
     },
     types: {
       BOOKING_REQUEST: 'JCB की माँग', MATERIAL_REQUEST: 'सामान की माँग', BOOKING_REPLY: 'जवाब', EVIDENCE: 'मीटर की फ़ोटो', BILL: 'बिल', RECEIPT: 'रसीद', ACCEPT: 'मंज़ूरी',
-      DISPUTE: 'आपत्ति', CORRECTION: 'सुधरा बिल', PAYMENT_CLAIM: 'भुगतान बताया', PAYMENT_ACK: 'भुगतान का जवाब', PAYMENT_RECEIVED: 'भुगतान मिला', SETTLED: 'हिसाब पूरा', REFUSE: 'इनकार', NOTE: 'टिप्पणी', DELIVERY: 'सामान पहुँचा', SITE_COUNT: 'साइट की गिनती',
+      DISPUTE: 'आपत्ति', CORRECTION: 'सुधरा बिल', PAYMENT_CLAIM: 'भुगतान बताया', PAYMENT_ACK: 'भुगतान का जवाब', PAYMENT_RECEIVED: 'भुगतान मिला', SETTLED: 'हिसाब पूरा', CANCEL: 'रद्द', REFUSE: 'इनकार', NOTE: 'टिप्पणी', DELIVERY: 'सामान पहुँचा', SITE_COUNT: 'साइट की गिनती',
     },
   },
   en: {
@@ -307,11 +307,11 @@ export const TEXTS = {
     },
     states: {
       none: '—', requested: 'requested', offered: 'another day offered', declined: 'declined', booked: 'booked', working: 'working',
-      delivered: 'delivered', billed: 'billed', disputed: 'disputed', accepted: 'accepted', part_paid: 'part paid', payment_claimed: 'payment claimed', settled: 'settled',
+      delivered: 'delivered', billed: 'billed', disputed: 'disputed', accepted: 'accepted', part_paid: 'part paid', payment_claimed: 'payment claimed', settled: 'settled', cancelled: 'cancelled',
     },
     types: {
       BOOKING_REQUEST: 'JCB request', MATERIAL_REQUEST: 'material request', BOOKING_REPLY: 'booking reply', EVIDENCE: 'meter photo', BILL: 'bill', RECEIPT: 'receipt', ACCEPT: 'accept',
-      DISPUTE: 'dispute', CORRECTION: 'correction', PAYMENT_CLAIM: 'payment claim', PAYMENT_ACK: 'payment answer', PAYMENT_RECEIVED: 'money received', SETTLED: 'settled', REFUSE: 'refusal', NOTE: 'note', DELIVERY: 'delivery', SITE_COUNT: 'site count',
+      DISPUTE: 'dispute', CORRECTION: 'correction', PAYMENT_CLAIM: 'payment claim', PAYMENT_ACK: 'payment answer', PAYMENT_RECEIVED: 'money received', SETTLED: 'settled', CANCEL: 'cancelled', REFUSE: 'refusal', NOTE: 'note', DELIVERY: 'delivery', SITE_COUNT: 'site count',
     },
   },
 };

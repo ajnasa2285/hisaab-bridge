@@ -69,7 +69,7 @@ export const lookupsFor = (role) => MAY[role] ?? [];
 /** The buyer's side is the contractor's agent. @param {Role} role @returns {'buyer' | 'seller'} */
 const sideOf = (role) => (role === 'contractor' || role === 'supervisor' ? 'buyer' : 'seller');
 
-const STATES = ['requested', 'offered', 'declined', 'booked', 'working', 'delivered', 'billed', 'disputed', 'accepted', 'payment_claimed', 'part_paid', 'settled'];
+const STATES = ['requested', 'offered', 'declined', 'booked', 'working', 'delivered', 'billed', 'disputed', 'accepted', 'payment_claimed', 'part_paid', 'settled', 'cancelled'];
 const PERIODS = ['all', 'today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month'];
 const text = (/** @type {number} */ max, /** @type {string} */ description) => ({ type: ['string', 'null'], maxLength: max, description });
 const FILTERS = {
@@ -84,7 +84,7 @@ const FILTERS = {
 const DEFS = {
   list_orders: {
     description: 'The orders (jobs) with their reference, site, day, state and bill: filter by site, kind, state, period.',
-    properties: { ...FILTERS, state: text(16, `One of ${STATES.join(', ')}; 'open' for every order not settled or declined; or null for all.`) },
+    properties: { ...FILTERS, state: text(16, `One of ${STATES.join(', ')}; 'open' for every order not settled, declined or cancelled; or null for all.`) },
   },
   order_detail: {
     description: 'Everything recorded on one order by its reference (J-1, P-2): request, rate, delivery, site count, bill in force, payment.',
@@ -351,7 +351,7 @@ function summary(c, orders, item, all, side) {
   /** @type {string[]} */
   const refs = [];
   for (const o of orders) {
-    if (o.state === 'declined' || o.state === 'none') continue;
+    if (o.state === 'declined' || o.state === 'cancelled' || o.state === 'none') continue;
     const wanted = (/** @type {Item} */ i) => matches(i.name, item);
     if (item != null && item !== '' && (o.kind !== 'material' || !o.requested.some(wanted))) continue;
     refs.push(c.ref(o.ref));
@@ -526,7 +526,7 @@ export function runLookup(name, raw, ctx) {
   }
   const chosen = select(ctx.facts, a, range);
   if (name === 'list_orders') {
-    const rows = chosen.filter((o) => a.state == null || (a.state === 'open' ? !['settled', 'declined', 'none'].includes(o.state) : o.state === a.state));
+    const rows = chosen.filter((o) => a.state == null || (a.state === 'open' ? !['settled', 'declined', 'cancelled', 'none'].includes(o.state) : o.state === a.state));
     const data = {
       days: rangeShown(c, range), orders: c.count(rows.length),
       list: rows.slice(-MAX_ROWS).map((o) => ({

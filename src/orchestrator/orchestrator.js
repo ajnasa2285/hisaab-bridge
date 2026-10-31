@@ -645,7 +645,7 @@ export function orderRefs(ledger) {
   const out = [];
   for (const o of /** @type {{order_id: string, site: string, created_at: string}[]} */ (ledger.orders())) {
     const view = ledger.view(o.order_id);
-    if (view.state === 'settled' || view.state === 'declined' || view.state === 'none') continue;
+    if (view.state === 'settled' || view.state === 'declined' || view.state === 'cancelled' || view.state === 'none') continue;
     const req = ledger.events(o.order_id).filter((e) => e.type === 'BOOKING_REQUEST').at(-1);
     const ref = { ref: refs.refOf(o.order_id) ?? '—', orderId: o.order_id, site: o.site, day: req?.body.body.day ?? '—', state: view.state };
     // A material order shows its items, so rates or a count can be given "in the order of the items".

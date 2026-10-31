@@ -56,8 +56,7 @@ const REF_IN_TEXT = /(?<![\p{L}\p{N}])(?:j|p|जे|पी)\s*-?\s*\d{1,6}(?![\p
  * @param {string} text @returns {string[]}
  */
 export function refsIn(text) {
-  const found = (text.normalize('NFC').match(REF_IN_TEXT) ?? []).map(parseRef).filter((r) => r !== null);
-  return [...new Set(found)];
+  return [...new Set((text.normalize('NFC').match(REF_IN_TEXT) ?? []).flatMap((w) => parseRef(w) ?? []))];
 }
 
 // Numbers as a voice note writes them after "पी"/"जे" (live, 30 Oct: "P-1" came back as "पीवन").

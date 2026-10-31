@@ -24,7 +24,7 @@ import { PAYABLE, todayIst } from './pay.js';
 /** @param {string[]} w */
 const words = (w) => new Set(w.map((x) => x.normalize('NFC')));
 const YES_WORDS = words(['हाँ', 'हां', 'हा', 'हाँजी', 'हांजी', 'जी', 'ठीक', 'सही', 'चलेगा', 'बिल्कुल', 'han', 'haan', 'ha', 'haa', 'haanji', 'ji', 'yes', 'y', 'ok', 'okay', 'ओके', 'theek', 'thik', 'sahi', 'chalega', 'bilkul', '👍', '✅']);
-const NO_WORDS = words(['नहीं', 'नही', 'ना', 'न', 'गलत', 'ग़लत', 'मत', 'nahi', 'nahin', 'nhi', 'na', 'no', 'n', 'galat', 'mat', 'cancel', 'रद्द', 'रद', 'radd', 'कैंसल', 'कैंसिल', '❌']);
+const NO_WORDS = words(['नहीं', 'नही', 'ना', 'न', 'गलत', 'ग़लत', 'मत', 'nahi', 'nahin', 'nhi', 'na', 'no', 'n', 'galat', 'mat', 'cancel', '❌']);
 // Words that may stand beside a yes or a no without changing it ("हाँ जी", "ठीक है भेजो", "नहीं चाहिए",
 // "हाँ आ गया"). Anything else in the message makes it more than a yes or a no.
 const FILLER = words([

@@ -520,3 +520,23 @@ original key and text remain unchanged. Judge labels live in `web/texts.js` in b
 |---|---|---|
 | `meter.which_job` | lines, ref | a meter photo with several jobs open (or a caption naming a job not open): the photo waits; `ref` is the first job's reference, as the example of the reply |
 | `meter.job_line` | n, ref, site, day | one job in that list |
+
+## Cancelling an order (31 Oct)
+
+| Key | Parameters | When |
+|---|---|---|
+| `step.cancel_order` | ref, site, day, what | the read-back of `रद्द J-2` |
+| `cancel.done` | ref, site, day, what | the signed CANCEL reached the other side |
+| `cancel.refused` | ref | the other side's state refused it (work or goods recorded there) |
+| `cancel.not_allowed` | none | a supervisor or an operator wrote the command |
+| `cancel.held` | ref | the reference is a step still held for approval: decline it instead |
+| `cancel.already` | ref | already cancelled |
+| `cancel.closed` | ref, state | declined, or any other state past cancelling |
+| `cancel.has_bill`, `cancel.has_delivery`, `cancel.has_count`, `cancel.has_meter` | ref | refused with the reason, before any read-back |
+| `cancel.has_payment` | ref, amount | an advance waiting or confirmed blocks it |
+| `site.order_cancelled` | from, ref, site, day, what | to the contractor and supervisor: the seller cancelled |
+| `site.order_cancelled_own` | ref, site, day, what | to the supervisor: the contractor cancelled |
+| `jcb.order_cancelled` | ref, site, day | to the JCB owner and operator: the contractor cancelled |
+| `jcb.order_cancelled_own` | ref, site, day | to the operator: the owner cancelled |
+| `supplier.order_cancelled` | ref, site, day, what | to the supplier: the contractor cancelled |
+| `state.cancelled`, `office.await.buyer.cancelled`, `office.await.seller.cancelled` | none | the state's words |

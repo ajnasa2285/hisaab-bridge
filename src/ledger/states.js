@@ -2,7 +2,7 @@
 // the order's events in sequence, so the history is the only truth. A message that does not fit
 // the current state is refused with WRONG_STATE before anything is written.
 
-/** @typedef {'none'|'requested'|'offered'|'declined'|'booked'|'working'|'delivered'|'billed'|'disputed'|'accepted'|'payment_claimed'|'part_paid'|'settled'} OrderState */
+/** @typedef {'none'|'requested'|'offered'|'declined'|'booked'|'working'|'delivered'|'billed'|'disputed'|'accepted'|'payment_claimed'|'part_paid'|'settled'|'cancelled'} OrderState */
 
 /**
  * What an order looks like after its events: the state, plus the ids later messages must refer to.
@@ -31,6 +31,9 @@ export function emptyView() {
 const PAYABLE = ['booked', 'working', 'delivered', 'billed', 'disputed', 'accepted', 'payment_claimed', 'part_paid'];
 // After ACCEPT the state follows the payments; before it, payments never move it.
 const AFTER_ACCEPT = ['accepted', 'payment_claimed', 'part_paid'];
+// An order may be called off only before any work (a JCB's first meter photo makes it `working`).
+/** @type {OrderState[]} */
+export const CANCELLABLE = ['requested', 'offered', 'booked'];
 
 /**
  * The view with one payment's status set, the balance worked out again and, once the bill is
@@ -94,7 +97,7 @@ export function step(v, e) {
       if (Array.isArray(b.items)) return v.state === 'none' ? null : v;
       // The JCB side records meter photos locally; the first one means work has started.
       if (v.state === 'booked' && v.kind === 'jcb_hours') return { ...v, state: 'working' };
-      return v.state === 'none' || v.state === 'declined' || v.state === 'settled' ? null : v;
+      return v.state === 'none' || v.state === 'declined' || v.state === 'settled' || v.state === 'cancelled' ? null : v;
     case 'DELIVERY':
       if (v.state !== 'booked' || v.kind !== 'material') return null;
       return { ...v, state: 'delivered' };
@@ -149,7 +152,13 @@ export function step(v, e) {
     }
     case 'SITE_RECEIPT':
       // The site's signed copy follows a delivery and never changes the state.
-      return v.kind === 'material' && !['none', 'requested', 'offered', 'declined', 'booked'].includes(v.state) ? v : null;
+      return v.kind === 'material' && !['none', 'requested', 'offered', 'declined', 'booked', 'cancelled'].includes(v.state) ? v : null;
+    case 'CANCEL':
+      // Both sides cancelling at once: the other's message finds it cancelled and changes nothing.
+      if (v.state === 'cancelled') return v;
+      // A payment waiting or confirmed stands in the way; one the seller denied never came.
+      if (!CANCELLABLE.includes(v.state) || Object.values(v.paid).some((p) => p.status !== 'denied')) return null;
+      return { ...v, state: 'cancelled' };
     case 'EVIDENCE_REQUEST':
       return v.state === 'none' ? null : v;
     case 'RECEIPT':

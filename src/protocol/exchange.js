@@ -118,6 +118,11 @@ export function receive(agent, raw) {
   if (m.type === 'REFUSE' && !evidenceRefusal(ledger, m)) return { answer: refusal('WRONG_STATE', m.msg_id, m.from, m.order_id), applied: false, message: m };
   if (m.type === 'RECEIPT' && ledger.eventOfMessage(m.body.receipt_for)?.orderId !== m.order_id) return { answer: refusal('BAD_BODY', m.msg_id, m.from, m.order_id), applied: false, message: m };
 
+  // The site's own count is local and moves no state, but the goods have come: the order stands.
+  if (m.type === 'CANCEL' && ledger.events(m.order_id).some((e) => e.direction === 'local' && e.type === 'NOTE' && e.body.kind === 'site_count')) {
+    return { answer: refusal('WRONG_STATE', m.msg_id, m.from, m.order_id), applied: false, message: m };
+  }
+
   if (m.type === 'EVIDENCE_REQUEST') {
     // Checked now, so an impossible request is refused at once; the owner is asked only about a
     // photo that exists and is kept. The answer itself waits for the owner (evidenceAnswer).

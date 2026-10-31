@@ -689,3 +689,22 @@ hours in words, 5 runs each: both 55/55; the singles stayed single 34/35, with "
 3 runs each: both 33/33, singles 21/21, none dropped, none turned into two; p50 3.3 s, slowest 7.0 s. How often the
 guard's second reading fired was not counted. Site, day, time, hours, items and units in the second run's pairs were
 all as written.
+
+## Meter photo with several jobs, cancelling an order (31 Oct 2026)
+
+Live on 31 Oct: J-2 and J-3 both booked, and no meter photo could be recorded: "write the site or day" kept nothing
+and no answer resolved it. J-2 could not be called off either: nothing could end a booked order. Brief:
+`docs/briefs/CLAUDE-meter-choice-cancel.md`.
+
+**Which job** (`onMeterImage`, `askJob`, `jobAnswer` in `src/agents/conversation.js`). With several jobs booked or
+working the photo waits, unread, as the open question (`meter_job`): "1. J-2: शिवपुरी, 31 अक्टूबर 2026 का काम". A number
+on the list or a listed reference picks the job, and the normal flow goes on, reading included. A number or reference off
+the list or a "हाँ" asks again; a cancel word drops the photo; another message lapses it and is read as new. One reference in the photo's
+caption answers it before it is asked; a caption naming a job not open asks, even with one job open. A new photo replaces the held one.
+
+**Cancelling** (`src/agents/cancel.js`). `रद्द J-2` (also `J-2 रद्द करो`, `cancel J-2`) is parsed by code. The contractor, the
+JCB owner or the supplier; anyone else is told whose decision it is. What blocks it is said at once, with the reason;
+otherwise one read-back, one "हाँ", one signed `CANCEL` (CONTRACTS 4 and 5). The other side's agent records it without a
+yes and tells the contractor and supervisor, or the JCB owner and operator, or the supplier. On the sender's side the
+operator or supervisor is told too. A cancelled order leaves `orderRefs`, `बाक़ी` and the totals; `स्थिति`, ask-anything
+and the judge page show it as cancelled. A step held for approval has no order yet: it is declined with `नहीं J-2 कारण`.

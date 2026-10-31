@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openLedger } from '../../src/ledger/store.js';
-import { openRefs, parseRef, spokenRefs } from '../../src/ledger/refs.js';
+import { openRefs, parseRef, spokenRefs, refsIn } from '../../src/ledger/refs.js';
 
 const id = (/** @type {number} */ n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
@@ -15,6 +15,13 @@ const id = (/** @type {number} */ n) => `00000000-0000-4000-8000-${String(n).pad
 function order(ledger, n, kind) {
   ledger.ensureOrder({ orderId: id(n), kind, counterparty: 'agent:jcb-1', site: 'Shivpuri', at: `2026-10-29T0${n}:00:00Z` });
 }
+
+test('refsIn finds references standing among other words, each once', () => {
+  assert.deepEqual(refsIn('J-2 शुरू'), ['J-2']);
+  assert.deepEqual(refsIn('आज जे 3 का, J-3 और p1'), ['J-3', 'P-1']);
+  assert.deepEqual(refsIn('pump 12 का मीटर'), []);
+  assert.deepEqual(refsIn('आज का मीटर'), []);
+});
 
 test('references as people write them become one form', () => {
   const table = [
