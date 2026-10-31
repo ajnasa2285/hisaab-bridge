@@ -250,7 +250,7 @@ test('a delivery already present that differs: the reading is read back first; o
   }
 });
 
-test('a bare "हाँ" never overwrites a site count already recorded; typed figures change it and the contractor is told', async () => {
+test('a site count already recorded is not overwritten, by a bare "हाँ" or by typed figures', async () => {
   const c = await start();
   try {
     await c.deliver(c.orderId, [SAND], '96');
@@ -265,11 +265,10 @@ test('a bare "हाँ" never overwrites a site count already recorded; typed f
     // Counted: a new photo finds no order waiting.
     await c.siteTalk.onImage(supervisor, photo);
     assert.equal(c.last()?.[1], 'site.challan_no_order');
-    // Typed figures (no sameAsChallan) do change it, and the contractor sees old and new.
+    // Typed figures too: a different figure after this is an objection to the bill.
     const typed = await runTool(c.s.site.tools, supervisor, { tool: 'confirm_count', args: { ...args, sameAsChallan: undefined } });
-    assert.equal(typed.key, 'site.challan_count_differs');
-    assert.ok(c.said.some(([w, k]) => w === 'site:contractor' && k === 'site.count_changed'));
-    assert.deepEqual(c.count(c.orderId), [{ name: 'बालू', qtyHundredths: 28000, unit: 'cft' }]);
+    assert.equal(typed.key, 'site.count_already');
+    assert.deepEqual(c.count(c.orderId), [SAND]);
   } finally {
     await c.s.close();
   }

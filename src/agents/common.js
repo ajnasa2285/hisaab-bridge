@@ -90,6 +90,9 @@ export function paymentText(b) {
   return `${rupees(b.amountPaise)}, ${dayName(b.paidOn)}${at}, UTR ${b.utr}`;
 }
 
+/** Money as a person types it: "54420", "54420.50". @param {number} paise */
+export const plainRupees = (paise) => `${Math.floor(paise / 100)}${paise % 100 ? `.${String(paise % 100).padStart(2, '0')}` : ''}`;
+
 /** @param {unknown} v */
 export const isUuid = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v);
 /** @param {unknown} v @returns {v is number} */

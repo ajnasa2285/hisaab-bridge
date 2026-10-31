@@ -62,6 +62,8 @@ function script(turns) {
   const seen = [];
   /** @param {any} req */
   const spark = async (req) => {
+    // With a bill open, a message is first read against it (open-reply.test.js); here it is never an answer.
+    if (req.tools?.some((/** @type {any} */ x) => x.function.name === 'not_an_answer')) return { ok: true, toolCalls: [{ name: 'not_an_answer', args: {} }] };
     seen.push(req);
     const turn = turns.shift();
     if (turn === undefined) return { ok: false, transient: false, reason: 'no more turns' };

@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { billUsualNotes, requestUsualNotes, withUsual } from './usual.js';
 import { tenths as hours, rupees, day as dayName, qty } from '../i18n/format.js';
-import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
+import { deliveryResult, isDay, isSha256, isTime, isUuid, no, nonNegInt, ofType, ok, plainRupees, posInt } from './common.js';
 import { safeName } from '../protocol/names.js';
 import { agreedRates, billFollows, countDifferences, delivery, gstPaise, invoiceCheck, isGstPercent, itemsText, itemsTotalPaise, lineAmountPaise, linesText, materialBillBody, ratesText, requestedItems, sameChallanNo, sameItems, siteChallan, siteCount, validItems } from './material.js';
 import { openRefs } from '../ledger/refs.js';
@@ -171,7 +171,8 @@ export function createContractorAgent(o) {
    * @param {Record<string, string | number>} params @param {Parameters<Tell>[3]} [expect]
    */
   const tellBill = (orderId, body, key, params, expect) => {
-    const notice = withUsual({ key, params }, billUsualNotes(ledger, orderId, body));
+    // A real example of the exact objection, with this bill's figure unless a site's figure is given.
+    const notice = withUsual({ key, params: { example: plainRupees(body.totalPaise), ...params } }, billUsualNotes(ledger, orderId, body));
     return tell('contractor', notice.key, notice.params, expect);
   };
 
@@ -322,14 +323,14 @@ export function createContractorAgent(o) {
 
     // The site's own count of a delivery, one figure per delivered item in the challan's order. It is
     // kept on our side only (a local NOTE); code compares it with the challan and later with the bill.
-    // `sameAsChallan` marks the one-word "हाँ" to the delivery notice: it records a first count only.
-    // A count already recorded changes only with typed figures, and the contractor is told both.
+    // `sameAsChallan` marks the one-word "हाँ" to the delivery notice. Recorded once, and never with a
+    // bill in force: after that a different figure is an objection to the bill (live, 31 Oct).
     // With `challan` ({sha256, number}) the count comes from the site's own copy of the challan (a
     // photo the site sent): one figure per ordered item, recorded before or after the DELIVERY.
     confirm_count: {
       roles: ['supervisor', 'contractor'],
       commits: true,
-      stillOpen: (a) => a.sameAsChallan !== true || (known(a.orderId) && siteCount(ledger.events(a.orderId)) === null),
+      stillOpen: (a) => known(a.orderId) && ledger.view(a.orderId).currentBill === null && siteCount(ledger.events(a.orderId)) === null,
       /** @returns {{key: string, params: Record<string, string>}} */
       describe: (a) => {
         if (a.challan !== undefined) {
@@ -343,13 +344,14 @@ export function createContractorAgent(o) {
       },
       async run(person, a) {
         if (!known(a.orderId)) return no('common.no_such_order');
+        if (ledger.view(a.orderId).currentBill !== null) return no('site.count_closed');
+        const before = siteCount(ledger.events(a.orderId));
+        if (before !== null) return no('site.count_already', { ref: refOf(a.orderId), count: itemsText(before) });
         if (a.challan !== undefined) return countFromChallan(person, a);
         const d = isMaterial(a.orderId) ? delivery(ledger.events(a.orderId)) : null;
         if (d === null) return no('common.wrong_state');
         const items = countedItems(a.orderId, a.qtysHundredths);
         if (items === null) return no('site.count_figures', { items: itemsText(d.items) });
-        const before = siteCount(ledger.events(a.orderId));
-        if (before !== null && a.sameAsChallan === true) return no('site.count_already', { ref: refOf(a.orderId), count: itemsText(before) });
         const stored = ledger.append({
           orderId: a.orderId, direction: 'local', type: 'NOTE', msgId: randomUUID(),
           body: { kind: 'site_count', items }, at: new Date(agent.now()).toISOString(),
@@ -360,12 +362,6 @@ export function createContractorAgent(o) {
         if (!sameItems(items, d.items)) await o.evidence?.countDifference(a.orderId);
         const site = siteOf(a.orderId);
         const ref = refOf(a.orderId);
-        if (before !== null) {
-          if (sameItems(before, items)) return ok('site.count_matches', { ref, site, items: itemsText(items) });
-          const changed = { ref, site, old: itemsText(before), count: itemsText(items), challan: itemsText(d.items) };
-          if (person.role !== 'contractor') await tell('contractor', 'site.count_changed', changed);
-          return ok('site.count_changed', changed);
-        }
         if (sameItems(items, d.items)) return ok('site.count_matches', { ref, site, items: itemsText(items) });
         // Code compares; the contractor is told both figures (in the reply, when the contractor counted).
         const params = { ref, site, challan: itemsText(d.items), count: itemsText(items) };
@@ -381,13 +377,14 @@ export function createContractorAgent(o) {
     accept_bill: {
       roles: ['contractor'],
       commits: true,
-      describe: (a) => ({ key: 'step.accept_bill', params: { site: siteOf(a.orderId), total: billTotal(a.orderId) } }),
+      describe: (a) => ({ key: 'step.accept_bill', params: { ref: refOf(a.orderId), site: siteOf(a.orderId), total: billTotal(a.orderId) } }),
       // What the person says yes to is the bill in force when they are asked.
       bind: (a) => (known(a.orderId) ? { ...a, bill: ledger.view(a.orderId).currentBill } : a),
       stillOpen: (a) => {
         if (!known(a.orderId)) return false;
         const view = ledger.view(a.orderId);
-        return (view.state === 'billed' || view.state === 'disputed') && (a.bill === undefined || a.bill === view.currentBill);
+        // Objected to meanwhile: nothing to ask again until a correction comes, with a question of its own.
+        return view.state === 'billed' && (a.bill === undefined || a.bill === view.currentBill);
       },
       async run(_p, a) {
         if (!known(a.orderId)) return no('common.no_such_order');
@@ -408,11 +405,14 @@ export function createContractorAgent(o) {
       describe: (a) => ({
         key: 'step.dispute_bill',
         params: {
+          ref: refOf(a.orderId),
           site: siteOf(a.orderId),
           their: posInt(a.hoursTenths) ? hours(a.hoursTenths) : posInt(a.qtyHundredths) ? qtyOf(a.orderId, a.qtyHundredths) : posInt(a.totalPaise) ? rupees(a.totalPaise) : '—',
           reason: typeof a.reason === 'string' ? a.reason : '—',
         },
       }),
+      // What the person objects to is the bill in force when they are asked.
+      bind: (a) => (known(a.orderId) ? { ...a, bill: ledger.view(a.orderId).currentBill } : a),
       async run(_p, a) {
         if (!known(a.orderId)) return no('common.no_such_order');
         if (typeof a.reason !== 'string' || !a.reason.trim() || a.reason.length > 500) return no('site.reason_needed');
@@ -422,6 +422,7 @@ export function createContractorAgent(o) {
         if (given.length !== 1 || (given[0] !== measure && given[0] !== 'totalPaise') || !posInt(a[given[0]])) return no(keyFor(a.orderId, 'site.figure_needed'));
         const view = ledger.view(a.orderId);
         if (view.currentBill === null) return no('common.wrong_state');
+        if (a.bill !== undefined && a.bill !== view.currentBill) return billChanged(a.orderId, view.currentBill);
         // A quantity names one item: on a bill with several lines only a total is clear.
         const lines = ledger.eventOfMessage(view.currentBill)?.body.body.lines;
         if (given[0] === 'qtyHundredths' && (!Array.isArray(lines) || lines.length !== 1)) return no('site.material_total_only');
@@ -577,8 +578,6 @@ export function createContractorAgent(o) {
     const items = challanItems(a.orderId, a.qtysHundredths);
     const ref = refOf(a.orderId);
     if (items === null) return no('site.challan_figures', { ref, names: orderedNames(a.orderId) });
-    const before = siteCount(ledger.events(a.orderId));
-    if (before !== null && a.sameAsChallan === true) return no('site.count_already', { ref, count: itemsText(before) });
     /** @type {{sha256: string, number: string | null, signed?: boolean | null}} */
     const challan = { sha256: a.challan.sha256, number: a.challan.number === null ? null : a.challan.number.trim() };
     if (a.challan.signed !== undefined) challan.signed = a.challan.signed;
@@ -590,9 +589,6 @@ export function createContractorAgent(o) {
     const site = siteOf(a.orderId);
     const d = delivery(ledger.events(a.orderId));
     if (d !== null) await sendSiteReceipt(a.orderId);
-    if (before !== null && !sameItems(before, items) && person.role !== 'contractor') {
-      await tell('contractor', 'site.count_changed', { ref, site, old: itemsText(before), count: itemsText(items), challan: d ? itemsText(d.items) : '—' });
-    }
     if (d === null) return ok(variant('site.challan_count_saved', { challan: challan.number }), { ref, site, items: itemsText(items), ...(challan.number ? { challan: challan.number } : {}) });
     const c = compareCount(a.orderId, items, challan.number, d);
     const number = d.number ?? challan.number;
@@ -646,7 +642,7 @@ export function createContractorAgent(o) {
       // What the site's count comes to at the agreed rates (an item counted as 0 adds nothing). A count
       // from the site's own challan may list other items than the delivery, so each is priced by name.
       const siteTotal = itemsTotalPaise(count, rates, d.items);
-      await tellBill(m.order_id, b, 'site.material_bill_count_differs', { ref, site, lines, total, count: itemsText(count), siteTotal: rupees(siteTotal) });
+      await tellBill(m.order_id, b, 'site.material_bill_count_differs', { ref, site, lines, total, count: itemsText(count), siteTotal: rupees(siteTotal), example: plainRupees(siteTotal) });
       const explanation = await explainDifference({ spark: o.spark, audience: 'buyer', facts: differenceFacts(ledger, m.order_id, ref) });
       await tell('contractor', explanation.key, explanation.params);
       return;

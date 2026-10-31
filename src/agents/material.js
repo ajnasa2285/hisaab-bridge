@@ -8,6 +8,7 @@ import { t } from '../i18n/index.js';
 import { ofType, posInt } from './common.js';
 import { refusedIds } from '../ledger/states.js';
 import { MAX_UNIT, safeName } from '../protocol/names.js';
+import { parseQuantity } from '../orchestrator/units.js';
 
 /** @typedef {import('../ledger/store.js').LedgerEvent} LedgerEvent */
 /** @typedef {{name: string, qtyHundredths: number, unit: string, gstPercent?: number}} Item */
@@ -128,6 +129,33 @@ export function billLines(items, rates) {
  */
 export function itemsTotalPaise(items, rates, delivered) {
   return items.reduce((s, it) => s + (it.qtyHundredths === 0 ? 0 : billLine(it, rates, delivered)?.amountPaise ?? 0), 0);
+}
+
+/**
+ * A person's figures for some items of a bill: each said item takes the figure, the others keep what is
+ * billed, and code works out the total at the agreed rates and GST. Null when a figure cannot be tied to
+ * one item: a name not on the bill, an item twice, no figure, or a figure not in the person's own words.
+ * @param {{what: string, qtyHundredths: number}[]} lines the bill in force
+ * @param {Item[]} delivered in the bill's order @param {Rate[]} rates
+ * @param {{item: unknown, quantity: unknown}[]} said as the model copied them @param {string} text the person's message
+ * @returns {{items: Item[], totalPaise: number} | null}
+ */
+export function disputedItems(lines, delivered, rates, said, text) {
+  const digits = (/** @type {string} */ s) => s.normalize('NFC').toLowerCase().replace(/[०-९]/gu, (d) => String(d.charCodeAt(0) - 0x0966));
+  const words = digits(text);
+  const items = lines.map((l, i) => ({ ...delivered[i], name: l.what, qtyHundredths: l.qtyHundredths }));
+  const seen = new Set();
+  for (const s of said) {
+    const at = items.findIndex((it) => typeof s.item === 'string' && norm(it.name) === norm(s.item));
+    const copied = typeof s.quantity === 'string' ? digits(s.quantity).trim() : '';
+    const q = copied ? parseQuantity(copied) : null;
+    const written = copied && new RegExp(`(?<!\\d|\\d\\.)${copied.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d|\\.\\d)`, 'u').test(words);
+    if (at < 0 || seen.has(at) || q === null || !written) return null;
+    seen.add(at);
+    items[at].qtyHundredths = q;
+  }
+  if (seen.size === 0 || items.some((it) => !it.unit || rateFor(rates, it) === null)) return null;
+  return { items: items.filter((it) => it.qtyHundredths > 0), totalPaise: itemsTotalPaise(items, rates, delivered) };
 }
 
 /**

@@ -23,20 +23,24 @@
 // through the office's gate on its own. A request naming a site this agent does not know asks once
 // which site it is, before the read-back; the answer is kept for everyone on this agent
 // (src/agents/site-names.js). Code decides from exact matches only.
+// A free-text message is first read as the answer to the person's latest open question, or to the
+// question of the one reference it names (src/agents/open-questions.js); a message that is something
+// else is handled as usual, and a question it set aside is asked again once.
 // A meter or (supplier's) challan photo with several orders open is held as the open question: they are listed by number,
 // reference, site and day, and a number or a reference (or a reference in the photo's caption) says which.
 // People decide; the model only proposes.
 
 import { createHash } from 'node:crypto';
-import { fillStep, proposeStep, orderRefs, shareFilled } from '../orchestrator/orchestrator.js';
+import { answerOpen, fillStep, proposeStep, orderRefs, shareFilled } from '../orchestrator/orchestrator.js';
 import { parseHundredthsList, parseQuantity } from '../orchestrator/units.js';
 import { impossible, meterReadings, MAX_JOB_TENTHS } from './jcb.js';
 import { displayDateWrong, jobDay } from './meter-guard.js';
-import { challanQuantities, countDifferences, delivery, invoiceFromReading, requestedItems, sameChallanNo, siteCount, unitFromOrder } from './material.js';
+import { agreedRates, challanQuantities, countDifferences, delivery, disputedItems, invoiceFromReading, itemsText, requestedItems, sameChallanNo, siteCount, unitFromOrder } from './material.js';
 import { exactReply, saysCash, yesNo } from './replies.js';
 import { balanceText, owedPaise, payableOrders, paymentLine, shares, summaryOf, todayIst, utrUses } from './pay.js';
 import { openRefs, parseRef, refsIn } from '../ledger/refs.js';
-import { no, runTool } from './common.js';
+import { no, plainRupees, runTool } from './common.js';
+import { openQuestions } from './open-questions.js';
 import { parseCommand } from './office.js';
 import { cancelBlock } from './cancel.js';
 import { siteKey } from './site-names.js';
@@ -50,7 +54,8 @@ import { plain, promptBlock, voiceParty } from '../learn/corrections.js';
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {(person: Person, key: string, params?: Record<string, string | number>) => Promise<void> | void} Reply */
 /**
- * @typedef {{kind: 'confirm', tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}, ask?: Asked, at: number} |
+ * `notice`: a question the agent put to the person, not a read-back of their own step; `again`: it has been asked again once.
+ * @typedef {{kind: 'confirm', tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}, ask?: Asked, at: number, notice?: boolean, again?: boolean} |
  *   {kind: 'meter_digits', orderId: string, which: 'start' | 'end', sha256: string, takenAt: string | null, at: number} |
  *   {kind: 'challan_figures', orderId: string, sha256: string, challanNo: string | null, invoice?: Invoice | null, at: number} |
  *   {kind: 'site_challan_order', orderIds: string[], sha256: string, reading: SiteReading, at: number} |
@@ -65,7 +70,7 @@ import { plain, promptBlock, voiceParty } from '../learn/corrections.js';
 /** @typedef {import('../orchestrator/orchestrator.js').PairPart} PairPart */
 /** A request understood completely. @typedef {{tool: string, args: Record<string, any>}} Step */
 /** The words of a question. @typedef {{key: string, params?: Record<string, string | number>}} Asked */
-/** A question waiting for the open one to end. @typedef {{tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}, ask?: Asked}} Waiting */
+/** A question waiting for the open one to end. @typedef {{tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}, ask?: Asked, again?: boolean}} Waiting */
 /**
  * A payment typed without its proof yet ("P-3 अग्रिम ₹5,000"): the UPI screenshot that follows, or
  * "नकद", completes it. Kept apart from the open question, so the photo flow does not end it.
@@ -363,6 +368,26 @@ export function createConversation(o) {
   }
 
   /**
+   * The open question is being left for something else. One the agent put to the person is not lost: it
+   * goes first in the queue, and is asked again once when nothing else is open, so a bare "हाँ" means
+   * what was last asked. After that it stands on the ledger, and a yes needs a read-back.
+   * @param {Person} person
+   */
+  function setAside(person) {
+    const p = current(person);
+    if (p?.kind !== 'confirm' || !p.notice || p.again) return;
+    const queue = waiting.get(keyOf(person)) ?? [];
+    queue.unshift({ tool: p.tool, args: p.args, ...(p.no ? { no: p.no } : {}), ...(p.ask ? { ask: p.ask } : {}), again: true });
+    waiting.set(keyOf(person), queue);
+  }
+
+  /** The person answered about this order and is asked for more: its question need not be asked as well. @param {Person} person @param {string} orderId */
+  function notAgain(person, orderId) {
+    const queue = waiting.get(keyOf(person));
+    if (queue) waiting.set(keyOf(person), queue.filter((q) => q.args.orderId !== orderId));
+  }
+
+  /**
    * The next waiting question that still applies becomes the open one and is asked, if nothing is open.
    * @param {Person} person @returns {Promise<boolean>} asked
    */
@@ -375,7 +400,7 @@ export function createConversation(o) {
       if (!step || (step.stillOpen && !step.stillOpen(next.args))) continue;
       const d = next.ask ?? step.describe?.(next.args);
       if (!d) continue;
-      pending.set(keyOf(person), { kind: 'confirm', tool: next.tool, args: next.args, ...(next.no ? { no: next.no } : {}), ask: d, at: o.now() });
+      pending.set(keyOf(person), { kind: 'confirm', tool: next.tool, args: next.args, ...(next.no ? { no: next.no } : {}), ask: d, at: o.now(), notice: true, ...(next.again ? { again: true } : {}) });
       await o.reply(person, d.key, d.params);
       return true;
     }
@@ -453,7 +478,10 @@ export function createConversation(o) {
     // has a command word, so it is never a figure, and typed figures are never a command.
     const command = o.office ? parseCommand(text) : null;
     // "रद्द J-2" commits, so unlike the others it is read back: its question is the open one.
-    if (command?.cmd === 'cancel') return askCancel(person, command.ref);
+    if (command?.cmd === 'cancel') {
+      setAside(person);
+      return askCancel(person, command.ref);
+    }
     if (command && o.office) {
       const r = await o.office.command(person, command);
       if (r) {
@@ -532,7 +560,8 @@ export function createConversation(o) {
         pending.delete(keyOf(person));
         return commitNow(person, 'confirm_count', { orderId: p.args.orderId, qtysHundredths: figures });
       }
-      // Anything else: the question lapses and the message is read as a new one.
+      // Anything else: the message is read as a new one, and a question the agent asked comes back after it.
+      setAside(person);
       pending.delete(keyOf(person));
     }
     if (p && p.kind === 'two_requests') {
@@ -626,6 +655,19 @@ export function createConversation(o) {
     // The supervisor saw a copy of a bill; accepting it is the contractor's.
     if (person.role === 'supervisor' && YES.has(said) && orderRefs(o.ledger).some((r) => r.state === 'billed' || r.state === 'disputed')) return o.reply(person, 'site.bill_contractor_accepts');
 
+    // Free text: the answer to the latest open question, or to the one reference it names, if it is one.
+    const named = refsIn(text);
+    const open = openQuestions(o.ledger, person.role);
+    const question = named.length === 1 ? open.find((q) => q.ref === named[0]) : named.length === 0 ? open.at(-1) : undefined;
+    if (question) {
+      const answer = await answerOpen({ spark: o.spark, person, text, nowMs: o.now(), orders: orderRefs(o.ledger), question });
+      traceCheck(`free text read against the open question of ${question.ref}: ${answer ? answer.kind : 'not an answer'}`, answer !== null, { name: 'open_question', tools: question.tools }, question.orderId);
+      if (answer?.kind === 'unclear') {
+        notAgain(person, question.orderId);
+        return answer.tool === 'dispute_bill' ? o.reply(person, 'site.dispute_format', { example: plainRupees(o.ledger.view(question.orderId).billTotalPaise ?? 0) }) : o.reply(person, 'answer.unclear', { ref: question.ref });
+      }
+      if (answer) return onProposal(person, text, answer);
+    }
     const proposal = await proposeStep({ spark: o.spark, person, text, orders: orderRefs(o.ledger), nowMs: o.now(), ask: true });
     if (proposal.kind === 'ask') {
       // Read-only: the answer is only said; it never becomes a step, a pending question or a ledger entry.
@@ -647,6 +689,7 @@ export function createConversation(o) {
       const parts = pair.parts.map((part, i) => (i === pair.index ? filled : part));
       return twoRequests(person, text, shareFilled({ person, orders: orderRefs(o.ledger), nowMs: o.now() }, parts));
     }
+    if (proposal.kind === 'step' && proposal.tool === 'dispute_bill' && (proposal.args.itemFigures || (proposal.args.qtyHundredths && billLines(proposal.args.orderId).length > 1))) return disputeByItems(person, text, proposal.args);
     if (proposal.kind === 'help') return o.reply(person, `help.${person.role}`);
     if (proposal.kind === 'none') return o.reply(person, proposal.key);
     if (proposal.kind === 'ask') return o.reply(person, 'common.unknown_step');
@@ -660,6 +703,40 @@ export function createConversation(o) {
       return o.reply(person, 'ask.missing', { questions: askText(proposal.args, proposal.missing) });
     }
     return stepsReady(person, [{ tool: proposal.tool, args: proposal.args }]);
+  }
+
+  /** The lines of the bill in force. @param {string} orderId @returns {any[]} */
+  function billLines(orderId) {
+    const bill = o.ledger.view(orderId).currentBill;
+    return bill ? o.ledger.eventOfMessage(bill)?.body.body.lines ?? [] : [];
+  }
+
+  /**
+   * An objection naming quantities on a material bill: code works out the total at the agreed rates and
+   * GST and reads it back, or asks when a figure cannot be tied to one item. The signed objection carries
+   * the total, as ever.
+   * @param {Person} person @param {string} text @param {Record<string, any>} a
+   */
+  function disputeByItems(person, text, a) {
+    const view = o.ledger.view(a.orderId);
+    const lines = billLines(a.orderId);
+    const events = o.ledger.events(a.orderId);
+    const d = delivery(events);
+    const rates = agreedRates(events);
+    const worked = a.itemFigures && d && rates ? disputedItems(lines, d.items, rates, a.itemFigures, text) : null;
+    const ref = refOfId(a.orderId);
+    if (!worked) {
+      notAgain(person, a.orderId);
+      return o.reply(person, 'site.dispute_which_item', { ref, items: lines.map((/** @type {{what: string}} */ l) => l.what).join(', ') });
+    }
+    if (worked.totalPaise === view.billTotalPaise) {
+      notAgain(person, a.orderId);
+      return o.reply(person, 'site.dispute_same', { ref, total: rupees(worked.totalPaise) });
+    }
+    const site = /** @type {{site: string}} */ (o.ledger.order(a.orderId)).site;
+    const reason = typeof a.reason === 'string' && a.reason.trim() ? a.reason : text.trim().slice(0, 300);
+    return propose(person, 'dispute_bill', { orderId: a.orderId, totalPaise: worked.totalPaise, reason }, {
+      key: 'step.dispute_bill_items', params: { ref, site, items: itemsText(worked.items), total: rupees(worked.totalPaise), reason } });
   }
 
   /**
@@ -873,6 +950,7 @@ export function createConversation(o) {
 
   /** @param {Person} person @param {Photo} image */
   async function handleImage(person, image) {
+    setAside(person);
     pending.delete(keyOf(person));
     photos.delete(keyOf(person));
     const kinds = photoKinds(person);
@@ -1452,7 +1530,7 @@ export function createConversation(o) {
   function expect(person, tool, args, no, ask) {
     const open = current(person);
     if (!open) {
-      pending.set(keyOf(person), { kind: 'confirm', tool, args, ...(no ? { no } : {}), ...(ask ? { ask } : {}), at: o.now() });
+      pending.set(keyOf(person), { kind: 'confirm', tool, args, ...(no ? { no } : {}), ...(ask ? { ask } : {}), at: o.now(), notice: true });
       return;
     }
     const same = (/** @type {{tool: string, args: Record<string, any>}} */ q) => q.tool === tool && JSON.stringify(q.args) === JSON.stringify(args);

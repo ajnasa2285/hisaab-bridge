@@ -68,7 +68,7 @@ test('the model sees only the steps the role allows, and code converts its copy 
   const p = await proposeStep({ spark: f.spark, person: person('supervisor'), text: 'kal subah 8 baje Shivpuri JCB 6 ghante', orders: [], nowMs: NOW });
   assert.deepEqual(p, { kind: 'step', tool: 'request_jcb', args: { site: 'Shivpuri', day: '2026-10-30', time: '08:00', hoursTenths: 60 } });
   const offered = f.seen[0].tools.map((/** @type {any} */ t) => t.function.name).sort();
-  assert.deepEqual(offered, ['confirm_count', 'help', 'request_jcb', 'request_material']);
+  assert.deepEqual(offered, ['help', 'request_jcb', 'request_material'], 'no delivery waits for a count');
   assert.ok(f.seen[0].system.includes('Today (India) is 2026-10-29'));
   // Picking a step runs at low reasoning effort: half the wait, same answers (29 Oct measurement).
   assert.equal(f.seen[0].reasoningEffort, 'low');

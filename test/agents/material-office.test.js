@@ -114,7 +114,7 @@ test('a supervisor\'s material order is held as P-n; the contractor\'s "OK P-n" 
   }
 });
 
-test('commands leave an open challan or count question open; the first count closes the others; a recorded count changes only by typed figures', async () => {
+test('commands leave an open challan or count question open; the first count closes the others; a recorded count does not change', async () => {
   const d = await desks({ procurementPaise: 100000 });
   try {
     // The contractor orders (never held), the supplier agrees.
@@ -164,19 +164,12 @@ test('commands leave an open challan or count question open; the first count clo
     const stale = await runTool(d.s.site.tools, contractor, { tool: 'confirm_count', args: { orderId, qtysHundredths: [5000, 200], sameAsChallan: true } });
     assert.deepEqual([stale.ok, stale.key], [false, 'site.count_already']);
     assert.deepEqual(countNow(), [4800, 200]);
-    // A deliberate change with typed figures is recorded, with the old and new figures.
+    // A count is recorded once: other figures are neither offered to the model nor accepted by the tool.
     await d.site(contractor, 'P-1 me 50 bori aur 2 trolley aayi', { name: 'confirm_count', args: { order: 'P-1', quantities: ['50', '2'] } });
-    assert.equal(d.last('contractor')[1], 'step.confirm_count');
-    await d.site(contractor, 'हाँ');
-    assert.equal(d.last('contractor')[1], 'site.count_changed');
-    assert.deepEqual([d.last('contractor')[3].old, d.last('contractor')[3].count], ['सीमेंट 48 बोरी, रेत 2 ट्रॉली', 'सीमेंट 50 बोरी, रेत 2 ट्रॉली']);
-    assert.deepEqual(countNow(), [5000, 200]);
-    // The supervisor changing it again tells the contractor both figures.
-    await d.site(supervisor, 'x', { name: 'confirm_count', args: { order: 'P-1', quantities: ['49', '2'] } });
-    await d.site(supervisor, 'हाँ');
-    assert.equal(d.last('supervisor')[1], 'site.count_changed');
-    const toldContractor = d.said.filter(([to, key]) => to === 'site:contractor' && key === 'site.count_changed').at(-1);
-    assert.deepEqual([toldContractor?.[3].old, toldContractor?.[3].count], ['सीमेंट 50 बोरी, रेत 2 ट्रॉली', 'सीमेंट 49 बोरी, रेत 2 ट्रॉली']);
+    assert.equal(d.last('contractor')[1], 'common.not_allowed');
+    const typed = await runTool(d.s.site.tools, contractor, { tool: 'confirm_count', args: { orderId, qtysHundredths: [5000, 200] } });
+    assert.deepEqual([typed.ok, typed.key], [false, 'site.count_already']);
+    assert.deepEqual(countNow(), [4800, 200]);
     // After the count, the delivered order no longer waits for the contractor.
     await d.site(contractor, 'बाक़ी');
     assert.ok(!d.last('contractor')[2].includes('P-1'));

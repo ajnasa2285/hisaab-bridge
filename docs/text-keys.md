@@ -79,7 +79,6 @@ Contractor side (contractor, supervisor):
 | `site.count_saved_differs` | ref, site, challan, count | to the person who counted: saved, differs from the challan |
 | `site.count_differs` | ref, site, challan, count | to the contractor: the site's count differs from the challan (both figures) |
 | `site.count_already` | ref, count | a one-word "हाँ" to the delivery notice after a count is already recorded: nothing changes (type figures to change it) |
-| `site.count_changed` | ref, site, old, count, challan | a recorded count changed by typed figures; to the person and to the contractor (old and new) |
 | `site.challan_no_order` | — | the site sent a challan photo but no material order is booked/delivered and still uncounted; nothing recorded; how to make an order (Claude drafted, Fable polished 29 Oct) |
 | `site.challan_which_order` | lines | several orders could be this challan's: which reference? one `site.challan_order_line` (ref, site, what) per order, with the exact reply `"P-n"` (Claude drafted, Fable polished 29 Oct) |
 | `site.challan_ask_person` | ref, raw, names | the site's challan was not read clearly: type the quantities in the order's order (`names` = `बालू (cft), गिट्टी (brass)`), 0 for what did not come (Claude drafted, Fable polished 29 Oct) |
@@ -543,3 +542,16 @@ original key and text remain unchanged. Judge labels live in `web/texts.js` in b
 | `jcb.order_cancelled_own` | ref, site, day | to the operator: the owner cancelled |
 | `supplier.order_cancelled` | ref, site, day, what | to the supplier: the contractor cancelled |
 | `state.cancelled`, `office.await.buyer.cancelled`, `office.await.seller.cancelled` | none | the state's words |
+
+## A free-text reply and the open question (31 Oct)
+
+| Key | Parameters | When |
+|---|---|---|
+| `step.dispute_bill_items` | ref, site, items, total, reason | read-back of an objection naming items: code's total at the agreed rates and GST |
+| `site.dispute_which_item` | ref, items | a figure cannot be tied to one item of the bill: asked, never guessed |
+| `site.dispute_same` | ref, total | the figures come to the bill itself |
+| `site.dispute_format` | example | an objection with no figure: the exact format, with the bill's total |
+| `site.count_closed` | none | a count with a bill in force |
+| `answer.unclear` | ref | read as the answer to that order's question, but its figures could not be used |
+
+The bill notices (`site.bill_received`, `site.correction_received`, `site.material_bill_*`, `site.material_correction_*`) take `example`, a figure for the exact objection `नहीं ₹{example} कारण`. `step.accept_bill` and `step.dispute_bill` take `ref`. `site.count_already` no longer invites a new count.

@@ -158,12 +158,18 @@ test('a reader that does not report the mark sends signed null; a typed count wi
     await c.talk.onImage(supervisor, photo);
     // The order is already counted: the photo is not for an open order any more.
     assert.equal(c.said.at(-1)?.[1], 'site.challan_no_order');
-    await runTool(c.s.site.tools, supervisor, { tool: 'confirm_count', args: { orderId: c.orderId, qtysHundredths: [5000], challan: { sha256: SHA, number: '96' } } });
-    await c.settle();
-    assert.equal(c.receipts().length, 1);
-    assert.equal(c.receipts()[0].body.body.signed, null);
   } finally {
     await c.s.close();
+  }
+  const f = await start();
+  try {
+    await f.deliver('96');
+    await runTool(f.s.site.tools, supervisor, { tool: 'confirm_count', args: { orderId: f.orderId, qtysHundredths: [5000], challan: { sha256: SHA, number: '96' } } });
+    await f.settle();
+    assert.equal(f.receipts().length, 1);
+    assert.equal(f.receipts()[0].body.body.signed, null);
+  } finally {
+    await f.s.close();
   }
 });
 

@@ -215,7 +215,8 @@ test('money4: the seller can still say it is a separate payment; another amount 
     await d.supTalk.onText(supplier, 'P-1 ₹5,000 नकद मिले');
     assert.equal(d.last()[1], 'pay.seller.claim_waiting');
     await d.supTalk.onText(supplier, 'नहीं');
-    assert.equal(d.last()[1], 'pay.seller.received');
+    // Recorded; the claim, set aside by the typed money, is then asked again.
+    assert.deepEqual(d.said.slice(-2).map((/** @type {any} */ x) => x[1]), ['pay.seller.received', 'pay.seller.claimed']);
     assert.equal(d.s.supCore.ledger.view(orderId).confirmedPaise, 500000);
     assert.equal(d.s.supCore.ledger.view(orderId).pending.length, 1, 'the claim still waits');
     const other = await runTool(d.s.sup.tools, supplier, { tool: 'record_received', args: { orderId, amountPaise: 700000, method: 'cash' } });

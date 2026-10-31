@@ -709,3 +709,27 @@ otherwise one read-back, one "हाँ", one signed `CANCEL` (CONTRACTS 4 and 5
 yes and tells the contractor and supervisor, or the JCB owner and operator, or the supplier. On the sender's side the
 operator or supervisor is told too. A cancelled order leaves `orderRefs`, `बाक़ी` and the totals; `स्थिति`, ask-anything
 and the judge page show it as cancelled. A step held for approval has no order yet: it is declined with `नहीं J-2 कारण`.
+
+## A free-text reply and the open question (31 Oct 2026)
+
+The owner's rule: a reply maps to the person's latest open question unless it names a reference. Live on 31 Oct, on a two-line
+bill, `Cement 50 बोरी है 40 नहीं` became `confirm_count`, then `Cement 50 bori, sand 40 ton` became a new order, stopped only by a "नहीं".
+
+**The open questions** come from the ledger (`src/agents/open-questions.js`), so they survive a restart and the 30 minutes of a
+pending question: a bill or correction for the contractor; a delivery not counted for the supervisor; a request, an objection or a
+reported payment for a seller. Latest means the newest asking message. The operator has none.
+
+**The order of reading.** Commands, the pending question's own forms and exact replies run first, unchanged. Then, with no reference or
+with one naming an open question, `answerOpen` gives Muse Spark that question and only the steps that answer it, plus `not_an_answer`.
+Its step goes through the same conversion and read-back as any. Not an answer: `proposeStep`, as before. Two references: as before.
+
+**A question set aside is not lost.** A notice's question left by another message goes first in the queue and is asked again once when
+nothing else is open, so a bare "हाँ" means what was last asked. After that it stands on the ledger: free text still maps to it, and a
+bare "हाँ" needs a read-back naming the order. A clarifying reply does not repeat it.
+
+**An objection naming items.** Code ties each figure to one line of the bill by name, the figure being in the person's own words; items not
+named keep their billed quantity; the total comes from the agreed rates and GST. The wire stays `theirFigure.totalPaise`, and the
+person's whole message is the reason. A figure that cannot be tied is asked about.
+
+**The count** is recorded once and never with a bill in force: not offered to the model, refused by reference and at the tool. A different
+figure afterwards is an objection to the bill.
