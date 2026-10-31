@@ -731,5 +731,7 @@ bare "हाँ" needs a read-back naming the order. A clarifying reply does not
 named keep their billed quantity; the total comes from the agreed rates and GST. The wire stays `theirFigure.totalPaise`, and the
 person's whole message is the reason. A figure that cannot be tied is asked about.
 
+**`हाँ P-4` and `नहीं P-4 ...` from the contractor** decide an approval while a step for that reference waits. With none waiting and the order billed or disputed they are about the bill: `हाँ` reads back `accept_bill`, bound to the bill in force, and `नहीं` goes to the objection. The notices of a bill with no open question (`site.material_bill_mismatch`, `site.material_bill_count_differs`) say so.
+
 **The count** is recorded once and never with a bill in force: not offered to the model, refused by reference and at the tool. A different
 figure afterwards is an objection to the bill.

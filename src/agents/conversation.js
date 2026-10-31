@@ -482,7 +482,24 @@ export function createConversation(o) {
       setAside(person);
       return askCancel(person, command.ref);
     }
-    if (command && o.office) {
+    const onBill = command ? billOfDecision(person, command) : null;
+    if (command && onBill) {
+      if (command.cmd === 'ok') {
+        setAside(person);
+        return propose(person, 'accept_bill', { orderId: onBill.orderId });
+      }
+      if (onBill.state === 'disputed') return o.reply(person, 'site.dispute_already', { ref: onBill.ref });
+      const reason = command.cmd === 'no' ? command.reason : null;
+      if (!reason) return o.reply(person, 'site.dispute_format', { example: plainRupees(o.ledger.view(onBill.orderId).billTotalPaise ?? 0) });
+      // "नहीं P-4 ₹54420 कारण" is the exact objection. Other words go on below, read against that order's question.
+      const exact = exactReply({ ledger: o.ledger, person, text: `${onBill.ref} नहीं ${reason}`, nowMs: o.now() });
+      if (exact?.kind === 'ask') return o.reply(person, exact.key, exact.params);
+      if (exact?.kind === 'step') {
+        setAside(person);
+        pending.delete(keyOf(person));
+        return commitNow(person, exact.tool, exact.args);
+      }
+    } else if (command && o.office) {
       const r = await o.office.command(person, command);
       if (r) {
         // A decision ends the decider's open yes/no question, so a later "हाँ" cannot answer it by accident.
@@ -873,6 +890,20 @@ export function createConversation(o) {
       lines.push(r.ok ? t(r.key, r.params) : t('site.two_requests_failed', { what: stepWords(step), why: t(r.key, r.params) }));
     }
     return o.reply(person, 'site.two_requests_done', { first: lines[0], second: lines[1] });
+  }
+
+  /**
+   * "हाँ P-4" / "नहीं P-4 ..." from the contractor are about the bill, not an approval, when no step
+   * for that reference waits for a decision and the order has a bill to answer.
+   * @param {Person} person @param {import('./office.js').Command} c
+   * @returns {{orderId: string, ref: string, state: string} | null}
+   */
+  function billOfDecision(person, c) {
+    if ((c.cmd !== 'ok' && c.cmd !== 'no') || person.role !== 'contractor') return null;
+    if (o.office?.held().some((h) => h.ref === c.ref && h.decision === null)) return null;
+    const orderId = openRefs(o.ledger).orderOfRef(c.ref);
+    const state = orderId === null ? null : o.ledger.view(orderId).state;
+    return orderId !== null && state !== null && (state === 'billed' || state === 'disputed') ? { orderId, ref: c.ref, state } : null;
   }
 
   /**

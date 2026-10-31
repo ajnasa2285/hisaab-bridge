@@ -551,6 +551,7 @@ original key and text remain unchanged. Judge labels live in `web/texts.js` in b
 | `site.dispute_which_item` | ref, items | a figure cannot be tied to one item of the bill: asked, never guessed |
 | `site.dispute_same` | ref, total | the figures come to the bill itself |
 | `site.dispute_format` | example | an objection with no figure: the exact format, with the bill's total |
+| `site.dispute_already` | ref | `नहीं P-4 ...` on a bill already objected to |
 | `site.count_closed` | none | a count with a bill in force |
 | `answer.unclear` | ref | read as the answer to that order's question, but its figures could not be used |
 

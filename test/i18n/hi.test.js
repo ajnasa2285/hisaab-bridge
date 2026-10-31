@@ -173,7 +173,7 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'site.delivery_info': ['ref', 'site', 'items'], 'site.delivery_info_challan': ['ref', 'site', 'items', 'challan'],
     'site.count_figures': ['items'], 'site.count_matches': ['ref', 'site', 'items'], 'site.count_saved_differs': ['ref', 'site', 'challan', 'count'],
     'site.count_differs': ['ref', 'site', 'challan', 'count'], 'site.count_already': ['ref', 'count'],
-    'site.count_closed': [], 'site.dispute_which_item': ['ref', 'items'], 'site.dispute_same': ['ref', 'total'], 'site.dispute_format': ['example'], 'answer.unclear': ['ref'], 'step.dispute_bill_items': ['ref', 'site', 'items', 'total', 'reason'], 'site.material_bill_received': ['ref', 'site', 'lines', 'total', 'photos', 'example'],
+    'site.count_closed': [], 'site.dispute_which_item': ['ref', 'items'], 'site.dispute_same': ['ref', 'total'], 'site.dispute_format': ['example'], 'site.dispute_already': ['ref'], 'answer.unclear': ['ref'], 'step.dispute_bill_items': ['ref', 'site', 'items', 'total', 'reason'], 'site.material_bill_received': ['ref', 'site', 'lines', 'total', 'photos', 'example'],
     'site.material_correction_received': ['ref', 'site', 'lines', 'total', 'photos', 'example'],
     'site.material_bill_mismatch': ['ref', 'site', 'lines', 'total', 'expected', 'expectedTotal', 'example'],
     'site.material_bill_count_differs': ['ref', 'site', 'lines', 'total', 'count', 'siteTotal', 'example'], 'site.material_bill_accepted': ['ref', 'site'],

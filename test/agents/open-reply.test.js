@@ -339,3 +339,125 @@ test('the count: the supervisor\'s free words answer it; once counted, or with a
   assert.deepEqual([again.ok, again.key], [false, 'site.count_already']);
   assert.equal(counts(d, second), 1);
 });
+
+/** A supervisor's request held and approved, then through to a bill: its approval is already decided. @param {Awaited<ReturnType<typeof desk>>} d */
+async function billedAfterApproval(d) {
+  const office = createOffice({ ledger: d.s.siteCore.ledger, tools: d.s.site.tools, kind: 'contractor', tell: () => {}, reply: () => {}, now: d.s.siteCore.now });
+  assert.equal((await office.commit(supervisor, 'request_material', { site: 'Invented Site', day: '2026-11-02', items: ITEMS })).key, 'office.held_step');
+  await d.say(contractor, 'ok P-1');
+  assert.equal(d.last('contractor')?.[1], 'site.material_requested');
+  const id = String(d.s.supCore.ledger.orders().at(-1)?.order_id);
+  assert.equal((await runTool(d.s.sup.tools, supplier, { tool: 'reply_order', args: { orderId: id, answer: 'yes', ratesPaise: [38000, 80000], gstPercents: [18, null] } })).ok, true);
+  await settle();
+  assert.equal((await runTool(d.s.sup.tools, supplier, { tool: 'record_delivery', args: { orderId: id, items: ITEMS, sha256: SHA } })).ok, true);
+  await settle();
+  assert.equal((await runTool(d.s.site.tools, supervisor, { tool: 'confirm_count', args: { orderId: id, qtysHundredths: [4000, 4000] } })).ok, true);
+  assert.equal((await runTool(d.s.sup.tools, supplier, { tool: 'send_bill', args: { orderId: id } })).ok, true);
+  await settle();
+  return { id, office };
+}
+
+test('"हाँ P1" with the approval decided and a bill: read back, one हाँ accepts the bill in force', async (tc) => {
+  const d = await desk(tc);
+  const { id } = await billedAfterApproval(d);
+  await d.say(contractor, 'हाँ P1');
+  assert.equal(d.last('contractor')?.[1], 'step.accept_bill');
+  assert.ok(d.last('contractor')?.[2].includes('P-1') && d.last('contractor')?.[2].includes('₹49,936'));
+  assert.equal(d.s.siteCore.ledger.view(id).state, 'billed', 'not before the yes');
+  assert.equal(d.talks.contractor.pending(contractor)?.args.bill, d.s.siteCore.ledger.view(id).currentBill, 'bound to the bill in force');
+  assert.equal(d.asked.length, 0, 'read by code');
+  await d.say(contractor, 'हाँ');
+  assert.equal(d.s.siteCore.ledger.view(id).state, 'accepted');
+});
+
+test('"नहीं P-1 ₹54420 कारण" with the approval decided goes to the dispute path', async (tc) => {
+  const d = await desk(tc);
+  const { id } = await billedAfterApproval(d);
+  await d.say(contractor, 'नहीं P-1 ₹54420 दर ज़्यादा');
+  const sent = disputes(d, id);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0].body.body.theirFigure, { totalPaise: 5442000 });
+  assert.equal(sent[0].body.body.reason, 'दर ज़्यादा');
+  assert.equal(d.asked.length, 0);
+  assert.equal(d.talks.contractor.pending(contractor), null, 'the bill question ended with it');
+});
+
+test('"नहीं P-1" in other words: free figures are read as the objection; no figure shows the format', async (tc) => {
+  const d = await desk(tc);
+  const { id } = await billedAfterApproval(d);
+  await d.say(contractor, 'नहीं P-1');
+  assert.equal(d.last('contractor')?.[1], 'site.dispute_format');
+  await d.say(contractor, 'नहीं P-1 सीमेंट 50 बोरी है', [disputeItems([['सीमेंट', '50']])]);
+  assert.equal(d.last('contractor')?.[1], 'step.dispute_bill_items');
+  assert.ok(d.last('contractor')?.[2].includes('₹54,420'));
+  assert.equal(disputes(d, id).length, 0, 'not before the yes');
+});
+
+test('in the disputed state: हाँ can still accept after a read-back; नहीं says the objection is in', async (tc) => {
+  const d = await desk(tc);
+  const { id } = await billedAfterApproval(d);
+  await d.say(contractor, 'नहीं P-1 ₹54420 दर ज़्यादा');
+  await d.say(contractor, 'नहीं P-1 फिर से देखो');
+  assert.equal(d.last('contractor')?.[1], 'site.dispute_already');
+  assert.equal(disputes(d, id).length, 1);
+  await d.say(contractor, 'हाँ P-1');
+  assert.equal(d.last('contractor')?.[1], 'step.accept_bill');
+  await d.say(contractor, 'हाँ');
+  assert.equal(d.s.siteCore.ledger.view(id).state, 'accepted');
+});
+
+test('a step still undecided keeps its approval behaviour, on its own reference', async (tc) => {
+  const d = await desk(tc);
+  const { office, id } = await billedAfterApproval(d);
+  const held = await office.commit(supervisor, 'request_material', { site: 'Second Site', day: '2026-11-03', items: ITEMS });
+  const ref = String(held.params?.ref);
+  const before = d.s.siteCore.ledger.orders().length;
+  await d.say(contractor, `हाँ ${ref}`);
+  assert.equal(d.s.siteCore.ledger.orders().length, before + 1, 'the approval ran the held step');
+  assert.equal(d.s.siteCore.ledger.view(id).state, 'billed', 'the bill is untouched');
+  assert.ok(!d.keys('contractor').includes('step.accept_bill'));
+});
+
+test('an undecided step on an order with a bill stays an approval', async (tc) => {
+  const d = await desk(tc);
+  const { office, id } = await billedAfterApproval(d);
+  const held = /** @type {any} */ (await office.commit(supervisor, 'request_material', { orderId: id, site: 'Invented Site', day: '2026-11-04', items: ITEMS }));
+  assert.equal(held.params?.ref, 'P-1');
+  await d.say(contractor, 'हाँ P-1');
+  assert.ok(!d.keys('contractor').slice(-3).includes('step.accept_bill'), d.keys('contractor').join());
+  assert.equal(office.held().filter((h) => h.ref === 'P-1' && h.decision === null).length, 0, 'decided as an approval');
+});
+
+test('the supervisor gets the normal refusal', async (tc) => {
+  const d = await desk(tc);
+  const { id } = await billedAfterApproval(d);
+  await d.say(supervisor, 'हाँ P-1');
+  assert.equal(d.last('supervisor')?.[1], 'office.only_contractor');
+  await d.say(supervisor, 'नहीं P-1 ₹54420 दर ज़्यादा');
+  assert.equal(d.last('supervisor')?.[1], 'office.only_contractor');
+  assert.equal(d.s.siteCore.ledger.view(id).state, 'billed');
+  assert.equal(disputes(d, id).length, 0);
+});
+
+test('a bill with no question open (the site counted differently): the notice says how to accept, and that works', async (tc) => {
+  const d = await desk(tc);
+  assert.equal((await runTool(d.s.site.tools, contractor, { tool: 'request_material', args: { site: 'Invented Site', day: '2026-11-02', items: ITEMS } })).ok, true);
+  await settle();
+  const id = String(d.s.supCore.ledger.orders().at(-1)?.order_id);
+  await runTool(d.s.sup.tools, supplier, { tool: 'reply_order', args: { orderId: id, answer: 'yes', ratesPaise: [38000, 80000] } });
+  await settle();
+  await runTool(d.s.sup.tools, supplier, { tool: 'record_delivery', args: { orderId: id, items: ITEMS, sha256: SHA } });
+  await settle();
+  await runTool(d.s.site.tools, supervisor, { tool: 'confirm_count', args: { orderId: id, qtysHundredths: [3000, 4000] } });
+  await runTool(d.s.sup.tools, supplier, { tool: 'send_bill', args: { orderId: id } });
+  await settle();
+  const notice = d.said.find((x) => x[0] === 'contractor' && x[1] === 'site.material_bill_count_differs');
+  assert.ok(notice?.[2].includes('"हाँ P-1"'), notice?.[2]);
+  assert.equal(d.talks.contractor.pending(contractor), null);
+  await d.say(contractor, 'हाँ P-1');
+  assert.equal(d.last('contractor')?.[1], 'step.accept_bill');
+  await d.say(contractor, 'हाँ');
+  assert.equal(d.s.siteCore.ledger.view(id).state, 'accepted');
+  const mismatch = t('site.material_bill_mismatch', { ref: 'P-4', site: 'x', lines: 'x', total: 'x', expected: 'x', expectedTotal: 'x', example: '1' });
+  assert.ok(mismatch.includes('मंज़ूर हो तो "हाँ P-4" लिखें'), mismatch);
+});
