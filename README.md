@@ -176,15 +176,21 @@ Not charging anyone yet, and no price is set; this is the plan we will test.
 
 ### Why pay, when one accounts person can coordinate this on WhatsApp?
 
-An accounts person works for one side. They can keep that side's books well, but they cannot give both businesses a record the other accepts. Here each business has its own ledger and its own key, and each can check the other's signed receipts. Today all three agents sit on our one server, so that separation is not complete yet (see Known limits).
+Most small contractors have no accountant. They have a munshi or a helper and loose records, and they lose money to confusion and late deliveries. For them this is the first structured record they have had, and a small order can go to the supplier without disturbing the contractor: within the limit, when there is a price estimate.
+
+Bigger contractors often do have an accountant, and already run deliveries through WhatsApp groups, posted by the supplier or the supervisor. We add approval and evidence to that habit, and the owner can ask for an Excel copy of their records for the accountant. Our agents work in one-to-one chats, not in groups, so it is still a change of habit for those teams, and it adds work before the benefit appears. There is no Tally import.
+
+An accounts person works for one side and cannot give both businesses a record the other accepts. Here each business has its own ledger and its own key, and each can check the other's signed receipts. Today all three agents sit on our one server, so that separation is not complete yet (see Known limits).
 
 We don't remove people from the hard cases. We remove the chasing and retyping before them, and put the figures, the difference and the photo (once its owner agrees to share it) in front of the person who decides.
 
-For one site with a trusted accountant, this may not be worth paying for. The case is stronger with several sites and with disputes between businesses.
+For one site with a trusted accountant and few disputes, this may not be worth paying for.
 
-Nobody is paying yet. A fee per settled job is the intended model, with no price set, and the job's money goes directly between the businesses.
+All of this comes from the builder's own experience and friends in the trade, not measured data. Nobody is paying yet. A fee per settled job is the intended model, with no price set, and the job's money goes directly between the businesses.
 
-The next test, a plan and not a result: one contractor and their usual suppliers for 90 days, measuring messages per job against today's WhatsApp, time spent reconciling, disputes, and whether they keep using it unprompted.
+### How it could grow inside a customer
+
+Our plan, not something we have seen happen: start with a business's field work (orders, deliveries, bills, payments). Once a big contractor runs on it, find whose work is still painful there, such as the accountant, and give that person their own agent, starting from data the business already has. Nobody has asked for one yet, and big customers take longer to sign and may ask for custom work. Our first pilot should be one contractor with an accountant, so it tests the field agents and this idea together.
 
 ## Run it
 
