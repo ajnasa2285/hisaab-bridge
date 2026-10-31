@@ -22,7 +22,7 @@ export const API_KEY = 'meta-test-key-not-real-0001';
 export const PHOTO_MARK = 'PHOTO-BYTES-MARK-919000000099';
 
 /**
- * @param {{traceText?: boolean, spark?: (req: any) => Promise<any>, dataDir?: boolean}} [o]
+ * @param {{traceText?: boolean, spark?: (req: any) => Promise<any>, dataDir?: boolean, limits?: {procurementPaise?: number}}} [o]
  */
 export async function startService(o = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'hb-trace-'));
@@ -67,7 +67,7 @@ export async function startService(o = {}) {
         peers: [peer('agent:contractor-1', ck.publicKey, toSeller)], peerUrls: { 'agent:contractor-1': `${base}/agents/site` } },
       { name: 'site', kind: 'contractor', id: 'agent:contractor-1', title: 'Site', privateKey: ck.privateKey, ledgerFile: join(dir, 'site.db'),
         peers: [peer('agent:jcb-1', jk.publicKey, toSite), peer('agent:supplier-1', sk.publicKey, [...toSite, 'DELIVERY'])],
-        peerUrls: { 'agent:jcb-1': `${base}/agents/jcb`, 'agent:supplier-1': `${base}/agents/supplier` }, jcbAgentId: 'agent:jcb-1', supplierAgentId: 'agent:supplier-1' },
+        peerUrls: { 'agent:jcb-1': `${base}/agents/jcb`, 'agent:supplier-1': `${base}/agents/supplier` }, jcbAgentId: 'agent:jcb-1', supplierAgentId: 'agent:supplier-1', ...(o.limits ? { limits: o.limits } : {}) },
       { name: 'supplier', kind: 'supplier', id: 'agent:supplier-1', title: 'Supplier', privateKey: sk.privateKey, ledgerFile: join(dir, 'supplier.db'),
         peers: [peer('agent:contractor-1', ck.publicKey, [...toSeller, 'SITE_RECEIPT'])], peerUrls: { 'agent:contractor-1': `${base}/agents/site` } },
     ],

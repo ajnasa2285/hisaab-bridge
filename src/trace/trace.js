@@ -25,7 +25,7 @@ export const KINDS = /** @type {const} */ (['received', 'model', 'check', 'decis
  * The handling of one message (from a person, or from the other agent). Everything recorded while it
  * runs carries its conversation, and its order once one is known.
  * @typedef {{rec: Recorder, convo: string | null, handling: string, role?: string | null, text?: string | null,
- *   startMs: number, orderId?: string | null, ref?: string | null}} TraceContext
+ *   startMs: number, orderId?: string | null, ref?: string | null, part?: boolean}} TraceContext
  */
 /** @typedef {ReturnType<typeof openTrace>} Recorder */
 
@@ -145,7 +145,7 @@ export function openTrace(o) {
         if (!c) return;
         c.orderId = orderId;
         q.attachHandling.run(orderId, c.handling);
-        if (o2.created && c.convo) {
+        if (o2.created && c.convo && !c.part) {
           const prev = /** @type {{handling: string} | undefined} */ (q.previous.get(c.convo, c.handling, now() - ATTACH_WINDOW_MS));
           if (prev && q.understood.get(prev.handling)) q.attachHandling.run(orderId, prev.handling);
         }
@@ -201,6 +201,21 @@ export function withTrace(rec, c, fn) {
   const ctx = { rec, convo: c.convo ?? null, handling: `h${Date.now().toString(36)}${handlings}`, role: c.role ?? null, text: c.text ?? null,
     startMs: performance.now(), orderId: c.orderId ?? null };
   return als.run(ctx, fn);
+}
+
+/**
+ * Runs fn as one part of the handling now running, when one message leads to several orders (two
+ * requests): what it records carries this part's own order or reference, and nothing from the other
+ * part. What came before stays without an order: it belongs to both.
+ * @template T
+ * @param {() => T} fn
+ * @returns {T}
+ */
+export function tracePart(fn) {
+  const c = currentTrace();
+  if (!c) return fn();
+  handlings += 1;
+  return als.run({ ...c, handling: `${c.handling}.${handlings}`, orderId: null, ref: null, part: true }, fn);
 }
 
 /** The handling now running, if any. @returns {TraceContext | null} */

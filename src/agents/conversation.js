@@ -39,7 +39,7 @@ import { openRefs, parseRef, refsIn } from '../ledger/refs.js';
 import { no, runTool } from './common.js';
 import { parseCommand } from './office.js';
 import { siteKey } from './site-names.js';
-import { traceCheck } from '../trace/trace.js';
+import { traceCheck, tracePart } from '../trace/trace.js';
 import { answerQuestion } from './ask.js';
 import { day as dayName, qty as qtyText, rupees, tenths } from '../i18n/format.js';
 import { t } from '../i18n/index.js';
@@ -772,6 +772,7 @@ export function createConversation(o) {
   /**
    * "हाँ" to both: each runs as its own order through the office's gate, so the limit is checked per
    * order. A failure on one leaves the other's result standing, and the reply says what happened to each.
+   * Each is one part of the trace, so its lines carry its own reference.
    * @param {Person} person @param {Step[]} steps
    */
   async function commitTwo(person, steps) {
@@ -779,7 +780,7 @@ export function createConversation(o) {
     for (const step of steps) {
       let r;
       try {
-        r = o.office ? await o.office.commit(person, step.tool, step.args) : await runTool(o.tools, person, step);
+        r = await tracePart(() => (o.office ? o.office.commit(person, step.tool, step.args) : runTool(o.tools, person, step)));
       } catch {
         o.log?.(`two requests: ${step.tool} failed`);
         r = no('common.try_again');
