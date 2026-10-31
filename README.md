@@ -2,11 +2,11 @@
 
 **Every business gets its own agent that runs its books, and the agents talk to each other to get work done, so small businesses grow together instead of arguing.**
 
-Each agent works for its own owner on WhatsApp: it keeps that business's ledger, asks the owner before committing anything, and connects to the agents of the businesses it deals with. Every deal leaves the same signed record on both sides. In this entry, three agents (a contractor's site office, a JCB owner's and a sand/cement supplier's) agree on bookings, hours, deliveries, bills and payments over A2A. **Muse reads, understands, plans and explains; code checks every figure; people decide.**
+Each agent works for its own owner on WhatsApp: it keeps that business's ledger, records only what a person allowed to decide has said or sent, and connects to the agents of the businesses it deals with. Every deal leaves the same signed record on both sides. In this entry, three agents (a contractor's site office, a JCB owner's and a sand/cement supplier's) agree on bookings, hours, deliveries, bills and payments over A2A. **Muse reads and explains. Code does the arithmetic and checks each figure against the agreed rates and earlier records. The other side confirms. People decide.**
 
 Built during the Meta Global AI Developer Hackathon (Startup track, *Build for Your World*), 27 October to 4 November 2026.
 
-- **Live judge page:** https://16-4-100-70.sslip.io/judge/ (three ledgers side by side, every message with its signature check; inside the agent: every Muse call, every code check, every decision, live)
+- **Judge page:** https://16-4-100-70.sslip.io/judge/ (three ledgers side by side, every message with its signature check; inside the agent: every Muse call, every code check, every decision). It opens on invented sample data; the live ledgers need an access key.
 - **Agent Cards:** `https://16-4-100-70.sslip.io/agents/{jcb,site,supplier}/.well-known/agent-card.json`
 - **Demo video:** *(link added at submission)*
 
@@ -114,16 +114,19 @@ Not yet measured: UPI on unseen screenshots and other UPI apps, the challan read
 ## What works today, honestly
 
 - Running live on EC2 with HTTPS: three agents, their keys and ledgers, the webhooks, the judge page.
-- The JCB WhatsApp number works end to end on real phones. Since 28 October all three agents run on it, each phone routed to its own agent and role (contractor, supervisor, supplier, JCB owner, JCB operator), while the contractor-side flow is tested with real people.
-- The site and supplier numbers are Meta test numbers in separate business portfolios. As of 28 October the site number's business account is locked by Meta (error 131031), which we are resolving with Meta; until then all three agents can run on one number, routed by the sender's phone.
-- Real pilot jobs with a JCB owner and a contractor we work with start only after our own full run passes.
+- All three agents run on one server and one WhatsApp number, each person routed by their phone number to their own agent and role. The code has a line per agent, but everyone writes to the one number today.
+- Real phones, with a real JCB owner, supplier and supervisor, have run real orders. J-1 and P-1 to P-4 are settled. J-2 and J-3 were booked and then cancelled because of rain.
+- The people involved are the owner's own contacts. Nobody is paying. There is no self-service onboarding: each phone is added by hand.
+- The latest fixes (the ledger cross-check, hiding money from the JCB operator, the JCB rate check, the supervisor's hours, the sellers' warnings, corrections to zero) passed the automated tests and are live, but have not been tried on WhatsApp. The same goes for the missed notices told again after 24 hours' silence. Some older paths have also not been seen on WhatsApp, among them advance payments and the `सबूत` command.
+- On 28 October Meta locked the business account of a separate site number (error 131031). Nothing we hold shows this has been resolved. The orders above did not depend on that number.
 
 ## Known limits (next steps)
 
 An independent audit found no critical or high issue. A later AI red-team review with Muse Wonder, on the public source only, claimed 20 findings (6 high, 10 medium, 4 low, none critical), including a replay of a signed refusal that the audit had called harmless. 19 were fixed, one of them only in part (oversized messages); the other is the order-splitting limit below. It is an AI review, not a certified penetration test. These are the limits we have not built past yet:
 
-- **No request-rate limits** on the public endpoints. Forged messages are refused by their signature, but a flood could slow the service.
+- **No request-rate limits** on the public endpoints, and none per WhatsApp user. Forged messages are refused by their signature, but a flood could slow the service, and a registered person can send any number of messages, each of which can cost model calls.
 - **One shared viewer key** for the judge page, not one key per viewer, and it does not expire by itself.
+- **The judge page opens on invented sample data.** Its checks there show that the checking code works, not that the live records are sound. Seeing the live ledgers takes the access key.
 - **Each WhatsApp message is handled at most once.** A crash in the middle of a message loses it. On an error the person is now told to send it again; a replay table comes later.
 - **Ledger text from the other party still sits in the model's instructions** (site and item names, now limited to plain name characters). It is guarded by the tool list, the checks in code and the read-back; moving it out of the instructions comes later.
 - **A person who stays silent gets nothing.** There are no template messages, so someone who has not written in the last 24 hours cannot be sent a notice, and there are no reminders. When they next write, each agent first tells them what is still open and waiting for them, rebuilt from its ledger: for the contractor a bill or correction in force and an approval request, for the supervisor a delivery waiting for the count, for both another day a seller offered, for the sellers an open order, objection or reported payment. Notices that only inform (a settlement, a cancellation, a count told) are not told again.
@@ -142,6 +145,13 @@ An independent audit found no critical or high issue. A later AI red-team review
 - **A reply is read as an answer to the latest open question first.** While a bill is open, a message listing only that bill's items, with no site, day or time, is read back as an objection even if it was meant as a new order. A "नहीं" at the read-back stops it, and naming a site or day keeps it a new order.
 - **A booking does not name a machine.** The agents cannot tell if another JCB does the whole job, and a machine swapped mid-job cannot be recorded: its end photo is refused and a job with a reading cannot be cancelled.
 - **An edited or cropped photo is not detected.** Cropping out the date passes the date check, and the display's clock is not compared with the time.
+- **A supervisor sees every site in the contractor's ledger, payments included.** Commands and questions are limited by role, not by site.
+- **A signed delivery that never arrived has no way to close.** An order that is only booked can be cancelled. Once a delivery is signed it cannot, and a correction with every item at zero is refused. The order stays open, and the two people have to settle it outside the system.
+- **One delivery per order.** A second delivery on the same order is refused, so the rest of a part delivery needs a new order.
+- **An agreed rate cannot be corrected.** A correction changes quantities or hours, never the rate in the seller's yes. A wrong rate can only be undone by cancelling while the order is still only booked, and ordering again.
+- **The same-amount warning relies on exact amounts.** A seller's entry equal to money already confirmed on that order is asked about first. The same money written as a different figure, or put on another order, is not noticed.
+- **A voice note heard exactly as an exact reply or command acts with no read-back.** It takes the same path as typed text (a few steps, such as a correction or a cancel, are still read back), so a mishearing that still reads as a valid reply commits, and the receipt is the only sign.
+- **One person is the only operator of this system.** There is nobody else to watch it or fix it if they are away.
 - **The two sides' challan checks are not independent when both send the same photo.** On 31 October a live challan listing its items in another order put 40 bags instead of 50 on a signed delivery, and both checks agreed. The matching is fixed, and the invoice's grand total still differed from the bill's, but a person's own count is the real check.
 
 ## Roadmap: how the network grows
@@ -163,6 +173,18 @@ Not charging anyone yet, and no price is set; this is the plan we will test.
 - **First customers:** a contractor, with the JCB owner they already hire as the first business connected to them. Keeping these first pairs active matters more to us than any new feature.
 - **What the price must cover:** the model calls and WhatsApp charges for each job. We have measured model cost only for reading: about US$0.11 for 10 meter photos. The cost of a whole job is not measured yet.
 - **Later:** with both sides' consent, a counter-signed history of settled jobs could help a small business show its record to a new partner or a lender. This is an idea, not something built or tested.
+
+### Why pay, when one accounts person can coordinate this on WhatsApp?
+
+An accounts person works for one side. They can keep that side's books well, but they cannot give both businesses a record the other accepts. Here each business has its own ledger and its own key, and each can check the other's signed receipts. Today all three agents sit on our one server, so that separation is not complete yet (see Known limits).
+
+We don't remove people from the hard cases. We remove the chasing and retyping before them, and put the figures, the difference and the photo (once its owner agrees to share it) in front of the person who decides.
+
+For one site with a trusted accountant, this may not be worth paying for. The case is stronger with several sites and with disputes between businesses.
+
+Nobody is paying yet. A fee per settled job is the intended model, with no price set, and the job's money goes directly between the businesses.
+
+The next test, a plan and not a result: one contractor and their usual suppliers for 90 days, measuring messages per job against today's WhatsApp, time spent reconciling, disputes, and whether they keep using it unprompted.
 
 ## Run it
 
@@ -196,7 +218,7 @@ The judge page runs locally with `node web/serve.js` on the bundled sample expor
 
 Our application proposed a WhatsApp site office that turns contractors' field photos and messages into checked records for the owner. We built it during the event, and it grew into a bridge: the contractor's site office now settles hours, deliveries and payments with its suppliers' agents (a JCB owner's and a sand/cement supplier's) over signed A2A messages. The contractor, JCB and supplier agents are all new, and all code in this repository was written during the event, from 27 October 2026.
 
-Our previous private project is Bhatta Munshi, a WhatsApp bookkeeping agent running daily at our own brick kiln, described in our application. What we learned there (the person confirms before anything is recorded, code checks every figure the model reads) shaped this design. No code from it is used, and it is not part of this entry. The organisers confirmed that mentioning it as context is fine.
+Our previous private project is Bhatta Munshi, a WhatsApp bookkeeping agent running daily at our own brick kiln, described in our application. What we learned there (the person confirms before anything is recorded, code checks every figure the model reads) shaped this design. In this entry those ideas hold only as described above: a clear photo needs no extra reply, and some things a model reads, such as the UPI payee, are shown rather than checked. No code from it is used, and it is not part of this entry. The organisers confirmed that mentioning it as context is fine.
 
 Pilot users: a JCB owner and a contractor we work with, with their consent. All data in this repository is invented; real photos, phone numbers and payments stay on the private server.
 

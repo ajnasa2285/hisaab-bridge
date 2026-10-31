@@ -1,3 +1,5 @@
+> **This is a build log, in date order.** Earlier sections describe what was true then, and later sections override them. The README and the code are the current truth.
+
 # Build 2: supplier, approvals, references (27 Oct 2026)
 
 The contractor agent grows from "book a JCB" to a site office: material from a supplier agent over

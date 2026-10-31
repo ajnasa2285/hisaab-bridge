@@ -8,6 +8,11 @@ Each builder adds a dated entry (IST) at the end of every work session: **done, 
 
 ## Claude (lead, integrator)
 
+- 2026-10-31 (IST) — Done: cancel after booking (signed `CANCEL`, `रद्द J-2`); open-question replies (`src/agents/open-questions.js`); the contractor told of each supervisor count equal to the challan; Astra's outside review (`gpt-6-astra`, on the public repo) and its fixes; missed notices rebuilt when a person next writes; ledger cross-check through receipts (`src/ledger/cross-check.js`); parallel fixes (operator money, JCB rate check, supervisor hours, seller warnings, corrections to zero). The latest fixes are live and not yet tried on WhatsApp.
+  - Next: feature freeze 2 Nov, video 3 Nov, submit by the afternoon of 4 Nov (deadline 5 Nov 07:30 IST).
+  - Blocked: none in code.
+  - Questions: none.
+
 - 2026-10-30 19:13 — Branch `claude/audit-fixes` (from `claude/wa` 33e1044, not merged): items 1-8 of `docs/briefs/CLAUDE-audit-fixes.md`. New: `src/protocol/names.js`, `refusedIds` in `src/ledger/states.js`, 18 tests. Touched test files pass locally; the README's 632 is 614 (audit's run) + 18, for the lead to confirm with the full suite and typecheck on AWS. **Deploy:** the new Caddyfile reaches the server only through `setup.sh`, not through `git` alone.
 - 2026-10-29 18:05 — Branch `claude/gst` (from `claude/wa` 1430e10, not merged): GST on material (BUILD2 "GST on material (30 Oct)"): GST per rate in the supplier's yes (exact parsing + model route), challan reader `challan-v2` reads invoice rate/taxable/CGST-SGST-IGST/grand total, bill lines carry taxable + GST (amount = taxable + GST, so every total after the bill includes it), invoice grand total compared (mismatch read back to the supplier, both figures to the contractor), ask/explain/judge page show GST. Also: notices lost outside the 24-hour window are rebuilt from the ledger and sent once when the person next writes (JCB owner, operator, supplier); dispute notices carry the "सुधार …" hint and the phrase is parsed by code with one read-back. Live check: 4/4 invented invoices read exactly, code's total matched all. 37 touched test files pass locally (247 tests); full suite and typecheck still to run on AWS. **Fable:** please polish the new GST keys and the `सुधार` hint.
 

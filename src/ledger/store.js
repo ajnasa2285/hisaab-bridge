@@ -1,6 +1,8 @@
 // One agent's ledger (docs/CONTRACTS.md section 5): an append-only SQLite file. Every message
 // sent or received and every local decision is one event; each event's hash covers the previous
-// hash, so any later edit of history is detectable. Triggers refuse UPDATE and DELETE.
+// hash. The chain has no secret: alone it shows only an edit that did not recompute the later hashes.
+// One that did is caught through the other side's signed receipts, up to the last receipt
+// (src/ledger/cross-check.js). Triggers refuse UPDATE and DELETE.
 
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
