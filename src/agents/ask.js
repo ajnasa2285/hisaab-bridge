@@ -105,7 +105,7 @@ const DEFS = {
       grouped_only: { type: ['boolean', 'null'], description: 'True only for payments clubbed across orders (एक साथ), else false or null.' } },
   },
   stock: {
-    description: "Material received at each site: the site's own count where it counted, else the challan's figure.",
+    description: "Material received so far at each site: the site's own count where it counted, else the challan's figure. Use is not recorded, so this is never what is left.",
     properties: { site: FILTERS.site, item: text(80, 'One item as in the known items, or null for all.') },
   },
   usual: {
@@ -586,6 +586,7 @@ function systemPrompt(role, nowMs, facts, may) {
     `Use the lookup functions (${may.join(', ')}) to get the figures: at most ${MAX_LOOKUPS} lookups in all. Then call answer.`,
     'The answer: plain Hindi in Devanagari, 2 to 4 short sentences, under 300 characters, saying only what the lookups show.',
     '- Copy each figure exactly as a lookup shows it, with its unit (₹, घंटे, बोरी). Numbers in digits, never in words. Never add, subtract or work out a figure yourself; if no lookup gives the exact figure, say what they show.',
+    '- "stock" figures are material received so far. Use on site is not recorded: never say how much is left (बचा/बाकी); say received.',
     '- Payment list rows are order shares: a clubbed group is ONE payment across its refs, not a payment for each row. Copy the payments count, never count the list. A group total is not an extra payment. Confirmed, waiting and denied are distinct; waiting never reduces due.',
     '- For usual rates, quantities or JCB hours use usual, not totals. Each row belongs to its own counterparty and item/unit; do not combine rows. Hours are per job, never a daily total. No row means not enough completed records to say what is usual. The usual value is the median, not an average; rates are before GST.',
     '- Say plainly when nothing matches. Mention a reference (J-1, P-2) when it helps.',

@@ -271,7 +271,7 @@ export const hi = Object.freeze({
   'office.pending_held': '• {ref}: {step} — मंज़ूरी बाक़ी ({by})',
   'office.pending_order': '• {ref}: {what}, {site} · {awaited} · {balance}',
   'office.pending_none': 'अभी कुछ बाक़ी नहीं।',
-  'office.stock': 'साइट पर आया सामान:\n{lines}',
+  'office.stock': 'साइट पर अब तक आया सामान (ख़र्च घटाया नहीं गया):\n{lines}',
   'office.stock_site': 'साइट {site}:',
   'office.stock_line': '• {name}: {qty}',
   'office.stock_line_differs': '• {name}: {qty} (चालान में {challan})',
