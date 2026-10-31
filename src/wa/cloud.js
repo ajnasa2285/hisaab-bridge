@@ -1,5 +1,5 @@
-// The WhatsApp Cloud API calls we make for one line: send a text, fetch a received photo or
-// voice note. The access token is passed in from the environment by the caller and never logged.
+// The WhatsApp Cloud API calls we make for one line: send a text, an image or a document, fetch a
+// received photo or voice note. The access token is passed in from the environment by the caller and never logged.
 
 import { createHash } from 'node:crypto';
 
@@ -7,6 +7,9 @@ const MAX_TEXT = 4096;
 const DEFAULT_MAX_MEDIA_BYTES = 10 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_CAPTION = 1024;
+// WhatsApp's limit for a document.
+const MAX_DOCUMENT_BYTES = 100 * 1024 * 1024;
+const DOCUMENT_MIMES = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
 
 /**
  * @param {{phoneNumberId: string, accessToken: string, graphVersion?: string, baseUrl?: string,
@@ -17,6 +20,41 @@ export function createCloudClient(o) {
   const base = `${o.baseUrl ?? 'https://graph.facebook.com'}/${o.graphVersion ?? 'v23.0'}`;
   const auth = { authorization: `Bearer ${o.accessToken}` };
   const timeoutMs = o.timeoutMs ?? 15000;
+
+  /**
+   * Uploads the bytes, then sends a message that references that private upload.
+   * @param {string} to
+   * @param {{bytes: Uint8Array, mime: string, fileName: string}} file
+   * @param {(mediaId: string) => Record<string, unknown>} message the type and its object, for the media ID
+   * @param {{canSend?: () => boolean}} opts session recheck after the upload
+   * @returns {Promise<{ok: true, id: string} | {ok: false, reason: string}>}
+   */
+  async function uploadAndSend(to, file, message, opts) {
+    const form = new FormData();
+    form.set('messaging_product', 'whatsapp');
+    form.set('type', file.mime);
+    form.set('file', new Blob([new Uint8Array(file.bytes)], { type: file.mime }), file.fileName);
+    try {
+      const upload = await doFetch(`${base}/${o.phoneNumberId}/media`, {
+        method: 'POST', headers: auth, body: form, signal: AbortSignal.timeout(timeoutMs),
+      });
+      const uploaded = /** @type {any} */ (await upload.json().catch(() => null));
+      if (!upload.ok) return { ok: false, reason: `upload http ${upload.status}` };
+      if (typeof uploaded?.id !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(uploaded.id)) return { ok: false, reason: 'no media id' };
+      if (opts.canSend && !opts.canSend()) return { ok: false, reason: 'outside 24h window' };
+      const sent = await doFetch(`${base}/${o.phoneNumberId}/messages`, {
+        method: 'POST', headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, ...message(uploaded.id) }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const result = /** @type {any} */ (await sent.json().catch(() => null));
+      if (!sent.ok) return { ok: false, reason: `http ${sent.status}${result?.error?.code ? ` code ${result.error.code}` : ''}` };
+      const id = result?.messages?.[0]?.id;
+      return typeof id === 'string' ? { ok: true, id } : { ok: false, reason: 'no message id' };
+    } catch {
+      return { ok: false, reason: 'network' };
+    }
+  }
 
   return {
     phoneNumberId: o.phoneNumberId,
@@ -60,30 +98,26 @@ export function createCloudClient(o) {
       if (!(image.bytes instanceof Uint8Array) || image.bytes.length < 1 || image.bytes.length > MAX_IMAGE_BYTES) return { ok: false, reason: 'image empty or too large' };
       if (typeof image.caption !== 'string' || image.caption.length > MAX_CAPTION) return { ok: false, reason: 'caption too long' };
       if (opts.canSend && !opts.canSend()) return { ok: false, reason: 'outside 24h window' };
-      const form = new FormData();
-      form.set('messaging_product', 'whatsapp');
-      form.set('type', image.mime);
-      form.set('file', new Blob([new Uint8Array(image.bytes)], { type: image.mime }), image.mime === 'image/png' ? 'evidence.png' : 'evidence.jpg');
-      try {
-        const upload = await doFetch(`${base}/${o.phoneNumberId}/media`, {
-          method: 'POST', headers: auth, body: form, signal: AbortSignal.timeout(timeoutMs),
-        });
-        const uploaded = /** @type {any} */ (await upload.json().catch(() => null));
-        if (!upload.ok) return { ok: false, reason: `upload http ${upload.status}` };
-        if (typeof uploaded?.id !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(uploaded.id)) return { ok: false, reason: 'no media id' };
-        if (opts.canSend && !opts.canSend()) return { ok: false, reason: 'outside 24h window' };
-        const sent = await doFetch(`${base}/${o.phoneNumberId}/messages`, {
-          method: 'POST', headers: { ...auth, 'content-type': 'application/json' },
-          body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'image', image: { id: uploaded.id, caption: image.caption } }),
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-        const result = /** @type {any} */ (await sent.json().catch(() => null));
-        if (!sent.ok) return { ok: false, reason: `http ${sent.status}${result?.error?.code ? ` code ${result.error.code}` : ''}` };
-        const id = result?.messages?.[0]?.id;
-        return typeof id === 'string' ? { ok: true, id } : { ok: false, reason: 'no message id' };
-      } catch {
-        return { ok: false, reason: 'network' };
-      }
+      return uploadAndSend(to, { bytes: image.bytes, mime: image.mime, fileName: image.mime === 'image/png' ? 'evidence.png' : 'evidence.jpg' },
+        (id) => ({ type: 'image', image: { id, caption: image.caption } }), opts);
+    },
+
+    /**
+     * The same two calls for a document: the file name is what the person sees on WhatsApp. Nothing
+     * goes out for a type, name or size WhatsApp would not take.
+     * @param {string} to
+     * @param {{bytes: Uint8Array, mime: string, fileName: string, caption: string}} doc
+     * @param {{canSend?: () => boolean}} [opts] session recheck after the upload
+     * @returns {Promise<{ok: true, id: string} | {ok: false, reason: string}>}
+     */
+    async sendDocument(to, doc, opts = {}) {
+      if (!/^\d{6,15}$/.test(to)) return { ok: false, reason: 'bad recipient' };
+      if (!DOCUMENT_MIMES.includes(doc.mime)) return { ok: false, reason: 'unsupported document MIME' };
+      if (!(doc.bytes instanceof Uint8Array) || doc.bytes.length < 1 || doc.bytes.length > MAX_DOCUMENT_BYTES) return { ok: false, reason: 'document empty or too large' };
+      if (typeof doc.fileName !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/.test(doc.fileName)) return { ok: false, reason: 'bad file name' };
+      if (typeof doc.caption !== 'string' || doc.caption.length > MAX_CAPTION) return { ok: false, reason: 'caption too long' };
+      if (opts.canSend && !opts.canSend()) return { ok: false, reason: 'outside 24h window' };
+      return uploadAndSend(to, doc, (id) => ({ type: 'document', document: { id, filename: doc.fileName, caption: doc.caption } }), opts);
     },
 
     /**

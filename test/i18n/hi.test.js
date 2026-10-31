@@ -14,7 +14,7 @@ const REF_EXAMPLE = /\b[JP]-\d+\b/g;
 const CHASING = ['जल्दी', 'तुरंत', 'याद दिला', 'कब दोगे', 'कब देंगे', 'कब देंगी', 'चुकाएँ', 'चुकाओ', 'भुगतान करें', 'भुगतान कीजिए', 'पैसे दो', 'पैसे दें', 'देर हो', 'बकाया चुका', 'reminder', 'overdue'];
 
 /** A sample value for every parameter, so every key can be filled. @type {Record<string, string|number>} */
-const SAMPLE = { word: 'नमूना-word', words: 'नमूना-words',
+const SAMPLE = { word: 'नमूना-word', words: 'नमूना-words', month: 'अक्टूबर 2026', owner: 'ठेकेदार',
   math: 'सीमेंट 50 बोरी × ₹380 = ₹19,000, पर इनवॉइस पर ₹18,000', computed: '₹19,000', printed: '₹18,000',
   material: 'शिवपुरी पर सीमेंट 50 बोरी', jcb: 'शिवपुरी पर JCB, 2 घंटे', first: 'P-1 भेजी', second: 'J-1 भेजी', why: 'जवाब नहीं आया', new: 3,
   message: 'बिल मिला।', pct: 30, n: 5, metric: 'दर', value: '₹380/बोरी', min: '₹350/बोरी', max: '₹400/बोरी',
@@ -252,6 +252,8 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'what.jcb': ['site', 'day'], 'what.jcb_time': ['site', 'day', 'time'], 'what.jcb_hours': ['site', 'day', 'hours'],
     'what.jcb_time_hours': ['site', 'day', 'time', 'hours'], 'what.material': ['site', 'day', 'items'], 'what.material_time': ['site', 'day', 'time', 'items'],
     'reply.which_order': ['refs', 'ref'], 'site.yes_needs_ref': ['ref', 'refs'], 'site.no_needs_ref': ['ref', 'refs'], 'site.yes_word': [], 'meter.which_job': ['lines', 'ref'], 'meter.job_line': ['n', 'ref', 'site', 'day'], 'challan.which_order': ['lines', 'ref'], 'challan.order_line': ['n', 'ref', 'site', 'day', 'what'],
+    'excel.owner_only': ['owner'], 'excel.month_unclear': [], 'excel.none': [], 'excel.none_month': ['month'], 'excel.too_big': [], 'excel.too_big_month': ['month'], 'excel.send_failed': [],
+    'excel.sent': ['orders'], 'excel.caption_all': [], 'excel.caption_month': ['month'], 'excel.bill': [], 'excel.correction': ['n'], 'excel.in_force': [], 'excel.not_in_force': [],
     'step.cancel_order': ['ref', 'site', 'day', 'what'], 'cancel.done': ['ref', 'site', 'day', 'what'], 'cancel.refused': ['ref'], 'cancel.not_allowed': [], 'cancel.held': ['ref'],
     'cancel.already': ['ref'], 'cancel.closed': ['ref', 'state'], 'cancel.has_bill': ['ref'], 'cancel.has_payment': ['ref', 'amount'], 'cancel.has_delivery': ['ref'], 'cancel.has_count': ['ref'], 'cancel.has_meter': ['ref'],
     'site.order_cancelled': ['from', 'ref', 'site', 'day', 'what'], 'site.order_cancelled_own': ['ref', 'site', 'day', 'what'], 'jcb.order_cancelled': ['ref', 'site', 'day'],

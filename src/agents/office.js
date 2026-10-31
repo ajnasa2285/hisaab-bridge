@@ -14,6 +14,7 @@ import { t, variant } from '../i18n/index.js';
 import { itemsText, signedWord, siteReceipt } from './material.js';
 import { orderBalanceText, orderPaymentText, paymentWaiting } from './payment-view.js';
 import { withUsual } from './usual.js';
+import { istDay } from '../orchestrator/units.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('./common.js').Tool} Tool */
@@ -24,7 +25,8 @@ import { withUsual } from './usual.js';
 /** @typedef {{procurementPaise?: number}} Limits */
 /**
  * @typedef {{cmd: 'status' | 'evidence', ref: string} | {cmd: 'pending'} | {cmd: 'stock', item: string | null} |
- *   {cmd: 'ok', ref: string, note: string | null} | {cmd: 'no', ref: string, reason: string | null} | {cmd: 'cancel', ref: string}} Command
+ *   {cmd: 'ok', ref: string, note: string | null} | {cmd: 'no', ref: string, reason: string | null} | {cmd: 'cancel', ref: string} |
+ *   {cmd: 'excel', month: {month: number, year: number | null} | 'unclear' | null}} Command
  */
 /**
  * @typedef {{id: number, ref: string, person: Person, tool: string, args: Record<string, any>, limit: string,
@@ -69,6 +71,8 @@ const NEW_ORDER_REF = { request_jcb: 'J', request_material: 'P' };
 const AWAITING_CONTRACTOR = ['billed', 'offered'];
 const CLOSED = ['settled', 'declined', 'cancelled', 'none'];
 const MAX_NOTE = 300;
+// Who may take an agent's records away as a file.
+const OWNER_ROLE = { contractor: 'contractor', jcb: 'jcb_owner', supplier: 'supplier' };
 // The keys an approval request may have been missed under: the estimate or the "usual" line can differ now.
 const APPROVAL_KEYS = /^(?:office\.approval_needed(?:_estimate)?|usual\.notice)$/u;
 // What an approved step was missed under: who approved, and the step's own result, are told as one.
@@ -86,6 +90,50 @@ const NO = wordSet(['no', 'नहीं', 'नही', 'ना', 'नामं�
 const CANCEL = wordSet(['रद्द', 'रद', 'radd', 'cancel', 'कैंसल', 'कैंसिल']);
 // May stand beside the word: "रद्द करो J-2", "J-2 रद्द कर दो".
 const CANCEL_FILLER = wordSet(['कर', 'करो', 'करें', 'दो', 'दें', 'दीजिए', 'kar', 'karo', 'do']);
+const EXCEL = wordSet(['excel', 'एक्सेल', 'एक्सल', 'ऐक्सेल']);
+// May stand beside it: "एक्सेल फ़ाइल भेजो", "अक्टूबर का एक्सेल".
+const EXCEL_FILLER = wordSet(['फ़ाइल', 'फाइल', 'file', 'भेजो', 'भेजें', 'भेजिए', 'bhejo', 'चाहिए', 'chahiye', 'दो', 'दें', 'दीजिए', 'do', 'का', 'की', 'के', 'ka', 'ki', 'ke']);
+const MONTH_WORDS = /** @type {string[][]} */ ([
+  ['january', 'jan', 'जनवरी'], ['february', 'feb', 'फरवरी', 'फ़रवरी'], ['march', 'mar', 'मार्च'], ['april', 'apr', 'अप्रैल', 'अप्रेल'],
+  ['may', 'मई'], ['june', 'jun', 'जून'], ['july', 'jul', 'जुलाई'], ['august', 'aug', 'अगस्त'],
+  ['september', 'sep', 'sept', 'सितंबर', 'सितम्बर'], ['october', 'oct', 'अक्टूबर', 'अक्तूबर'], ['november', 'nov', 'नवंबर', 'नवम्बर'], ['december', 'dec', 'दिसंबर', 'दिसम्बर'],
+]).map((names) => names.map((n) => n.normalize('NFC')));
+
+/**
+ * A month as written after the Excel word: "अक्टूबर", "october 2026", "10-2026", "2026-10", "10". Null when
+ * it is none of these. With no year written, the year is settled against today (`monthOf`).
+ * @param {string} s lower case, single spaces
+ * @returns {{month: number, year: number | null} | null}
+ */
+function parseMonth(s) {
+  const v = s.replace(/[०-९]/gu, (d) => String(d.charCodeAt(0) - 0x0966));
+  const named = /^(\S+?)(?:[ -](\d{4}))?$/u.exec(v);
+  const at = named ? MONTH_WORDS.findIndex((names) => names.includes(named[1])) : -1;
+  if (named && at >= 0) return { month: at + 1, year: named[2] ? Number(named[2]) : null };
+  const numbers = /^(\d{1,2})(?:[-/.](\d{4}))?$/.exec(v);
+  const yearFirst = /^(\d{4})[-/.](\d{1,2})$/.exec(v);
+  const month = Number(numbers ? numbers[1] : yearFirst?.[2]);
+  if (!(numbers || yearFirst) || month < 1 || month > 12) return null;
+  const year = numbers ? numbers[2] : yearFirst?.[1];
+  return { month, year: year ? Number(year) : null };
+}
+
+/**
+ * The Excel command with its month, or null when the words are not it. Digits that are no month are still
+ * this command, so the person is told how to write it; other words go to the model as before.
+ * @param {string} s lower case, single spaces
+ * @returns {Extract<Command, {cmd: 'excel'}> | null}
+ */
+function parseExcel(s) {
+  const words = s.split(' ').filter((w) => !EXCEL_FILLER.has(w));
+  const first = EXCEL.has(words[0]);
+  if (!first && !EXCEL.has(words.at(-1) ?? '')) return null;
+  const rest = (first ? words.slice(1) : words.slice(0, -1)).join(' ');
+  if (rest === '') return { cmd: 'excel', month: null };
+  const month = parseMonth(rest);
+  if (month) return { cmd: 'excel', month };
+  return /^[\d०-९ ./-]+$/u.test(rest) ? { cmd: 'excel', month: 'unclear' } : null;
+}
 
 /**
  * An exact command, or null for anything else (which then goes to the model). Case and spacing do
@@ -104,6 +152,8 @@ export function parseCommand(text) {
     const ref = parseRef((CANCEL.has(words[0]) ? words.slice(1) : words.slice(0, -1)).join(' '));
     return ref === null ? null : { cmd: 'cancel', ref };
   }
+  const excel = parseExcel(s);
+  if (excel) return excel;
   if (PENDING.has(word) && rest === '') return { cmd: 'pending' };
   if (STOCK.has(word)) return rest.length > 40 ? null : { cmd: 'stock', item: rest || null };
   if (STATUS.has(word) || EVIDENCE.has(word)) {
@@ -119,6 +169,18 @@ export function parseCommand(text) {
     return OK.has(word) ? { cmd: 'ok', ref, note: tail } : { cmd: 'no', ref, reason: tail };
   }
   return null;
+}
+
+/**
+ * "YYYY-MM" for a month as written. With no year: this year, or last year when that would be after this month.
+ * @param {{month: number, year: number | null}} m @param {number} nowMs
+ */
+function monthOf(m, nowMs) {
+  const today = istDay(nowMs);
+  const mm = String(m.month).padStart(2, '0');
+  if (m.year !== null) return `${String(m.year).padStart(4, '0')}-${mm}`;
+  const year = Number(today.slice(0, 4));
+  return `${`${year}-${mm}` > today.slice(0, 7) ? year - 1 : year}-${mm}`;
 }
 
 /**
@@ -164,6 +226,7 @@ export function stockOf(orders) {
  *   reply: Reply,
  *   now: () => number,
  *   evidence?: {requestLatest: (orderId: string) => Promise<Said>},
+ *   excel?: (person: Person, month: string | null) => Promise<Said>,
  * }} o
  */
 export function createOffice(o) {
@@ -456,6 +519,11 @@ export function createOffice(o) {
         const orderId = refs.orderOfRef(c.ref);
         if (!orderId) return no('office.no_such_ref', { ref: c.ref });
         return o.evidence ? o.evidence.requestLatest(orderId) : no('evidence.unavailable', { ref: c.ref });
+      }
+      case 'excel': {
+        if (person.role !== OWNER_ROLE[o.kind]) return no('excel.owner_only', { owner: t(`records.who.${o.kind}`) });
+        if (c.month === 'unclear') return no('excel.month_unclear');
+        return o.excel ? o.excel(person, c.month && monthOf(c.month, o.now())) : no('excel.send_failed');
       }
       case 'status': return status(c.ref, person);
       case 'pending': return pending(person);

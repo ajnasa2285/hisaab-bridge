@@ -298,7 +298,7 @@ function collector() {
 /** @typedef {ReturnType<typeof collector>} Collector */
 
 /** @param {OrderFacts} o */
-const whoOf = (o, /** @type {'buyer' | 'seller'} */ side) => t(side === 'seller' ? 'records.who.contractor' : o.kind === 'jcb_hours' ? 'records.who.jcb' : 'records.who.supplier');
+export const whoOf = (o, /** @type {'buyer' | 'seller'} */ side) => t(side === 'seller' ? 'records.who.contractor' : o.kind === 'jcb_hours' ? 'records.who.jcb' : 'records.who.supplier');
 /** @param {Collector} c @param {Item[]} items */
 const itemsShown = (c, items) => items.map((i) => `${i.name} ${c.qty(i.qtyHundredths, i.unit)}`).join(', ');
 /** @param {Collector} c @param {OrderFacts} o */

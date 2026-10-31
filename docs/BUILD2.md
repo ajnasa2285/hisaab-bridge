@@ -801,3 +801,17 @@ When a bill or correction comes: hours that differ give `site.bill_hours_differs
 A line that does not agree records as before, adds the trace check `invoice_line_math` on both agents, and adds one clause to the supplier's receipt (`supplier.delivery_sent_math`) and to the contractor's notice about the delivery. The contractor's side computes it from the items of the signed DELIVERY, which already carry `invoiceRatePaise` and `taxablePaise` (no protocol change). That notice is `site.delivery_info` and, when the site counted first, `site.delivery_matches_count` or `site.challan_count_differs`; the `_math` variants go to the contractor only. It stops nothing and asks nothing, and the bill stays quantity × agreed rate.
 
 *Known limits.* A rate printed per another unit than the delivered one (per tonne, delivered in bags) or a line discount shows as not adding up; the DELIVERY does not carry the invoice's unit or discount, and the clause states the figures without saying which is wrong. A delivery that could not be sent yet answers `common.pending`, without the clause; the contractor's notice carries it on arrival.
+
+## An owner's records as an Excel file
+
+`एक्सेल` or `excel`, with an optional month (`एक्सेल अक्टूबर`, `excel october`, `excel 10-2026`): an exact command, read by code in `parseCommand`, and like `status` it leaves any open question as it was. Only the owner-level role of each agent gets a file (`contractor`, `jcb_owner`, `supplier`), holding that agent's own ledger; a supervisor or operator is told who can get it. A month with no year is this year, or last year when that would be after this month.
+
+`src/export/records.js` builds five sheets: orders, deliveries and site count, bills, payments, balance. The balance per order has a sheet of its own so the payments column still adds up; for the same reason a bill's total stands on its first line only. Figures come from `orderFacts` and `paymentSummary` over `paymentEvents`, so refused messages are left out as everywhere else. No model is called, nothing is written, and a period with nothing sends no file.
+
+*A month chooses orders by their day*, and each comes whole: a payment made in November on an October order is in October's file, so the file's balances equal `status`. The caption says so. A file for one month is therefore not a list of the money that moved in that month.
+
+`src/export/xlsx.js` writes the file with `node:zlib` and no dependency. All text is in the shared-strings table with cell type `s`, and the writer has no way to emit a formula, so `=SUM(1)` as a site name stays text. A phone number typed into a name or a challan number is cut to its last 4 digits; UTRs stay whole, as the app shows them.
+
+`sendDocument` in `src/wa/cloud.js` is the same two calls as `sendImage` (upload, then a message with the media ID), with a `filename`. Nothing is claimed unless WhatsApp took it. The cap is 10 MB (`MAX_FILE_BYTES`); WhatsApp's own limit is 100 MB. One trace check, `records_file`, holds counts only.
+
+*Known limits.* A JCB owner's deliveries sheet stays empty: the meter readings are not on it, and the hours are on the bills sheet. A step held for approval is not an order yet and is not in the file.

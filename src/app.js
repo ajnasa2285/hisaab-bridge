@@ -31,6 +31,7 @@ import { currentTrace, openTrace, withTrace } from './trace/trace.js';
 import { traceLedger, traceLink, traceReader, traceReceived, traceSpark, traceTools, traceTranscribe, traceTransport } from './trace/hooks.js';
 import { join } from 'node:path';
 import { createEvidenceService, forwardEvidence } from './agents/evidence.js';
+import { sendRecords } from './export/records.js';
 import { openMediaStore } from './media/store.js';
 import { normaliseVoice, openLearn, voiceParty, voiceReplacements } from './learn/corrections.js';
 import { traceCheck } from './trace/trace.js';
@@ -282,7 +283,9 @@ export function createApp(cfg) {
     // The owner's yes/no to sharing a photo (evidence.tools) is a step like the agent's own.
     const tools = traceTools({ ...agent.tools, ...evidence.tools }, trace);
     // References, exact commands, and (contractor) approvals with this agent's limits.
-    const office = createOffice({ ledger: core.ledger, tools, kind: a.kind, limits: a.limits, tell, reply, now, evidence });
+    const office = createOffice({ ledger: core.ledger, tools, kind: a.kind, limits: a.limits, tell, reply, now, evidence,
+      excel: (person, month) => sendRecords({ ledger: core.ledger, side: a.kind === 'contractor' ? 'buyer' : 'seller', agentName: a.name, month,
+        send: (doc) => wa.sendDocument(person.line, person.phone, doc) }) });
     traceApprovals(office, agent.tools, a, trace);
     // Every agent asks Muse Spark what a photo is; each then reads only its own kinds: meters (JCB),
     // UPI screenshots and the site's copy of a challan (contractor), challans (supplier).

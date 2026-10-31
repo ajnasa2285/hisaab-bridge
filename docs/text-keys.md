@@ -609,3 +609,20 @@ Warnings only, inside notices that exist already. Nothing is asked. `same_photo`
 | `site.challan_count_differs_math` / `site.challan_count_differs_same_photo_math` | ref, site, count, siteNo, challan, challanNo, math | to the contractor only, when the site counted first |
 | `supplier.delivery_sent_math` | ref, site, items, math | the supplier's receipt, with the line that does not add up |
 | `bill.invoice_line_math` | item, qty, rate, computed, printed | the clause: delivered quantity × the invoice's rate, and the taxable value printed |
+
+## Excel file of an owner's records
+
+Exact command, by code; no model. `src/export/records.js`.
+
+| Key | Params | When |
+|---|---|---|
+| `excel.owner_only` | owner | a supervisor or operator asked; no data |
+| `excel.month_unclear` | — | the Excel word with digits that are no month |
+| `excel.none` / `excel.none_month` | — / month | nothing in that period; no file |
+| `excel.too_big` / `excel.too_big_month` | — / month | over the file cap; without a month it says to name one |
+| `excel.send_failed` | — | WhatsApp did not take the file |
+| `excel.sent` | orders | WhatsApp took the file |
+| `excel.caption_all` / `excel.caption_month` | — / month | the document's caption |
+| `excel.bill`, `excel.correction` (n), `excel.in_force`, `excel.not_in_force` | | cells on the bills sheet |
+
+The sheets' headings are in Hindi with English in brackets and live in `src/export/records.js`, not here.

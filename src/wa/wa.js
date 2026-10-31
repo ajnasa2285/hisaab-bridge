@@ -71,6 +71,22 @@ export function createWa(o) {
     return r;
   }
 
+  /**
+   * A document has the same session boundary: nothing is uploaded outside the window.
+   * @param {string} phoneNumberId
+   * @param {string} phone
+   * @param {{bytes: Uint8Array, mime: string, fileName: string, caption: string}} doc
+   * @returns {Promise<{ok: true, id: string} | {ok: false, reason: string}>}
+   */
+  async function sendDocument(phoneNumberId, phone, doc) {
+    const line = byId.get(phoneNumberId);
+    if (!line) return { ok: false, reason: 'unknown line' };
+    if (!o.store.windowOpen(phoneNumberId, phone, now())) return { ok: false, reason: 'outside 24h window' };
+    const r = await line.client.sendDocument(phone, doc, { canSend: () => o.store.windowOpen(phoneNumberId, phone, now()) });
+    if (!r.ok) log(`wa ${line.name}: document to ${maskPhone(phone)} failed: ${r.reason}`);
+    return r;
+  }
+
   /** @param {Line} line @param {Inbound} msg */
   async function dispatch(line, msg) {
     if (msg.phoneNumberId !== line.phoneNumberId) {
@@ -150,7 +166,7 @@ export function createWa(o) {
     return true;
   }
 
-  return { handle, send, sendImage };
+  return { handle, send, sendImage, sendDocument };
 }
 
 /** @param {import('node:http').IncomingMessage} req @returns {Promise<Buffer>} */
