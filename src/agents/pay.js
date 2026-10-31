@@ -179,6 +179,15 @@ export function createSellerPayments(o) {
     return out;
   }
 
+  /**
+   * Money already confirmed on this order of exactly this amount (a confirmed claim or an entry of the
+   * seller's own), each as "₹10,000 नकद, 28 अक्टूबर 2026". A second equal payment can be genuine and cash
+   * has no UTR, so this only ever makes the seller say so; one order at a time.
+   * @param {string} orderId @param {number} amountPaise @returns {string[]}
+   */
+  const sameConfirmed = (orderId, amountPaise) => summaryOf(ledger, orderId).payments
+    .filter((p) => p.status === 'confirmed' && p.amountPaise === amountPaise).map((p) => paymentLine(p));
+
   /** The oldest claim of this order waiting for an answer, or the one named. @param {string} orderId @param {unknown} payment */
   const waitingClaim = (orderId, payment) => {
     const pending = ledger.view(orderId).pending;
@@ -220,7 +229,7 @@ export function createSellerPayments(o) {
         const claim = knownOrder(a.orderId) ? waitingClaim(a.orderId, a.payment) : null;
         const unit = claim ? unitOf(a.orderId, claim) : [];
         const amount = unit.reduce((s, [, p]) => s + (claimBody(p)?.amountPaise ?? 0), 0);
-        return { key: 'step.confirm_payment', params: { site: o.siteOf(a.orderId), amount: amount > 0 ? rupees(amount) : t('pay.nothing') } };
+        return { key: a.received === false ? 'step.deny_payment' : 'step.confirm_payment', params: { site: o.siteOf(a.orderId), amount: amount > 0 ? rupees(amount) : t('pay.nothing') } };
       },
       async run(_p, a) {
         if (!knownOrder(a.orderId)) return no('common.no_such_order');
@@ -229,6 +238,15 @@ export function createSellerPayments(o) {
         const claim = waitingClaim(a.orderId, a.payment);
         if (claim === null) return no('pay.nothing_waiting');
         const unit = unitOf(a.orderId, claim);
+        // A yes to money equal to what is already confirmed on that order: said first, with its date and
+        // method. Only an explicit second yes counts it; a no tells the contractor it did not come.
+        if (received && a.sameAmountOk !== true) {
+          const before = unit.flatMap(([orderId, payment]) => sameConfirmed(orderId, /** @type {number} */ (claimBody(payment)?.amountPaise)).map((line) => `${o.refOf(orderId)}: ${line}`));
+          if (before.length) {
+            return { ...no('pay.seller.claim_same_confirmed', { ref: o.refOf(a.orderId), amount: rupees(unit.reduce((s, [, p]) => s + (claimBody(p)?.amountPaise ?? 0), 0)), before: before.join('; ') }),
+              expect: { tool: 'confirm_payment', args: { orderId: a.orderId, payment: claim, sameAmountOk: true }, no: { tool: 'confirm_payment', args: { orderId: a.orderId, payment: claim, received: false } } } };
+          }
+        }
         /** @type {[string, number][]} */
         const done = [];
         for (const [orderId, payment] of unit) {
@@ -274,6 +292,12 @@ export function createSellerPayments(o) {
         if (same !== undefined) {
           return { ...no('pay.seller.claim_waiting', { ref: o.refOf(a.orderId), payment: paymentLine(claimBody(same) ?? { amountPaise: a.amountPaise, receivedOn }) }),
             expect: { tool: 'confirm_payment', args: { orderId: a.orderId, payment: same }, no: { tool: 'record_received', args: { ...a, separate: true } } } };
+        }
+        // Equal to money already confirmed: said first, and counted only on an explicit yes.
+        const before = a.sameAmountOk === true ? [] : sameConfirmed(a.orderId, a.amountPaise);
+        if (before.length) {
+          return { ...no('pay.seller.same_recorded', { ref: o.refOf(a.orderId), amount: rupees(a.amountPaise), before: before.join('; ') }),
+            expect: { tool: 'record_received', args: { ...a, receivedOn, sameAmountOk: true } } };
         }
         const body = { method: a.method, amountPaise: a.amountPaise, receivedOn, bill: view.currentBill };
         const d = await link.send({ type: 'PAYMENT_RECEIVED', to: /** @type {string} */ (counterparty(a.orderId)), orderId: a.orderId, body });
@@ -336,7 +360,8 @@ export function createSellerPayments(o) {
         parts.push([id, share.body.body.amountPaise]);
       }
       const lines = groupLines(parts);
-      return { key: 'pay.seller.group_claimed', params: { payment: `${paymentLine({ ...b, amountPaise: b.group.totalPaise })}${payee}`, lines: seen ? `${lines}\n${seen}` : lines }, expect };
+      // `ref`: the first order's, so that a notice missed outside the window is remembered and told again.
+      return { key: 'pay.seller.group_claimed', params: { ref: o.refOf(parts[0][0]), payment: `${paymentLine({ ...b, amountPaise: b.group.totalPaise })}${payee}`, lines: seen ? `${lines}\n${seen}` : lines }, expect };
     }
     const key = variant('pay.seller.claimed', { advance: b.bill === null });
     const balance = balanceText(summaryOf(ledger, m.order_id));

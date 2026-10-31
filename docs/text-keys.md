@@ -437,7 +437,10 @@ times, UTRs and screenshots add no placeholder. Group references link to each or
 | `pay.payee` | name | added to a claim notice: the payee the UPI reader saw |
 | `pay.seller.utr_seen` | utr, before | added to a claim notice: this UTR was told before on another of this seller's orders |
 | `pay.seller.claim_waiting` | ref, payment | the seller records money while a claim of that amount waits: "हाँ" answers the claim, "नहीं" records it as separate |
-| `pay.seller.group_claimed` | payment, lines | to the seller: a clubbed payment, once, when all shares are in; one हाँ/नहीं for all |
+| `pay.seller.same_recorded` | ref, amount, before | the seller records an amount equal to money already confirmed on that order: its date and method; "हाँ" records it, "नहीं" records nothing |
+| `pay.seller.claim_same_confirmed` | ref, amount, before | the seller's "हाँ" to a claim (or clubbed payment) with a share equal to money already confirmed on that order: "हाँ" confirms, "नहीं" denies |
+| `step.deny_payment` | site, amount | read-back of "नहीं P-5" when that order has several claims waiting: "हाँ" tells the contractor it did not come |
+| `pay.seller.group_claimed` | payment, lines (ref passed, not shown: a missed notice is remembered by it) | to the seller: a clubbed payment, once, when all shares are in; one हाँ/नहीं for all |
 | `pay.seller.confirmed` / `pay.seller.denied` | ref, amount, balance | seller's receipt of his answer |
 | `pay.seller.group_confirmed` / `pay.seller.group_denied` | amount, lines | the same for a group |
 | `pay.seller.received` | ref, payment, balance | seller recorded money he received ("P-2 ₹10,000 नकद मिले") |
@@ -462,7 +465,7 @@ No longer used by the agents (kept for the old texts): `site.payment_claimed`, `
 | `payview.group_total` | total | group total once in the seller's waiting line |
 | `payview.share` | ref, amount | a waiting order share in that group |
 | `payview.waiting_share` | amount, details, group | status shows each waiting claim; group fragment may be empty |
-| `payview.waiting` | refs, details, group, amount, shares | one seller waiting item per claim/group; amount is only still-waiting shares; ref metadata identifies the first member |
+| `payview.waiting` | ref, refs, details, group, amount, shares | one seller waiting item per claim/group, in `pending` and told again after a missed window, so it says how to answer ("हाँ {ref}" / "नहीं {ref}"); amount is only still-waiting shares; `ref` is the first member |
 | `office.rate` | rate | optional rate line inside status |
 | `office.state_unknown`, `office.step_unknown` | none | an unavailable state/step description |
 | `office.site_receipt_no_number` | count, signed | signed-copy text when no serial was read |
@@ -566,4 +569,4 @@ The bill and correction notices with a one-word answer, and `site.delivery_recei
 | Key | Parameters | Meaning |
 |---|---|---|
 | `site.yes_word` | | the word itself, for `yes` |
-| `site.yes_needs_ref` | ref, refs | a bare "हाँ" right after notices were told again: nothing recorded, write the reference with it; `refs` are those still open |
+| `site.yes_needs_ref` | ref, refs | (every role with open questions) a bare "हाँ" right after notices were told again: nothing recorded, write the reference with it; `refs` are those still open |

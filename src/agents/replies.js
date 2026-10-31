@@ -279,6 +279,7 @@ function sellerReply(o) {
   if (yn === 'no') {
     // "नहीं" to a reported payment, when that is the only thing waiting for an answer.
     if (requested.length === 0 && claimed.length === 1) return { kind: 'step', tool: 'confirm_payment', args: { orderId: claimed[0].orderId, payment: claimed[0].payment, received: false } };
+    if (requested.length === 0 && claimed.length > 1 && ref !== null) return oldestClaim(claimed, false);
     if (requested.length === 0 && claimed.length > 1) return whichOrder(claimed.map((c) => c.ref));
     const p = pick(['requested']);
     if (p === 'orchestrator.which_job') return which(['requested']);
@@ -288,6 +289,7 @@ function sellerReply(o) {
   if (yn === 'yes') {
     // A reported payment, when it is the only thing waiting for a yes; an order needs its rate first.
     if (claimed.length === 1 && requested.length === 0) return { kind: 'step', tool: 'confirm_payment', args: { orderId: claimed[0].orderId, payment: claimed[0].payment } };
+    if (claimed.length > 1 && requested.length === 0 && ref !== null) return oldestClaim(claimed, true);
     if (claimed.length > 1 && requested.length === 0) return whichOrder(claimed.map((c) => c.ref));
     if (requested.length === 1 && claimed.length === 0) return ratesNeeded(o, requested[0].orderId, supplier);
     if (requested.length > 1 && claimed.length === 0) return which(['requested']);
@@ -326,6 +328,13 @@ function sellerReply(o) {
   }
   return null;
 }
+
+/**
+ * Several claims on the one order named: a reference cannot tell them apart, so the oldest is read back
+ * with its amount before it is answered, and the next after it.
+ * @param {{orderId: string, payment: string}[]} claimed @param {boolean} received @returns {Exact}
+ */
+const oldestClaim = ([c], received) => ({ kind: 'step', tool: 'confirm_payment', args: { orderId: c.orderId, payment: c.payment, ...(received ? {} : { received: false }) }, confirm: true });
 
 /** Several open orders fit: which one? The reply form names the first. @param {string[]} refs @returns {Exact} */
 const whichOrder = (refs) => {
