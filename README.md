@@ -148,7 +148,7 @@ Not built yet; this is where the same design goes.
 
 Not charging anyone yet, and no price is set; this is the plan we will test.
 
-- **Who pays:** the contractor and the supplier, per settled job. They pay when a deal has been completed and both sides' records agree.
+- **Who pays:** each business with an agent (contractor, JCB owner, supplier) pays us, the people running the service, a fee per settled job. The money for the job itself still goes directly between the businesses; we never hold it.
 - **First customers:** a contractor, with the JCB owner they already hire as the first business connected to them. Keeping these first pairs active matters more to us than any new feature.
 - **What the price must cover:** the model calls and WhatsApp charges for each job. We have measured model cost only for reading: about US$0.11 for 10 meter photos. The cost of a whole job is not measured yet.
 - **Later:** with both sides' consent, a counter-signed history of settled jobs could help a small business show its record to a new partner or a lender. This is an idea, not something built or tested.
