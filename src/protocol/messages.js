@@ -65,7 +65,7 @@ const text = (s) => typeof s === 'string' && s.length > 0 && s.length <= MAX_TEX
 /** @param {unknown} s */
 const optText = (s) => s === undefined || text(s);
 /** @param {unknown} s */
-const isUuid = (s) => typeof s === 'string' && UUID_RE.test(s);
+export const isUuid = (s) => typeof s === 'string' && UUID_RE.test(s);
 /** @param {unknown} s */
 const isDay = (s) => typeof s === 'string' && DAY_RE.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
 /** @param {unknown} s */

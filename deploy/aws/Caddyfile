@@ -14,7 +14,8 @@
 	}
 
 	# Webhooks and everything else are small; refuse anything bigger than 1 MB.
-	@app path /wa/* /agents/* /health /judge /judge/*
+	# The judge page imports the two pure ledger modules the app serves (src/app.js); nothing else under /src.
+	@app path /wa/* /agents/* /health /judge /judge/* /src/ledger/payments.js /src/ledger/usual.js
 	handle @app {
 		request_body {
 			max_size 1MB

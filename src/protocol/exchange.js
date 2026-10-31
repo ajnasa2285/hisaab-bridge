@@ -9,7 +9,7 @@
 // An EVIDENCE_REQUEST is only recorded and acknowledged: the photo's owner decides (a local NOTE
 // `evidence_consent`), and only then does the EVIDENCE (or a REFUSE `declined_by_owner`) leave.
 
-import { buildMessage, checkIncoming } from './messages.js';
+import { buildMessage, checkIncoming, isUuid } from './messages.js';
 import { signMessage } from './keys.js';
 import { evidenceBytes, evidenceHash, evidenceMetadata, findEvidenceRecord } from './evidence.js';
 import { canonicalize } from './canonical.js';
@@ -78,7 +78,7 @@ export function receive(agent, raw) {
   if (!checked.ok) {
     if (UNAUTHENTICATED.includes(checked.code)) return { answer: /** @type {any} */ ({ type: 'ERROR', code: checked.code }), applied: false, message: null };
     const m = /** @type {any} */ (raw);
-    const orderId = m && typeof m.order_id === 'string' && /^[0-9a-f-]{36}$/.test(m.order_id) ? m.order_id : null;
+    const orderId = m && isUuid(m.order_id) ? m.order_id : null;
     return { answer: refusal(checked.code, checked.msgId, checked.from, orderId), applied: false, message: null };
   }
   const m = checked.message;

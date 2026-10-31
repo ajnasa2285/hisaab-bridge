@@ -23,7 +23,8 @@ import { cancelTool, orderWords } from './cancel.js';
 /** @typedef {import('../protocol/messages.js').Message} Message */
 /** @typedef {import('./material.js').Item} Item */
 
-const UTR_RE = /^[A-Za-z0-9]{6,35}$/;
+// The same shape the UPI reader accepts (src/readers/upi.js): a clear reading must not dead-end here.
+const UTR_RE = /^[A-Za-z0-9-]{6,64}$/;
 
 /**
  * @param {{

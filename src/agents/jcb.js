@@ -1,6 +1,6 @@
 // The JCB owner's agent: the steps the owner and the operator can take, and what they are told when
 // the contractor's agent sends something. Every figure on a bill comes from the ledger (the agreed
-// rate from our own "yes", the hours from the two meter readings the operator confirmed); nothing
+// rate from our own "yes", the hours from the two recorded meter readings); nothing
 // is computed by a model.
 
 import { randomUUID } from 'node:crypto';

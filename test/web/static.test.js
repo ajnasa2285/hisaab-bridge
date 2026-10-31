@@ -5,12 +5,28 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { connect } from 'node:net';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../../src/app.js';
 
 const CSP = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'";
+
+// The page went blank live while every test here passed: the front door answered 404 for a module it imports.
+test('the front door lets through every source module the judge page imports, and no other', () => {
+  const web = new URL('../../web/', import.meta.url);
+  const imported = new Set();
+  for (const f of readdirSync(web).filter((n) => n.endsWith('.js') && n !== 'serve.js')) {
+    for (const m of readFileSync(new URL(f, web), 'utf8').matchAll(/^import\s[^;]*?from\s+'\.\.\/(src\/[^']+)'/gm)) imported.add(`/${m[1]}`);
+  }
+  assert.ok(imported.size > 0);
+  const caddy = readFileSync(new URL('../../deploy/aws/Caddyfile', import.meta.url), 'utf8');
+  const line = caddy.split('\n').find((l) => l.includes('@app path'));
+  assert.ok(line);
+  const paths = line.trim().split(/\s+/).slice(2);
+  for (const m of imported) assert.ok(paths.includes(m), `${m} is not let through`);
+  assert.deepEqual(paths.filter((p) => p.startsWith('/src')).sort(), ['/src/ledger/payments.js', '/src/ledger/usual.js']);
+});
 
 /** An app with no agents and no lines: enough for the page. */
 async function start() {

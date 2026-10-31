@@ -28,7 +28,7 @@ JCB owner               "भेजो" -> signed BILL, the meter photos' fingerp
 Contractor              sees the bill beside the supervisor's own count -> accept, or dispute with their figure
                         -> Muse Spark explains the difference from the evidence; code checks every number it cites
 JCB owner               keeps the bill or sends a CORRECTION; nothing is ever rewritten
-Contractor              sends the UPI screenshot -> Muse Spark reads amount, UTR, payee -> code matches it to the bill
+Contractor              sends the UPI screenshot -> Muse Spark reads amount, UTR, payee -> code picks the order by what is owed; the owner sees the payee
 JCB owner               "आया" -> SETTLED on both ledgers
 ```
 
@@ -36,6 +36,8 @@ The material flow is the same with a supplier agent: an order with items, rates 
 GST is part of the bill: the rate comes from the supplier's yes ("हाँ 380 + 28%") or from the tax invoice Muse Spark reads, code adds CGST + SGST to the paisa and checks the total against the invoice's grand total.
 
 **Nothing is booked, sent, accepted, corrected or settled without the explicit WhatsApp reply of the person allowed to decide it.** There are no payment reminders and no chasing; the JCB owner sees "unpaid", the agent never nags.
+
+One trade-off, made on purpose to save steps: a clear photo from the sender needs no extra reply. A clear meter reading is recorded, a clear challan becomes a signed delivery and a clear UPI screenshot becomes a signed payment claim at once. A claim or a delivery still has to pass the other side (the seller's "आया", the supervisor's own count), and that person is the check. An unclear photo is always asked about.
 
 ## Architecture
 
@@ -99,7 +101,7 @@ Accuracy is measured on real photos from our pilot, labelled by a person, with t
 | Kind of photo | held-out, 10 real meter photos | 10 / 10 | 0 | 0 | 6.1 s |
 | Kind of photo | development, 11 meter + 9 UPI | 20 / 20 | 0 | 0 | 6.9 s |
 
-The figure that matters most is the "wrong but confident" column: across all real images the readers were never confidently wrong. When unsure they ask the person, which costs one WhatsApp reply instead of a wrong bill. The held-out meter run cost about US$0.11 for 10 photos.
+The figure that matters most is the "wrong but confident" column: across all real images the readers were never confidently wrong. When unsure they ask the person, which costs one WhatsApp reply instead of a wrong bill. The held-out meter run cost about US$0.11 for 10 photos. It measured `meter-v1`; the shipped `meter-v2` adds a date field and memory of corrections and has not been re-run on held-out. With 10 photos, "never confidently wrong" still leaves a true rate that could be as high as about one in four.
 
 **Explanations**, live with Muse Spark on 8 invented disputes (JCB hours, material counts, corrections): 8 / 8 passed the number and wording checks, median 3.75 s, slowest 5.6 s (`docs/explanation-live-check.md`). Eight cases show the path works; they are not a measured pass rate.
 
@@ -118,7 +120,7 @@ Not yet measured: UPI on unseen screenshots and other UPI apps, the challan read
 
 ## Known limits (next steps)
 
-An independent audit found no critical or high issue. These are the limits it left that we have not built past yet:
+An independent audit found no critical or high issue. A later AI red-team review with Muse Wonder, on the public source only, claimed 20 findings (6 high, 10 medium, 4 low, none critical), including a replay of a signed refusal that the audit had called harmless. 19 were fixed, one of them only in part (oversized messages); the other is the order-splitting limit below. It is an AI review, not a certified penetration test. These are the limits we have not built past yet:
 
 - **No request-rate limits** on the public endpoints. Forged messages are refused by their signature, but a flood could slow the service.
 - **One shared viewer key** for the judge page, not one key per viewer, and it does not expire by itself.
@@ -126,6 +128,10 @@ An independent audit found no critical or high issue. These are the limits it le
 - **Ledger text from the other party still sits in the model's instructions** (site and item names, now limited to plain name characters). It is guarded by the tool list, the checks in code and the read-back; moving it out of the instructions comes later.
 - **A supervisor can split one need into several orders under the approval limit.** The contractor is told of each order, but they are not added up against the limit.
 - **All three agents run in one process on one host.** They keep separate keys and ledgers and talk only over A2A, but a compromise of that host reaches all three.
+- **A ledger's chain cannot show that its last rows were deleted.** Each ledger verifies on its own, and nothing yet compares its head with the other side's receipts.
+- **The UPI payee is shown, not checked.** Code does not compare it with the seller; the seller's own "आया" is the check.
+- **The explanation's wording check is a list of banned phrases.** Its number check is strict, but a sentence can be paraphrased past the wording check, so code's plain figures are always added after the prose.
+- **The first meter reading of a job has no continuity check,** since there is no earlier reading to compare it with.
 
 ## Roadmap: how the network grows
 
@@ -174,7 +180,7 @@ Our previous private project is Bhatta Munshi, a WhatsApp bookkeeping agent runn
 
 Pilot users: a JCB owner and a contractor we work with, with their consent. All data in this repository is invented; real photos, phone numbers and payments stay on the private server.
 
-Built by the owner with AI coding tools, all disclosed: Claude Code (lead and integrator), Astra (readers and measurement), Fable (Hindi texts, contractor features, judge page) and Codex.
+Built by the owner with AI coding tools, all disclosed: Claude Code (lead and integrator), Astra (readers and measurement), Fable (Hindi texts, contractor features, judge page) and Codex. Several sessions work in parallel, each in its own git worktree, and their work is merged in batches, which is why large tested commits can land minutes apart.
 
 ## Licence
 

@@ -72,7 +72,7 @@ Freeze requires nonempty development and held-out partitions and valid human-con
 
 ## Meter checkpoint prepared for 28 October
 
-The private split currently has 11 original development photos and 10 newly reserved held-out photos. The new photos form seven groups: the owner's related four-photo batch stays together, and the other six are single-photo groups. Original development assignments remain unchanged. The split is **not frozen**, no held-out inference has run, and no labels have been invented.
+The private split currently has 11 original development photos and 10 newly reserved held-out photos. The new photos form seven groups: the owner's related four-photo batch stays together, and the other six are single-photo groups. Original development assignments remain unchanged. The split was **frozen on 28 October 2026**, and the meter held-out checkpoint ran on `meter-v1`. No labels have been invented. The shipped reader is `meter-v2` (it adds a date field and memory of corrections) and has not been re-run on held-out, so a new report marks `promptsChangedSinceHeldout`.
 
 Owner sequence:
 
