@@ -8,6 +8,7 @@ Each builder adds a dated entry (IST) at the end of every work session: **done, 
 
 ## Claude (lead, integrator)
 
+- 2026-11-01 (IST) — Done: the owner's records as an Excel file (`एक्सेल`), received on WhatsApp; failed notices told again at the person's next message; the cross-check flags a message one side counts as refused and the other wrote. 1023 tests.
 - 2026-10-31 (IST) — Done: cancel after booking (signed `CANCEL`, `रद्द J-2`); open-question replies (`src/agents/open-questions.js`); the contractor told of each supervisor count equal to the challan; Astra's outside review (`gpt-6-astra`, on the public repo) and its fixes; missed notices rebuilt when a person next writes; ledger cross-check through receipts (`src/ledger/cross-check.js`); parallel fixes (operator money, JCB rate check, supervisor hours, seller warnings, corrections to zero). The latest fixes are live and not yet tried on WhatsApp.
   - Next: feature freeze 2 Nov, video 3 Nov, submit by the afternoon of 4 Nov (deadline 5 Nov 07:30 IST).
   - Blocked: none in code.
