@@ -91,7 +91,7 @@ Every model called at runtime is Meta's, through the Meta Model API. A test (`te
 
 ## Measured results
 
-Accuracy is measured on real photos from our pilot, labelled by a person, with the split frozen before the held-out run. The photos stay private; the aggregate reports are in `eval/results/`.
+Accuracy is measured on real photos from our own tests, labelled by a person, with the split frozen before the held-out run. The photos stay private; the aggregate reports are in `eval/results/`.
 
 | Reader | Set | Exact | Asked the person | Wrong but confident | Median time |
 |---|---|---|---|---|---|
@@ -115,8 +115,9 @@ Not yet measured: UPI on unseen screenshots and other UPI apps, the challan read
 
 - Running live on EC2 with HTTPS: three agents, their keys and ledgers, the webhooks, the judge page.
 - All three agents run on one server and one WhatsApp number, each person routed by their phone number to their own agent and role. The code has a line per agent, but everyone writes to the one number today.
-- Real phones, with a real JCB owner, supplier and supervisor, have run real orders. J-1 and P-1 to P-4 are settled. J-2 and J-3 were booked and then cancelled because of rain.
-- The people involved are the owner's own contacts. Nobody is paying. There is no self-service onboarding: each phone is added by hand.
+- These are test orders on real phones. The builder played the contractor throughout, and the supplier on P-1 to P-4. The supervisor is a real supervisor. J-1's JCB owner is a real one; on later JCB orders someone else acted as the owner. The builder's helper was the operator. J-1 and P-1 to P-4 are settled. J-2 and J-3 were booked and then cancelled because of rain.
+- So P-4's objection and corrected bill were the builder on both sides, testing the flow, not a dispute between two businesses.
+- Nobody is paying, and no unrelated business has used it. There is no self-service onboarding: each phone is added by hand.
 - The latest fixes (the ledger cross-check, hiding money from the JCB operator, the JCB rate check, the supervisor's hours, the sellers' warnings, corrections to zero) passed the automated tests and are live, but have not been tried on WhatsApp. The same goes for the missed notices told again after 24 hours' silence. Some older paths have also not been seen on WhatsApp, among them advance payments and the `सबूत` command.
 - On 28 October Meta locked the business account of a separate site number (error 131031). Nothing we hold shows this has been resolved. The orders above did not depend on that number.
 
@@ -230,7 +231,7 @@ Our application proposed a WhatsApp site office that turns contractors' field ph
 
 Our previous private project is Bhatta Munshi, a WhatsApp bookkeeping agent running daily at our own brick kiln, described in our application. What we learned there (the person confirms before anything is recorded, code checks every figure the model reads) shaped this design. In this entry those ideas hold only as described above: a clear photo needs no extra reply, and some things a model reads, such as the UPI payee, are shown rather than checked. No code from it is used, and it is not part of this entry. The organisers confirmed that mentioning it as context is fine.
 
-Pilot users: a JCB owner and a contractor we work with, with their consent. All data in this repository is invented; real photos, phone numbers and payments stay on the private server.
+No pilot has started. The people in the tests are listed under "What works today". All data in this repository is invented; real photos, phone numbers and payments stay on the private server.
 
 Built by the owner with AI coding tools, all disclosed: Claude Code (lead and integrator), Astra (readers and measurement), Fable (Hindi texts, contractor features, judge page) and Codex. No code predates the event. Claude Code, Astra and Fable wrote it in parallel sessions, each in its own git worktree, and Astra's ultra mode itself runs parallel agents. Their work is merged in batches, which is why large tested commits can land minutes apart.
 
