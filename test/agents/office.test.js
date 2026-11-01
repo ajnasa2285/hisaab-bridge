@@ -120,6 +120,7 @@ test('a JCB request with no hours counts as a 12-hour day at the last agreed rat
     await settle();
     await runTool(s.jcb.tools, owner, { tool: 'reply_booking', args: { orderId: jcbOrders()[0].order_id, answer: 'yes', ratePaise: 120000 } });
     await settle();
+    s.advance(1000); // Orders list by when they were made; on a tie, by their random id.
     // 12 h × ₹1,200 = ₹14,400: read back once, then sent.
     await d.ask(supervisor, 'parso Gwalior JCB', jcbCall('Gwalior', '31-10', null));
     assert.equal(d.last('supervisor')[1], 'step.request_jcb');
@@ -128,6 +129,7 @@ test('a JCB request with no hours counts as a 12-hour day at the last agreed rat
     assert.equal(jcbOrders().length, 2);
     await runTool(s.jcb.tools, owner, { tool: 'reply_booking', args: { orderId: jcbOrders()[1].order_id, answer: 'yes', ratePaise: 300000 } });
     await settle();
+    s.advance(1000);
     // 12 h × ₹3,000 = ₹36,000: held, and the contractor is not shown a figure nobody asked for.
     await d.ask(supervisor, 'parso Datia JCB', jcbCall('Datia', '31-10', null));
     assert.equal(d.last('supervisor')[1], 'office.held_step');
