@@ -330,6 +330,47 @@ test('a notice whose send fails is kept and told at the next message; the messag
   assert.equal(d.to(CONTRACTOR).filter((x) => x.includes('₹19,000')).length, 1);
 });
 
+test('a failed send inside the window (Meta down): an open question is rebuilt and told, once', async (tc) => {
+  const d = await desk(tc);
+  await d.say(CONTRACTOR, 'मदद');
+  const orderId = await d.material({ bill: false });
+  const before = d.to(CONTRACTOR).length;
+  d.state.failNext = 1;
+  await d.run(d.supEntry, supplier, 'send_bill', { orderId });
+  assert.equal(d.to(CONTRACTOR).length, before, 'the bill did not go');
+  await d.say(CONTRACTOR, 'मदद');
+  const words = d.to(CONTRACTOR).slice(before);
+  assert.equal(words.length, 2, words.join(' | '));
+  assert.ok(words[0].includes('"हाँ P-1"'), words[0]);
+  assert.equal(words[1], t('help.contractor'));
+  await d.say(CONTRACTOR, 'मदद');
+  assert.equal(d.to(CONTRACTOR).slice(before).length, 3, 'never twice');
+});
+
+test('a failed send inside the window with nothing to rebuild: the person is told a notice on that order did not arrive', async (tc) => {
+  const d = await desk(tc);
+  await d.say(CONTRACTOR, 'मदद');
+  await d.run(d.siteEntry, contractor, 'request_material', { site: 'Rampur', day: '2026-10-30', items: [CEMENT] });
+  const orderId = String(d.supEntry.core.ledger.orders()[0].order_id);
+  const before = d.to(CONTRACTOR).length;
+  d.state.failNext = 1;
+  await d.run(d.supEntry, supplier, 'reply_order', { orderId, answer: 'yes', ratesPaise: [38000] });
+  assert.equal(d.to(CONTRACTOR).length, before, 'the booking notice did not go');
+  await d.say(CONTRACTOR, 'मदद');
+  assert.deepEqual(d.to(CONTRACTOR).slice(before), [t('common.notice_failed', { ref: 'P-1' }), t('help.contractor')]);
+  await d.say(CONTRACTOR, 'मदद');
+  assert.equal(d.to(CONTRACTOR).filter((x) => x === t('common.notice_failed', { ref: 'P-1' })).length, 1, 'never twice');
+});
+
+test('outside the window a notice with nothing to rebuild is still not told again', async (tc) => {
+  const d = await desk(tc);
+  await d.run(d.siteEntry, contractor, 'request_material', { site: 'Rampur', day: '2026-10-30', items: [CEMENT] });
+  const orderId = String(d.supEntry.core.ledger.orders()[0].order_id);
+  await d.run(d.supEntry, supplier, 'reply_order', { orderId, answer: 'yes', ratesPaise: [38000] });
+  await d.say(CONTRACTOR, 'मदद');
+  assert.deepEqual(d.to(CONTRACTOR), [t('help.contractor')]);
+});
+
 // The key recorded as missed can be "usual.notice" (withUsual), and it can change after it was missed.
 test('a bill first told with the "usual" line is found under that key, and under any key of a bill on that reference', async () => {
   const contractorP = person('contractor', SITE_ID);

@@ -47,6 +47,8 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 
 // The reason src/wa/wa.js gives when a person has not written in the last 24 hours.
 const OUTSIDE_WINDOW = 'outside 24h window';
+// Kept beside a notice whose send failed: it may be one the ledger cannot rebuild, so the person is at least told.
+const NOTICE_FAILED = 'common.notice_failed';
 const RETRY_MS = 60 * 1000;
 // How often the ledgers are checked. Under WhatsApp's 24 hours on purpose: someone who was outside the
 // window when told is told at the first check after they next write, while it is open.
@@ -143,16 +145,20 @@ export function createApp(cfg) {
   const clients = new Map(cfg.lines.map((l) => [l.phoneNumberId, createCloudClient({ phoneNumberId: l.phoneNumberId, accessToken: l.accessToken, graphVersion: l.graphVersion, fetch: cfg.fetch })]));
 
   /**
-   * Sends a text to a person on their line; outside the 24-hour window it is only logged, and a notice
-   * about an order (`missed`: its reference and text key) is remembered to be told again, rebuilt from
-   * the ledger, when the person next writes (tellWaiting).
+   * Sends a text to a person on their line. When it does not go, for any reason, a notice about an order
+   * (`missed`: its reference and text key) is remembered to be told again, rebuilt from the ledger, when
+   * the person next writes (tellWaiting). Outside the 24-hour window that is all; any other failure also
+   * leaves NOTICE_FAILED, because the person had every reason to expect this notice.
    * @param {Person} p @param {string} text @param {{ref: unknown, key: string}} [missed]
    * @returns {Promise<boolean>} sent
    */
   async function sendTo(p, text, missed) {
     const r = await wa.send(p.line, p.phone, text);
     if (!r.ok) log(`notice to ${p.role} ${maskPhone(p.phone)} not sent: ${r.reason}`);
-    if (!r.ok && r.reason === OUTSIDE_WINDOW && missed && typeof missed.ref === 'string' && missed.ref !== '—') store.missed(p.line, p.phone, missed.ref, missed.key, now());
+    if (!r.ok && missed && typeof missed.ref === 'string' && missed.ref !== '—') {
+      store.missed(p.line, p.phone, missed.ref, missed.key, now());
+      if (r.reason !== OUTSIDE_WINDOW) store.missed(p.line, p.phone, missed.ref, NOTICE_FAILED, now());
+    }
     return r.ok;
   }
 
@@ -163,7 +169,7 @@ export function createApp(cfg) {
    * handled as usual. What could not be sent is kept for the next time. Such a notice sets no expectation:
    * it asks for "हाँ <ref>", and a plain "हाँ" right after it decides nothing, one whose send failed too (a
    * seller's plain yes would otherwise confirm a payment never seen). A clubbed payment counts under all its
-   * references.
+   * references. A failed send on an order with nothing to rebuild is told as just that, with the reference.
    * A decision on a supervisor's step (`toldOnly`) asks nothing, so that "हाँ" is left as it was.
    * @param {Person} person @param {{cfg: AgentConfig, core: any, talk: ReturnType<typeof createConversation>, office: ReturnType<typeof createOffice>,
    *   agent: {waiting?: (role: string) => {key: string, params: Record<string, string | number>, also?: RegExp}[]}}} entry
@@ -183,6 +189,10 @@ export function createApp(cfg) {
         if (!n.toldOnly) told.push(...String('refs' in n.params ? n.params.refs : n.params.ref).split(', '));
         if (!(await sendTo(person, t(n.key, n.params)))) continue;
         unsent = unsent.filter((m) => missedWaiting([m], [n]).length === 0);
+      }
+      const covered = notices.flatMap((n) => String('refs' in n.params ? n.params.refs : n.params.ref).split(', '));
+      for (const m of missed) {
+        if (m.key === NOTICE_FAILED && !covered.includes(m.ref) && !(await sendTo(person, t(NOTICE_FAILED, { ref: m.ref })))) unsent.push(m);
       }
     } catch (e) {
       log(`missed notices to ${person.role} ${maskPhone(person.phone)} not told: ${e instanceof Error ? e.message : 'error'}`);

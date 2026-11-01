@@ -11,9 +11,11 @@
 //               written: the row itself the first time, a later row when a repeat is answered. So it
 //               is never older than the entry, and a repeat's second receipt names a later head.
 // A receipt is an 'in' row of the sender's ledger only: the receiver never stores the receipts it signs.
-// A message that was refused or expired undelivered has a REFUSE or a local note and no receipt, the
-// other side wrote nothing, and there is nothing to compare. An evidence request can have both: its
-// receipt says it was written, and the owner's refusal comes later, so the receipt still counts.
+// A message that was refused or expired undelivered has a REFUSE or a local note and no receipt, and
+// the other side wrote nothing. So if the other side did write it, it answered falsely, or one ledger was
+// changed, and the two now see the order differently: compared here by message id, without a receipt. An
+// evidence request can have both: its receipt says it was written, and the owner's refusal comes later,
+// so the receipt still counts; evidence never changes an order's state.
 //
 // Pure, and no imports: the judge page runs this file in the browser (web/judge.js), the server too
 // (src/ledger/integrity.js). Whether a receipt's signature is genuine is left to the caller's `verify`,
@@ -34,7 +36,8 @@
  * head_missing       chain_head is no hash in the peer's chain
  * head_before_entry  chain_head is older than the entry it should follow
  * bad_signature      the receipt row is not what the peer signed (only with `verify`)
- * @typedef {'entry_missing'|'wrong_entry'|'head_missing'|'head_before_entry'|'bad_signature'} Problem
+ * refused_but_written  the holder counts its message as refused or undelivered, the peer wrote it
+ * @typedef {'entry_missing'|'wrong_entry'|'head_missing'|'head_before_entry'|'bad_signature'|'refused_but_written'} Problem
  */
 /** @typedef {{holder: string, peer: string, seq: number, orderId: string, kind: Problem}} Mismatch */
 /**
@@ -70,6 +73,15 @@ export function checkReceipts(holder, peer, verify) {
     else if (entry.msgId !== b.receipt_for || entry.direction !== 'in' || entry.orderId !== e.orderId || entry.body?.from !== holder.id) problem('wrong_entry');
     if (!head) problem('head_missing');
     else if (entry && head.seq < entry.seq) problem('head_before_entry');
+  }
+  const written = new Set(peer.events.filter((e) => e.direction === 'in').map((e) => e.msgId));
+  const dropped = new Set(holder.events.flatMap((e) => {
+    if (e.direction === 'in' && e.type === 'REFUSE') return [e.body?.body?.refers_to];
+    return e.direction === 'local' && e.type === 'NOTE' && e.body?.kind === 'undelivered' ? [e.body.msg_id] : [];
+  }));
+  for (const e of holder.events) {
+    if (e.direction !== 'out' || e.type === 'EVIDENCE' || e.type === 'EVIDENCE_REQUEST') continue;
+    if (dropped.has(e.msgId) && written.has(e.msgId)) out.mismatches.push({ holder: holder.id, peer: peer.id, seq: e.seq, orderId: e.orderId, kind: 'refused_but_written' });
   }
   return out;
 }

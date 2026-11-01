@@ -59,7 +59,7 @@ export async function checkLedgers(agents, o = {}) {
         signaturesChecked += r.signaturesChecked;
         for (const m of r.mismatches) {
           const [holder, peer] = [nameOf.get(m.holder), nameOf.get(m.peer)];
-          failures.push({ id: `receipt:${holder}:${m.seq}:${m.kind}`, agents: [m.holder, m.peer], seq: m.seq, orderId: m.orderId, kind: m.kind, text: `${holder} seq ${m.seq}, receipt from ${peer}: ${m.kind}` });
+          failures.push({ id: `receipt:${holder}:${m.seq}:${m.kind}`, agents: [m.holder, m.peer], seq: m.seq, orderId: m.orderId, kind: m.kind, text: `${holder} seq ${m.seq}, ${m.kind === 'refused_but_written' ? `message to ${peer}` : `receipt from ${peer}`}: ${m.kind}` });
         }
       } catch (e) { o.onError?.(`${a.name}/${b.name}`, e); }
       await nextTurn();

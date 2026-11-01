@@ -56,7 +56,7 @@ Labels are in Hindi; the button at the top switches to English for judges. Texts
   their other orders with the same group total, and each order shows only its own share;
 - the chain check of each ledger and, per order, the state replayed from its events (the
   material path included; a history that breaks the state rules is marked ❌);
-- **the cross-check through receipts**, under the ledger cards: for the contractor with each seller, receipts compared, signatures checked and each mismatch (row, order, kind), from the pure `src/ledger/cross-check.js`; rows after the last receipt are not covered;
+- **the cross-check through receipts**, under the ledger cards: for the contractor with each seller, receipts compared, signatures checked and each mismatch (row, order, kind), from the pure `src/ledger/cross-check.js`; it also flags a message one side counts as refused and the other wrote; rows after the last receipt are not covered;
 - a results panel from `eval/results/*.json` (aggregate numbers only); "—" when there are none;
 - **inside the agent** (below), under each side's column;
 - **learning from corrections** (below), inside each ledger card at the top.
