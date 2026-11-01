@@ -108,6 +108,37 @@ function siteDesk(s, limits) {
 const jcbCall = (site, day, hours) => ({ name: 'request_jcb', args: { site, day, time: '8', hours } });
 const settle = () => new Promise((r) => setImmediate(r));
 
+test('a JCB request with no hours counts as a 12-hour day at the last agreed rate: under the limit it goes, over it waits with no estimate shown', async () => {
+  const s = await setup();
+  try {
+    const d = siteDesk(s, { procurementPaise: 2500000 }); // ₹25,000
+    const jcbOrders = () => /** @type {any[]} */ (s.jcbCore.ledger.orders());
+    // No rate on record: it still waits for the contractor.
+    await d.ask(supervisor, 'kal Shivpuri JCB', jcbCall('Shivpuri', '30-10', null));
+    assert.equal(d.last('supervisor')[1], 'office.held_step');
+    await d.ask(contractor, 'ok J-1');
+    await settle();
+    await runTool(s.jcb.tools, owner, { tool: 'reply_booking', args: { orderId: jcbOrders()[0].order_id, answer: 'yes', ratePaise: 120000 } });
+    await settle();
+    // 12 h × ₹1,200 = ₹14,400: read back once, then sent.
+    await d.ask(supervisor, 'parso Gwalior JCB', jcbCall('Gwalior', '31-10', null));
+    assert.equal(d.last('supervisor')[1], 'step.request_jcb');
+    await d.ask(supervisor, 'हाँ');
+    assert.equal(d.last('supervisor')[3].ref, 'J-2');
+    assert.equal(jcbOrders().length, 2);
+    await runTool(s.jcb.tools, owner, { tool: 'reply_booking', args: { orderId: jcbOrders()[1].order_id, answer: 'yes', ratePaise: 300000 } });
+    await settle();
+    // 12 h × ₹3,000 = ₹36,000: held, and the contractor is not shown a figure nobody asked for.
+    await d.ask(supervisor, 'parso Datia JCB', jcbCall('Datia', '31-10', null));
+    assert.equal(d.last('supervisor')[1], 'office.held_step');
+    assert.equal(d.last('all:contractor')[1], 'office.approval_needed');
+    assert.ok(!d.last('all:contractor')[2].includes('₹36,000'));
+    // Hours named: the usual sum, 6 h × ₹3,000 = ₹18,000.
+    await d.ask(supervisor, 'parso Datia 6 ghante', jcbCall('Datia', '31-10', '6'));
+    assert.equal(d.last('supervisor')[1], 'step.request_jcb');
+  } finally { await s.close(); }
+});
+
 test('approvals with limits: above the limit or not estimable waits for the contractor; OK runs it exactly; decided once', async () => {
   const s = await setup();
   try {

@@ -27,6 +27,8 @@ import { MAX_JOB_TENTHS, jcbBillBody } from './jcb.js';
 
 // The same shape the UPI reader accepts (src/readers/upi.js): a clear reading must not dead-end here.
 const UTR_RE = /^[A-Za-z0-9-]{6,64}$/;
+// A JCB day when the request names no hours, in tenths of an hour, for the approval limit only.
+const LONG_JCB_DAY_TENTHS = 120;
 // The keys a bill or correction may have been missed under. What is told again is the bill in force, so
 // a key from a bill since replaced, or from before the "usual" line came or went, leads to it too.
 const BILL_KEYS = /^(?:usual\.notice|site\.(?:(?:bill|correction)_(?:received_hours_match|hours_differs)|(?:material_)?(?:bill_received|correction_received|bill_no_count|bill_count_differs|bill_mismatch)(?:_invoice_(?:match|differs))?))$/u;
@@ -273,9 +275,14 @@ export function createContractorAgent(o) {
     request_jcb: {
       roles: ['contractor', 'supervisor'],
       commits: true,
-      // The value an approval limit compares: hours × the last agreed JCB rate; unknown → null.
+      // The value an approval limit compares: hours × the last agreed JCB rate; unknown → null. With no
+      // hours asked for, the limit compares a long day instead, and no estimate is shown for it.
       hold: {
         limit: 'procurement',
+        worstPaise: (a) => {
+          const rate = lastJcbRate();
+          return rate === null ? null : Math.round(((posInt(a.hoursTenths) ? a.hoursTenths : LONG_JCB_DAY_TENTHS) * rate) / 10);
+        },
         usualNote: (a, estimate = true) => requestNotes(a, 'jcb_hours', estimate),
         estimatePaise: (a) => {
           const rate = lastJcbRate();

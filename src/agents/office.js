@@ -301,7 +301,7 @@ export function createOffice(o) {
     const step = Object.hasOwn(o.tools, tool) ? o.tools[tool] : undefined;
     if (!step?.hold || o.kind !== 'contractor' || person.role !== 'supervisor' || !step.roles.includes(person.role)) return false;
     const limit = o.limits?.procurementPaise;
-    const estimate = step.hold.estimatePaise(args);
+    const estimate = step.hold.worstPaise ? step.hold.worstPaise(args) : step.hold.estimatePaise(args);
     return limit === undefined || estimate === null || estimate > limit;
   }
 
