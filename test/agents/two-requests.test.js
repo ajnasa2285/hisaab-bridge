@@ -100,7 +100,7 @@ test('the limit is checked per order: one is held for the contractor while the o
   const d = await desk({
     limits: { procurementPaise: 100000 },
     // The JCB's estimate is within the limit; the material's rate is not known, so it cannot be estimated.
-    tools: (tools) => ({ ...tools, request_jcb: { ...tools.request_jcb, hold: { ...tools.request_jcb.hold, estimatePaise: () => 5000 } } }),
+    tools: (tools) => ({ ...tools, request_jcb: { ...tools.request_jcb, hold: { ...tools.request_jcb.hold, estimatePaise: () => 5000, worstPaise: () => 5000 } } }),
   });
   await d.say(supervisor, 'x', material(), jcb());
   assert.equal(d.last(supervisor)[1], 'step.two_requests', 'one read-back, even for a supervisor');
