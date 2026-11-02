@@ -102,6 +102,9 @@ import { plain, promptBlock, voiceParty } from '../learn/corrections.js';
 /** @typedef {typeof import('../readers/cash-receipt.js').readCashReceipt} CashReceiptReader */
 
 const PENDING_MS = 30 * 60 * 1000;
+// A bill told to the contractor stays answerable by a plain yes for a day (live, J-4: the yes came 40
+// minutes later and was read back). The bill is named in the question; a changed bill is refused.
+const BILL_OPEN_MS = 24 * 60 * 60 * 1000;
 const MAX_WAITING = 20;
 /** A JCB day longer than this (12 h) is read back once before it counts. */
 const LONG_JOB_TENTHS = 120;
@@ -168,6 +171,9 @@ const tenthsText = (/** @type {number} */ v) => `${Math.floor(v / 10)}.${v % 10}
 export function createConversation(o) {
   /** @type {Map<string, Pending>} */
   const pending = new Map();
+  // An end photo of each job that was read but not recorded yet: a figure typed next belongs to it.
+  /** @type {Map<string, {sha256: string, takenAt: string | null, at: number}>} */
+  const endPhotos = new Map();
   // Notices told again after a closed 24-hour window: which references, and when (replayed()).
   /** @type {Map<string, {refs: string[], at: number}>} */
   const replayedRefs = new Map();
@@ -309,7 +315,8 @@ export function createConversation(o) {
   function current(person) {
     const p = pending.get(keyOf(person));
     if (!p) return null;
-    if (o.now() - p.at > PENDING_MS) {
+    const lasts = p.kind === 'confirm' && p.notice && p.tool === 'accept_bill' ? BILL_OPEN_MS : PENDING_MS;
+    if (o.now() - p.at > lasts) {
       pending.delete(keyOf(person));
       return null;
     }
@@ -559,6 +566,7 @@ export function createConversation(o) {
       }
       if (NO.has(said)) {
         pending.delete(keyOf(person));
+        if (p.tool === 'record_meter') endPhotos.delete(p.args.orderId);
         // A question whose "no" is itself a decision (the owner declines to share a photo) runs it.
         if (p.no) return commitNow(person, p.no.tool, p.no.args);
         return o.reply(person, 'step.cancelled');
@@ -643,6 +651,7 @@ export function createConversation(o) {
       if (m) {
         pending.delete(keyOf(person));
         const valueTenths = Number(m[1]) * 10 + Number(m[2] ?? '0');
+        if (p.which === 'end') return onEndFigure(person, p.orderId, { sha256: p.sha256, takenAt: p.takenAt }, valueTenths);
         // Digits with no dot may have lost the meter's last, tenths digit (live, J-4: 9983.1 typed as
         // 99831). No end reading is there yet to show it, so a start reading is read back. An end
         // reading typed that way is more than a day's work and is refused.
@@ -655,6 +664,7 @@ export function createConversation(o) {
       }
       if (NO.has(said)) {
         pending.delete(keyOf(person));
+        endPhotos.delete(p.orderId);
         return o.reply(person, 'step.cancelled');
       }
       pending.delete(keyOf(person));
@@ -676,6 +686,7 @@ export function createConversation(o) {
     }
     if (HELP.has(said)) return o.reply(person, `help.${person.role}`);
     const correction = meterCorrection(person, said);
+    if (correction?.photo) return onEndFigure(person, correction.orderId, correction.photo, correction.valueTenths);
     if (correction) return propose(person, 'correct_meter', correction);
 
     // Right after notices told again: a bare yes or no may have been written before they were read, and
@@ -1065,7 +1076,33 @@ export function createConversation(o) {
     const r = meterReadings(o.ledger.events(orderId));
     const which = r.end ? 'end' : 'start';
     const valueTenths = Number(m[1]) * 10 + Number(m[2] ?? '0');
+    // An end photo is waiting: the figure is for that photo (live, J-4: 9989.3 for the end became the start).
+    const photo = r.end ? undefined : endPhotos.get(orderId);
+    if (photo && o.now() - photo.at <= PENDING_MS) return { orderId, valueTenths, photo };
     return r[which]?.valueTenths === valueTenths ? null : { orderId, which, valueTenths };
+  }
+
+  /**
+   * A figure typed for an end photo that was read and not recorded. Above the start, within a day's
+   * work: the end reading. More than a day's work: refused, and the question stays open. At or below
+   * the start it cannot be the end, so the start may be what is wrong: read back as a change to it.
+   * @param {Person} person @param {string} orderId @param {{sha256: string, takenAt: string | null}} photo @param {number} valueTenths
+   */
+  function onEndFigure(person, orderId, photo, valueTenths) {
+    const { start } = meterReadings(o.ledger.events(orderId));
+    if (start && valueTenths <= start.valueTenths) {
+      endPhotos.set(orderId, { ...photo, at: o.now() });
+      if (valueTenths < start.valueTenths && may(person, 'correct_meter')) return propose(person, 'correct_meter', { orderId, which: 'start', valueTenths });
+      return o.reply(person, 'jcb.end_not_after_start', { start: tenths(start.valueTenths) });
+    }
+    if (start && valueTenths - start.valueTenths > MAX_JOB_TENTHS) {
+      pending.set(keyOf(person), { kind: 'meter_digits', orderId, which: 'end', ...photo, at: o.now() });
+      endPhotos.set(orderId, { ...photo, at: o.now() });
+      return o.reply(person, 'jcb.meter_hours_impossible', impossible(start.valueTenths, valueTenths));
+    }
+    pending.delete(keyOf(person));
+    endPhotos.delete(orderId);
+    return commitNow(person, 'record_meter', { orderId, which: 'end', valueTenths, ...photo }, () => learnFrom(photo.sha256, [valueTenths]));
   }
 
   /**
@@ -1211,9 +1248,11 @@ export function createConversation(o) {
     const dated = displayDateWrong(read.displayDate, day, o.now());
     if (dated.wrong) return o.reply(person, 'meter.display_date', { raw: dated.shown, day: dayName(/** @type {string} */ (day)) });
     rememberPhoto(person, image);
+    if (which === 'end') endPhotos.set(picked.orderId, { sha256, takenAt, at: o.now() });
     if (!read.clear || read.valueTenths === null) {
       pending.set(keyOf(person), { kind: 'meter_digits', orderId: picked.orderId, which, sha256, takenAt, at: o.now() });
-      return o.reply(person, read.raw ? 'meter.ask_person' : 'meter.ask_person_blank', { raw: read.raw });
+      // Digits with no dot are not shown: live on J-4, 99831 was copied back for 9983.1.
+      return o.reply(person, read.raw.includes('.') ? 'meter.ask_person' : 'meter.ask_person_blank', { raw: read.raw });
     }
     const args = { orderId: picked.orderId, which, valueTenths: read.valueTenths, sha256, takenAt };
     const { start: startNow, end: endNow } = r;

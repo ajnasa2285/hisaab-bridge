@@ -41,6 +41,7 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `meter.typed_no_dot` | reading, dotted | start digits typed with no dot: read back, with the same digits as tenths offered |
 | `meter.which.start`, `meter.which.end` | — | "start" or "end", in the correction texts |
 | `step.correct_meter` | what, old, reading | the read-back of a bare figure from the operator |
+| `step.correct_meter_up` | what, old, reading | the same for a higher start: if it is the end reading, say no and send the end photo |
 | `jcb.meter_which_stale` | — | a start reading when the start is already recorded (a slow photo or an old read-back); nothing recorded |
 | `jcb.start_first` | — | to operator: send the start photo first |
 | `jcb.end_not_after_start` | start | to operator: the end reading must be more than the start |

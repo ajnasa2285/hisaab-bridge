@@ -180,7 +180,9 @@ export function createJcbAgent(o) {
       commits: true,
       describe: (a) => {
         const was = isUuid(a.orderId) && (a.which === 'start' || a.which === 'end') ? meterReadings(ledger.events(a.orderId))[/** @type {'start' | 'end'} */ (a.which)] : null;
-        return { key: 'step.correct_meter', params: {
+        // A higher start may really be the end reading: said so, with what to do instead.
+        const up = a.which === 'start' && was && nonNegInt(a.valueTenths) && a.valueTenths > was.valueTenths;
+        return { key: up ? 'step.correct_meter_up' : 'step.correct_meter', params: {
           what: t(`meter.which.${a.which === 'end' ? 'end' : 'start'}`), old: was ? hours(was.valueTenths) : '—', reading: nonNegInt(a.valueTenths) ? hours(a.valueTenths) : '—',
         } };
       },

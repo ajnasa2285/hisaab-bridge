@@ -60,7 +60,7 @@ async function desk(tc, jobs = 1) {
 test('start digits with no dot are read back, and the dotted figure offered there is recorded', async (tc) => {
   const f = await desk(tc);
   await f.talk.onImage(operator, photo(1));
-  assert.equal(f.last(), 'meter.ask_person');
+  assert.equal(f.last(), 'meter.ask_person_blank', 'digits with no dot are not offered to copy');
   await f.talk.onText(operator, '99831');
   assert.equal(f.last(), 'meter.typed_no_dot');
   assert.ok(f.lastText().includes('9983.1'), f.lastText());
@@ -180,4 +180,97 @@ test('only the operator corrects, and with two jobs that have readings a bare fi
   assert.notEqual(f.last(), 'step.correct_meter');
   const byOwner = await runTool(f.s.jcb.tools, owner, { tool: 'correct_meter', args: { orderId: f.ids[0], which: 'start', valueTenths: 9999 } });
   assert.equal(byOwner.ok, false);
+});
+
+/** @param {number} valueTenths */
+const unsure = (valueTenths) => ({ ...clear(valueTenths), valueTenths: null, clear: false });
+
+test('J-4 at the end: refused digits leave the question open, and the right digits are the end, not the start', async (tc) => {
+  const f = await desk(tc);
+  f.next = clear(99831);
+  await f.talk.onImage(operator, photo(1));
+  f.next = unsure(99893);
+  await f.talk.onImage(operator, photo(2));
+  assert.equal(f.last(), 'meter.ask_person');
+  await f.talk.onText(operator, '99893');
+  assert.equal(f.last(), 'jcb.meter_hours_impossible');
+  await f.talk.onText(operator, '9989.3');
+  assert.equal(f.last(), 'jcb.meter_end_saved');
+  assert.equal(f.readings().start?.valueTenths, 99831, 'the start stays');
+  assert.equal(f.readings().end?.valueTenths, 99893);
+  assert.equal(f.rows().length, 2);
+  assert.notEqual(f.readings().end?.sha256, f.readings().start?.sha256, 'the end keeps its own photo');
+});
+
+test('an end photo waiting after its question lapsed: a figure above the start is still not a change to the start, for 30 minutes', async (tc) => {
+  const f = await desk(tc);
+  f.next = clear(99831);
+  await f.talk.onImage(operator, photo(1));
+  f.next = unsure(99893);
+  await f.talk.onImage(operator, photo(2));
+  await f.talk.onText(operator, 'नमस्ते');
+  assert.equal(f.talk.pending(operator), null, 'the question lapsed');
+  await f.talk.onText(operator, '9989.3');
+  assert.equal(f.last(), 'jcb.meter_end_saved');
+  assert.equal(f.readings().start?.valueTenths, 99831);
+});
+
+test('a figure below a wrong start, with an end photo waiting: read back as the start, and the next figure is the end', async (tc) => {
+  const f = await desk(tc);
+  f.next = clear(99893);
+  await f.talk.onImage(operator, photo(1));
+  f.next = unsure(99893);
+  await f.talk.onImage(operator, photo(2));
+  await f.talk.onText(operator, '9983.1');
+  assert.equal(f.last(), 'step.correct_meter');
+  await f.talk.onText(operator, 'हाँ');
+  assert.equal(f.last(), 'jcb.meter_corrected');
+  assert.equal(f.readings().start?.valueTenths, 99831);
+  await f.talk.onText(operator, '9989.3');
+  assert.equal(f.last(), 'jcb.meter_end_saved');
+  assert.equal(f.readings().end?.valueTenths, 99893);
+});
+
+test('a photo refused with "no" is forgotten: the next figure does not take that photo', async (tc) => {
+  const f = await desk(tc);
+  f.next = clear(99831);
+  await f.talk.onImage(operator, photo(1));
+  f.next = clear(99827);
+  await f.talk.onImage(operator, photo(2));
+  assert.equal(f.last(), 'step.record_meter_end');
+  await f.talk.onText(operator, 'नहीं');
+  await f.talk.onText(operator, '9989.3');
+  assert.equal(f.last(), 'step.correct_meter_up', 'no end photo: said to be a change to the start, with the warning');
+  assert.ok(f.lastText().includes('फ़ोटो'), f.lastText());
+  await f.talk.onText(operator, 'नहीं');
+  assert.equal(f.readings().start?.valueTenths, 99831);
+  assert.equal(f.readings().end, null);
+});
+
+test('a waiting end photo older than 30 minutes no longer takes a figure', async (tc) => {
+  const f = await desk(tc);
+  f.next = clear(99831);
+  await f.talk.onImage(operator, photo(1));
+  f.next = unsure(99893);
+  await f.talk.onImage(operator, photo(2));
+  f.s.advance(31 * 60 * 1000);
+  await f.talk.onText(operator, '9989.3');
+  assert.equal(f.last(), 'step.correct_meter_up');
+  assert.equal(f.readings().end, null);
+});
+
+test('a plain yes to a bill still counts 40 minutes later, and not after a day', async (tc) => {
+  const f = await desk(tc);
+  /** @type {[string, string][]} */ const said = [];
+  const talk = createConversation({
+    ledger: f.s.siteCore.ledger, tools: f.s.site.tools, now: f.s.siteCore.now,
+    spark: async () => ({ ok: true, toolCalls: [{ name: 'help', args: {} }] }),
+    reply: (_p, key, params) => { said.push([key, t(key, params)]); },
+  });
+  const orderId = String(/** @type {any} */ (f.s.siteCore.ledger.orders()[0]).order_id);
+  talk.expect(contractor, 'accept_bill', { orderId });
+  f.s.advance(40 * 60 * 1000);
+  assert.equal(/** @type {any} */ (talk.pending(contractor))?.tool, 'accept_bill');
+  f.s.advance(24 * 60 * 60 * 1000);
+  assert.equal(talk.pending(contractor), null);
 });

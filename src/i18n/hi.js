@@ -209,6 +209,7 @@ export const hi = Object.freeze({
   'step.reply_booking_other_time': '{site} के लिए दूसरा दिन सुझाएँ: {day}? हाँ / नहीं',
   'step.reply_booking_other_time_time': '{site} के लिए दूसरा दिन सुझाएँ: {day}, {time} बजे से? हाँ / नहीं',
   'step.correct_meter': '{what} का मीटर {old} से बदलकर {reading} करें? पुरानी रीडिंग भी रिकॉर्ड में रहेगी। हाँ / नहीं',
+  'step.correct_meter_up': '{what} का मीटर {old} से बदलकर {reading} करें? यह काम ख़त्म होने की रीडिंग हो तो "नहीं" लिखें और अंत के मीटर की फ़ोटो भेजें। हाँ / नहीं',
   'step.record_meter_start': 'शुरू का मीटर {reading} दर्ज करें? अंक ग़लत हों तो सही अंक लिखें। हाँ / नहीं',
   'step.record_meter_end': 'अंत का मीटर {reading} दर्ज करें? अंक ग़लत हों तो सही अंक लिखें। हाँ / नहीं',
   'step.send_bill': '{site} का बिल भेजें: {hours} घंटे × {rate} = {total}, दोनों मीटर फ़ोटो के साथ? हाँ / नहीं',
