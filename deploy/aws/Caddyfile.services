@@ -1,0 +1,68 @@
+# Public front door for the separate services (deploy/aws/SPLIT.md). The same public addresses as
+# deploy/aws/Caddyfile: each agent's /agents/<name>/ goes to that agent's own service, everything else
+# that exists goes to the router, the rest is 404. HB_DOMAIN and HB_PORT come from /etc/caddy/hisaab.env.
+{$HB_DOMAIN} {
+	encode zstd gzip
+
+	# A message between agents can carry one evidence photo; the app takes up to 7 MiB
+	# (MAX_BODY_BYTES in src/transport/a2a.js), so this cap is just above that.
+	@a2a_jcb path /agents/jcb/a2a
+	handle @a2a_jcb {
+		request_body {
+			max_size 8MB
+		}
+		reverse_proxy 127.0.0.1:{$HB_PORT_JCB:8081}
+	}
+	@a2a_site path /agents/site/a2a
+	handle @a2a_site {
+		request_body {
+			max_size 8MB
+		}
+		reverse_proxy 127.0.0.1:{$HB_PORT_SITE:8082}
+	}
+	@a2a_supplier path /agents/supplier/a2a
+	handle @a2a_supplier {
+		request_body {
+			max_size 8MB
+		}
+		reverse_proxy 127.0.0.1:{$HB_PORT_SUPPLIER:8083}
+	}
+
+	# The rest of an agent's addresses (card, export, trace, receipt-check) are small requests.
+	@jcb path /agents/jcb/*
+	handle @jcb {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy 127.0.0.1:{$HB_PORT_JCB:8081}
+	}
+	@site path /agents/site/*
+	handle @site {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy 127.0.0.1:{$HB_PORT_SITE:8082}
+	}
+	@supplier path /agents/supplier/*
+	handle @supplier {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy 127.0.0.1:{$HB_PORT_SUPPLIER:8083}
+	}
+
+	# Webhooks, /health and the judge page with the pure ledger modules it imports: the router.
+	# /internal/ is not here on purpose: the calls between the services never leave the machine.
+	@app path /wa/* /agents/* /health /judge /judge/* /src/ledger/payments.js /src/ledger/usual.js /src/ledger/cross-check.js
+	handle @app {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy 127.0.0.1:{$HB_PORT:8080}
+	}
+
+	# Everything else: not found. No file server, so no directory listing.
+	handle {
+		respond "Not found" 404
+	}
+}

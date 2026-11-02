@@ -1,0 +1,36 @@
+# One agent as its own service: hisaab-agent@jcb, hisaab-agent@site, hisaab-agent@supplier.
+# Its own system user, its own data folder (0700), its settings read by systemd only.
+[Unit]
+Description=Hisaab Bridge agent %i
+After=network-online.target hisaab-router.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hisaab-%i
+Group=hisaab-%i
+WorkingDirectory=/opt/hisaab-bridge
+EnvironmentFile=/etc/hisaab/%i.env
+Environment=HB_AGENT=%i
+ExecStart=/usr/bin/node src/service/agent.js
+Restart=on-failure
+RestartSec=5
+MemoryHigh=250M
+MemoryMax=350M
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hisaab-%i
+InaccessiblePaths=-/var/lib/hisaab
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

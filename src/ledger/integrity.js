@@ -15,12 +15,25 @@ import { crossCheck } from './cross-check.js';
  * @typedef {{id: string, agents: string[], seq: number, orderId: string|null, kind: string, text: string}} Failure
  */
 
-const nextTurn = () => new Promise((r) => { setImmediate(r); });
+export const nextTurn = () => new Promise((r) => { setImmediate(r); });
+
+/** A broken chain, told to that agent's owner. @param {{name: string, id: string}} a @param {number} brokenAt @returns {Failure} */
+export const chainFailure = (a, brokenAt) => ({ id: `chain:${a.name}:${brokenAt}`, agents: [a.id], seq: brokenAt, orderId: null, kind: 'chain_broken', text: `${a.name}: chain broken at seq ${brokenAt}` });
+
+/**
+ * A receipt that does not agree, told to both owners.
+ * @param {import('./cross-check.js').Mismatch} m @param {Map<string, string>} nameOf agent id to name
+ * @returns {Failure}
+ */
+export function receiptFailure(m, nameOf) {
+  const [holder, peer] = [nameOf.get(m.holder), nameOf.get(m.peer)];
+  return { id: `receipt:${holder}:${m.seq}:${m.kind}`, agents: [m.holder, m.peer], seq: m.seq, orderId: m.orderId, kind: m.kind, text: `${holder} seq ${m.seq}, ${m.kind === 'refused_but_written' ? `message to ${peer}` : `receipt from ${peer}`}: ${m.kind}` };
+}
 
 /**
  * @param {CheckedAgent[]} agents
  * @param {{onError?: (name: string, e: unknown) => void}} [o] a part that could not be checked: told here, not a failure of the records
- * @returns {Promise<{failures: Failure[], receipts: number, signaturesChecked: number}>}
+ * @returns {Promise<{failures: Failure[], receipts: number, signaturesChecked: number, ledgers?: number}>} `ledgers`: how many were read, when that is not all of `agents`
  */
 export async function checkLedgers(agents, o = {}) {
   /** @type {Failure[]} */
@@ -30,7 +43,7 @@ export async function checkLedgers(agents, o = {}) {
   for (const a of agents) {
     try {
       const chain = a.ledger.verifyChain();
-      if (!chain.ok) failures.push({ id: `chain:${a.name}:${chain.brokenAt}`, agents: [a.id], seq: chain.brokenAt, orderId: null, kind: 'chain_broken', text: `${a.name}: chain broken at seq ${chain.brokenAt}` });
+      if (!chain.ok) failures.push(chainFailure(a, chain.brokenAt));
     } catch (e) { o.onError?.(a.name, e); }
     await nextTurn();
   }
@@ -57,10 +70,7 @@ export async function checkLedgers(agents, o = {}) {
         } });
         receipts += r.receipts;
         signaturesChecked += r.signaturesChecked;
-        for (const m of r.mismatches) {
-          const [holder, peer] = [nameOf.get(m.holder), nameOf.get(m.peer)];
-          failures.push({ id: `receipt:${holder}:${m.seq}:${m.kind}`, agents: [m.holder, m.peer], seq: m.seq, orderId: m.orderId, kind: m.kind, text: `${holder} seq ${m.seq}, ${m.kind === 'refused_but_written' ? `message to ${peer}` : `receipt from ${peer}`}: ${m.kind}` });
-        }
+        for (const m of r.mismatches) failures.push(receiptFailure(m, nameOf));
       } catch (e) { o.onError?.(`${a.name}/${b.name}`, e); }
       await nextTurn();
     }

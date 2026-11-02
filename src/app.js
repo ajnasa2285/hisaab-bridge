@@ -2,7 +2,8 @@
 // agent, the agents themselves, and each agent's A2A endpoint. The JCB, contractor and supplier
 // agents keep separate keys and separate ledgers and talk to each other only over A2A, exactly as
 // they would on three servers: the contractor's agent with each seller, the sellers never with each
-// other.
+// other. With `gateway` set the same code runs for one agent alone, reaching WhatsApp through the router
+// (src/service/agent.js); without it, this is the whole service in one process, as before.
 //
 //   /wa/<line>/webhook                              WhatsApp (src/wa/wa.js)
 //   /agents/<name>/.well-known/agent-card.json      Agent Card
@@ -13,7 +14,6 @@
 //   /judge/results/                                 the aggregate reader results (eval/results/*.json)
 //   /health                                         "ok"
 
-import { readdir, readFile } from 'node:fs/promises';
 import { openLedger } from './ledger/store.js';
 import { openRefs, spokenRefs } from './ledger/refs.js';
 import { agentCardJson, createA2AHandler, sendToAgent } from './transport/a2a.js';
@@ -43,6 +43,7 @@ import { maskPhone } from './wa/webhook.js';
 import { toWav } from './wa/audio.js';
 import { t } from './i18n/index.js';
 import { checkLedgers } from './ledger/integrity.js';
+import { isJudgePath, serveJudge } from './judge-page.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 
 // The reason src/wa/wa.js gives when a person has not written in the last 24 hours.
@@ -53,39 +54,6 @@ const RETRY_MS = 60 * 1000;
 // How often the ledgers are checked. Under WhatsApp's 24 hours on purpose: someone who was outside the
 // window when told is told at the first check after they next write, while it is open.
 const INTEGRITY_CHECK_MS = 6 * 60 * 60 * 1000;
-
-// The judge page is served from web/ by the app itself, file by file from this list and nothing
-// else: no directory listing, no `web/serve.js`, no `web/sample/make-sample.js`, no path that is
-// not spelled here. The reader results are the aggregate files of eval/results/ (names only).
-const WEB_DIR = new URL('../web/', import.meta.url);
-const RESULTS_DIR = new URL('../eval/results/', import.meta.url);
-/** @type {Record<string, string>} published path → content type */
-const JUDGE_FILES = {
-  'index.html': 'text/html; charset=utf-8',
-  'judge.css': 'text/css; charset=utf-8',
-  'judge.js': 'text/javascript; charset=utf-8',
-  'texts.js': 'text/javascript; charset=utf-8',
-  'trace-view.js': 'text/javascript; charset=utf-8',
-  'payments-view.js': 'text/javascript; charset=utf-8',
-  'usual-view.js': 'text/javascript; charset=utf-8',
-  'order-state.js': 'text/javascript; charset=utf-8',
-  'learning-view.js': 'text/javascript; charset=utf-8',
-  'sample/export.json': 'application/json; charset=utf-8',
-};
-// The only source files the browser may read: the pure ledger modules the page imports.
-/** @type {Record<string, string>} path → module */
-const JUDGE_SOURCES = {
-  '/src/ledger/payments.js': './ledger/payments.js',
-  '/src/ledger/usual.js': './ledger/usual.js',
-  '/src/ledger/cross-check.js': './ledger/cross-check.js',
-};
-const RESULT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.json$/;
-const JUDGE_HEADERS = {
-  'content-security-policy': "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'",
-  'x-content-type-options': 'nosniff',
-  'referrer-policy': 'no-referrer',
-  'cache-control': 'no-cache',
-};
 
 /**
  * The people on an agent whose steps send messages to the other agent.
@@ -128,6 +96,8 @@ const ownerRole = (kind) => (kind === 'contractor' ? 'contractor' : kind === 'jc
  *   transcribe?: (req: {audio: Uint8Array, mime: string, language?: 'hi'}) => Promise<{ok: true, text: string} | {ok: false, transient: boolean, reason: string}>,
  *   toWav?: typeof import('./wa/audio.js').toWav,
  *   fetch?: typeof globalThis.fetch,
+ *   gateway?: import('./service/gateway.js').Gateway,
+ *   ledgerCheck?: typeof checkLedgers,
  *   transport?: (baseUrl: string, m: any) => Promise<unknown>,
  *   exportToken?: string,
  *   integrityCheckMs?: number,
@@ -140,9 +110,12 @@ const ownerRole = (kind) => (kind === 'contractor' ? 'contractor' : kind === 'jc
 export function createApp(cfg) {
   const now = cfg.now ?? Date.now;
   const log = cfg.log ?? ((l) => console.log(`${new Date().toISOString()} ${l}`));
-  const directory = createDirectory({ lines: cfg.lines.map((l) => l.phoneNumberId), people: cfg.people });
+  const directory = createDirectory({ lines: cfg.gateway ? cfg.gateway.lineIds : cfg.lines.map((l) => l.phoneNumberId), people: cfg.people });
   const store = openWaStore(cfg.waStoreFile);
   const clients = new Map(cfg.lines.map((l) => [l.phoneNumberId, createCloudClient({ phoneNumberId: l.phoneNumberId, accessToken: l.accessToken, graphVersion: l.graphVersion, fetch: cfg.fetch })]));
+
+  /** A received photo or voice note. @param {string} line @param {string} mediaId */
+  const fetchMedia = (line, mediaId) => (cfg.gateway ? cfg.gateway.fetchMedia(line, mediaId) : /** @type {any} */ (clients.get(line)).fetchMedia(mediaId));
 
   /**
    * Sends a text to a person on their line. When it does not go, for any reason, a notice about an order
@@ -320,7 +293,47 @@ export function createApp(cfg) {
     agents.set(a.id, entry);
   }
 
-  const wa = createWa({
+  /** @type {(msg: import('./wa/webhook.js').Inbound, person: Person) => Promise<void>} */
+  const onMessage = async (msg, person) => {
+    const entry = agents.get(person.agent);
+    if (!entry) return;
+    await tellWaiting(person, entry);
+    const text = msg.kind === 'text' || msg.kind === 'button' ? msg.text ?? '' : null;
+    // One handling per message: everything recorded while it runs carries this person's conversation.
+    return withTrace(entry.trace, { convo: entry.trace.convoOf(person), role: person.role, text }, async () => {
+      const channel = text !== null ? (parseCommand(text) ? 'command' : 'text') : msg.kind === 'image' ? 'photo' : msg.kind === 'audio' ? 'voice' : msg.kind;
+      entry.trace.add('received', `${channel} from ${person.role}`, { channel, role: person.role, text: entry.trace.words(text) });
+      if (text !== null) return entry.talk.onText(person, text, { atMs: msg.atMs });
+      if (msg.kind === 'image' && msg.mediaId) {
+        const media = await fetchMedia(person.line, msg.mediaId);
+        return entry.talk.onImage(person, { mime: media.mimeType, bytes: new Uint8Array(media.bytes), takenAt: null, forwarded: msg.forwarded === true, ...(msg.caption ? { caption: msg.caption } : {}) });
+      }
+      if (msg.kind === 'audio' && msg.mediaId && entry.transcribe) {
+        // A voice note is read as the text it says, and goes the way that text would: free words are read
+        // back, and an exact reply heard exactly acts at once (README, known limits).
+        const media = await fetchMedia(person.line, msg.mediaId);
+        const wav = await (cfg.toWav ?? toWav)(new Uint8Array(media.bytes));
+        if (!wav.ok) {
+          log(`voice from ${person.role} ${maskPhone(person.phone)} not converted: ${wav.reason}`);
+          { await sendTo(person, t('voice.not_understood')); return; }
+        }
+        const said = await entry.transcribe({ audio: wav.wav, mime: 'audio/wav', language: 'hi' });
+        if (!said.ok || !said.text.trim()) { await sendTo(person, t('voice.not_understood')); return; }
+        const c = currentTrace();
+        if (c) c.text = said.text;
+        // Words this person corrected at least twice are replaced first and shown to them
+        // (src/learn/corrections.js), then "पीवन" → "P-1" before anything reads it (live, 30 Oct).
+        const glossary = entry.learn.glossary(voiceParty(person));
+        const heard = normaliseVoice(said.text, glossary);
+        if (heard !== said.text.normalize('NFC')) traceCheck('voice: words replaced from corrections people confirmed twice', true, { name: 'learn_glossary', words: glossary.size });
+        return entry.talk.onText(person, spokenRefs(heard), { voice: said.text, atMs: msg.atMs, replaced: voiceReplacements(said.text, glossary) });
+      }
+      // Documents are not handled yet.
+      { await sendTo(person, t('common.unknown_step')); return; }
+    });
+  };
+
+  const wa = cfg.gateway ?? createWa({
     lines: cfg.lines.map((l) => ({ name: l.name, phoneNumberId: l.phoneNumberId, appSecret: l.appSecret, verifyToken: l.verifyToken, client: /** @type {any} */ (clients.get(l.phoneNumberId)) })),
     directory,
     store,
@@ -328,44 +341,7 @@ export function createApp(cfg) {
     failureReply: (e) => t(e instanceof Error && /too large/.test(e.message) ? 'common.media_too_large' : 'common.try_again'),
     now,
     log,
-    onMessage: async (msg, person) => {
-      const entry = agents.get(person.agent);
-      if (!entry) return;
-      await tellWaiting(person, entry);
-      const text = msg.kind === 'text' || msg.kind === 'button' ? msg.text ?? '' : null;
-      // One handling per message: everything recorded while it runs carries this person's conversation.
-      return withTrace(entry.trace, { convo: entry.trace.convoOf(person), role: person.role, text }, async () => {
-        const channel = text !== null ? (parseCommand(text) ? 'command' : 'text') : msg.kind === 'image' ? 'photo' : msg.kind === 'audio' ? 'voice' : msg.kind;
-        entry.trace.add('received', `${channel} from ${person.role}`, { channel, role: person.role, text: entry.trace.words(text) });
-        if (text !== null) return entry.talk.onText(person, text, { atMs: msg.atMs });
-        if (msg.kind === 'image' && msg.mediaId) {
-          const media = await /** @type {any} */ (clients.get(person.line)).fetchMedia(msg.mediaId, { expectedSha256: undefined });
-          return entry.talk.onImage(person, { mime: media.mimeType, bytes: new Uint8Array(media.bytes), takenAt: null, forwarded: msg.forwarded === true, ...(msg.caption ? { caption: msg.caption } : {}) });
-        }
-        if (msg.kind === 'audio' && msg.mediaId && entry.transcribe) {
-          // A voice note is read as the text it says, and goes the way that text would: free words are read
-          // back, and an exact reply heard exactly acts at once (README, known limits).
-          const media = await /** @type {any} */ (clients.get(person.line)).fetchMedia(msg.mediaId);
-          const wav = await (cfg.toWav ?? toWav)(new Uint8Array(media.bytes));
-          if (!wav.ok) {
-            log(`voice from ${person.role} ${maskPhone(person.phone)} not converted: ${wav.reason}`);
-            { await sendTo(person, t('voice.not_understood')); return; }
-          }
-          const said = await entry.transcribe({ audio: wav.wav, mime: 'audio/wav', language: 'hi' });
-          if (!said.ok || !said.text.trim()) { await sendTo(person, t('voice.not_understood')); return; }
-          const c = currentTrace();
-          if (c) c.text = said.text;
-          // Words this person corrected at least twice are replaced first and shown to them
-          // (src/learn/corrections.js), then "पीवन" → "P-1" before anything reads it (live, 30 Oct).
-          const glossary = entry.learn.glossary(voiceParty(person));
-          const heard = normaliseVoice(said.text, glossary);
-          if (heard !== said.text.normalize('NFC')) traceCheck('voice: words replaced from corrections people confirmed twice', true, { name: 'learn_glossary', words: glossary.size });
-          return entry.talk.onText(person, spokenRefs(heard), { voice: said.text, atMs: msg.atMs, replaced: voiceReplacements(said.text, glossary) });
-        }
-        // Documents are not handled yet.
-        { await sendTo(person, t('common.unknown_step')); return; }
-      });
-    },
+    onMessage,
   });
 
   // Messages that could not reach the other agent are delivered again, unchanged. A pass over many
@@ -418,9 +394,9 @@ export function createApp(cfg) {
     checking = true;
     try {
       const checked = [...agents.values()].map((x) => ({ name: x.cfg.name, id: x.cfg.id, ledger: x.core.ledger, peers: x.core.peers }));
-      const r = await checkLedgers(checked, { onError: (name, e) => { if (!closed) log(`integrity: ${name} could not be checked (${e instanceof Error ? e.name : 'error'})`); } });
+      const r = await (cfg.ledgerCheck ?? checkLedgers)(checked, { onError: (name, e) => { if (!closed) log(`integrity: ${name} could not be checked (${e instanceof Error ? e.name : 'error'})`); } });
       if (closed) return;
-      if (!r.failures.length) { log(`integrity: ok, ${checked.length} ledgers, ${r.receipts} receipts compared`); return; }
+      if (!r.failures.length) { log(`integrity: ok, ${r.ledgers ?? checked.length} ledgers, ${r.receipts} receipts compared`); return; }
       log(`integrity: ${r.failures.length} problem(s), ${r.receipts} receipts compared: ${r.failures.slice(0, 10).map((f) => f.text).join('; ')}`);
       await tellFailures(r.failures);
     } catch (e) {
@@ -446,7 +422,7 @@ export function createApp(cfg) {
       return;
     }
     if (await wa.handle(req, res)) return;
-    if (path === '/judge' || path.startsWith('/judge/') || Object.hasOwn(JUDGE_SOURCES, path)) {
+    if (isJudgePath(path)) {
       await serveJudge(path, req, res);
       return;
     }
@@ -476,76 +452,6 @@ export function createApp(cfg) {
     // A message from the other agent is one handling of this agent's trace (no person, no conversation).
     if (entry && (await withTrace(entry.trace, {}, () => entry.a2a(req, res)))) return;
     res.writeHead(404).end();
-  }
-
-  /**
-   * The judge page and its results, GET only, each response with the page's headers.
-   * @param {string} path
-   * @param {import('node:http').IncomingMessage} req
-   * @param {import('node:http').ServerResponse} res
-   */
-  async function serveJudge(path, req, res) {
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      res.writeHead(405, { ...JUDGE_HEADERS, allow: 'GET, HEAD' }).end();
-      return;
-    }
-    if (path === '/judge') {
-      res.writeHead(302, { ...JUDGE_HEADERS, location: '/judge/' }).end();
-      return;
-    }
-    /** @param {number} status @param {string} type @param {Uint8Array | string} body */
-    const send = (status, type, body) => {
-      res.writeHead(status, { ...JUDGE_HEADERS, 'content-type': type });
-      res.end(req.method === 'HEAD' ? undefined : body);
-    };
-    // Only the pure ledger modules used by the browser, no general source-directory serving.
-    if (Object.hasOwn(JUDGE_SOURCES, path)) {
-      try { send(200, 'text/javascript; charset=utf-8', await readFile(new URL(JUDGE_SOURCES[path], import.meta.url))); }
-      catch { send(404, 'text/plain; charset=utf-8', 'not found'); }
-      return;
-    }
-    // The path is matched as sent, after decoding, against the allow-list only: there is no file
-    // system lookup for anything else, so "..", encoded slashes and the like can reach nothing.
-    let rel;
-    try {
-      rel = decodeURIComponent(path.slice('/judge/'.length));
-    } catch {
-      send(404, 'text/plain; charset=utf-8', 'not found');
-      return;
-    }
-    if (rel === '') rel = 'index.html';
-    try {
-      if (rel === 'results/') {
-        send(200, 'application/json; charset=utf-8', JSON.stringify(await resultNames()));
-        return;
-      }
-      if (rel.startsWith('results/')) {
-        const name = rel.slice('results/'.length);
-        if (!RESULT_NAME.test(name) || !(await resultNames()).includes(name)) {
-          send(404, 'text/plain; charset=utf-8', 'not found');
-          return;
-        }
-        send(200, 'application/json; charset=utf-8', await readFile(new URL(name, RESULTS_DIR)));
-        return;
-      }
-      const type = Object.hasOwn(JUDGE_FILES, rel) ? JUDGE_FILES[rel] : null;
-      if (type === null) {
-        send(404, 'text/plain; charset=utf-8', 'not found');
-        return;
-      }
-      send(200, type, await readFile(new URL(rel, WEB_DIR)));
-    } catch {
-      send(404, 'text/plain; charset=utf-8', 'not found');
-    }
-  }
-
-  /** The aggregate result files, names only, sorted. */
-  async function resultNames() {
-    try {
-      return (await readdir(RESULTS_DIR)).filter((n) => RESULT_NAME.test(n)).sort();
-    } catch {
-      return [];
-    }
   }
 
   /** One side in the judge page's `hb-export/0.1` shape (web/README.md, CONTRACTS section 10). @param {any} entry */
@@ -586,6 +492,18 @@ export function createApp(cfg) {
     handle,
     /** For tests and the judge export. @param {string} id */
     agent: (id) => agents.get(id),
+    /**
+     * A message the router handed over (separate services): false when it is from nobody of this agent's.
+     * @param {import('./wa/webhook.js').Inbound} msg @returns {Promise<boolean>}
+     */
+    async inbound(msg) {
+      const person = directory.route(msg.phoneNumberId, msg.from);
+      if (!person) return false;
+      await onMessage(msg, person);
+      return true;
+    },
+    /** One check of the ledgers now, as the timer runs it. */
+    checkNow: checkIntegrity,
     close() {
       closed = true;
       clearInterval(timer);

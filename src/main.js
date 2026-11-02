@@ -29,17 +29,8 @@ import { readUpi } from './readers/upi.js';
 import { readChallan } from './readers/challan.js';
 import { classifyPhoto } from './readers/photo.js';
 import { sameMeter } from './readers/same-meter.js';
-
-/** @typedef {import('./protocol/messages.js').MessageType} MessageType */
-
-/** What a seller (the JCB agent or the supplier agent) accepts from the contractor's agent. @type {MessageType[]} */
-const TO_SELLER = ['BOOKING_REQUEST', 'ACCEPT', 'DISPUTE', 'PAYMENT_CLAIM', 'CANCEL', 'RECEIPT', 'REFUSE', 'EVIDENCE_REQUEST', 'EVIDENCE'];
-/** @type {MessageType[]} */
-const TO_CONTRACTOR = ['BOOKING_REPLY', 'BILL', 'CORRECTION', 'SETTLED', 'PAYMENT_ACK', 'PAYMENT_RECEIVED', 'CANCEL', 'RECEIPT', 'REFUSE', 'EVIDENCE_REQUEST', 'EVIDENCE'];
-/** Only the supplier delivers (material, with a challan). @type {MessageType[]} */
-const TO_CONTRACTOR_FROM_SUPPLIER = [...TO_CONTRACTOR, 'DELIVERY'];
-/** Only the supplier is told the site's signed copy of its challan. @type {MessageType[]} */
-const TO_SUPPLIER = [...TO_SELLER, 'SITE_RECEIPT'];
+import { TO_CONTRACTOR, TO_CONTRACTOR_FROM_SUPPLIER, TO_SELLER, TO_SUPPLIER } from './protocol/peer-rules.js';
+import { parsePeople } from './wa/people-file.js';
 
 /** @param {Record<string, string | undefined>} env @param {string} name */
 function need(env, name) {
@@ -104,19 +95,7 @@ export function loadConfig(env) {
   const lineIds = Object.fromEntries(lines.map((l) => [l.name, l.phoneNumberId]));
   const agentIds = { jcb: jcbId, contractor: siteId, supplier: supId };
 
-  const raw = JSON.parse(readFileSync(join(dataDir, 'people.json'), 'utf8'));
-  if (!Array.isArray(raw)) throw new Error('config: people.json must be a list');
-  const people = raw.map((p, i) => {
-    const lineId = Object.hasOwn(lineIds, p?.line) ? lineIds[p.line] : undefined;
-    const agent = /** @type {Record<string, string>} */ (agentIds)[p?.agent];
-    if (!lineId || !agent) throw new Error(`config: people.json entry ${i + 1} needs line ${Object.keys(lineIds).map((n) => `'${n}'`).join('|')} and agent 'jcb'|'contractor'|'supplier'`);
-    // The supplier agent has one role, and that role belongs to no other agent.
-    if ((p.agent === 'supplier') !== (p.role === 'supplier')) throw new Error(`config: people.json entry ${i + 1}: role 'supplier' goes with agent 'supplier' and only with it`);
-    // Optional: the site this person usually works on; a request that names no site is for it.
-    const site = p.site === undefined || p.site === null ? undefined : String(p.site).trim();
-    if (site !== undefined && (!site || site.length > 80)) throw new Error(`config: people.json entry ${i + 1}: site must be a name of 1 to 80 characters`);
-    return { line: lineId, phone: String(p.phone), agent, role: p.role, name: String(p.name ?? ''), ...(site ? { site } : {}) };
-  });
+  const people = parsePeople(JSON.parse(readFileSync(join(dataDir, 'people.json'), 'utf8')), lineIds, agentIds);
 
   return {
     port: Number(env.HB_PORT ?? 8080),

@@ -61,6 +61,10 @@ Your settings, people list, keys and ledgers are kept. The script also installs 
 
 The ledgers stay in `/var/lib/hisaab`. Back that folder up before deleting the server; it also holds the agents' private keys.
 
+## Three agents as separate services
+
+The one program above can be split into three agent services and a WhatsApp router, each with its own system user and data folder, and put back again. See [aws/SPLIT.md](aws/SPLIT.md).
+
 ## Safety
 
 - The settings file is readable only by the administrator. Never copy its content anywhere.

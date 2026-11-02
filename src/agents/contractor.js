@@ -18,7 +18,7 @@ import { differenceFacts } from './explain-facts.js';
 import { traceCheck } from '../trace/trace.js';
 import { PAYABLE, balanceText, newGroupId, paymentLine, shares, summaryOf, utrUses } from './pay.js';
 import { cancelTool, orderWords } from './cancel.js';
-import { MAX_JOB_TENTHS, jcbBillBody } from './jcb.js';
+import { MAX_JOB_TENTHS, jcbBillBody } from './jcb-bill.js';
 
 /** @typedef {import('./common.js').Tool} Tool */
 /** @typedef {import('./common.js').Tell} Tell */
