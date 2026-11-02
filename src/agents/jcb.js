@@ -8,7 +8,7 @@ import { rateUsualNotes, withUsual } from './usual.js';
 import { tenths as hours, rupees, day as dayName } from '../i18n/format.js';
 import { deliveryResult, isIso, isSha256, isTime, isDay, isUuid, no, nonNegInt, ofType, ok, posInt } from './common.js';
 import { openRefs } from '../ledger/refs.js';
-import { variant } from '../i18n/index.js';
+import { t, variant } from '../i18n/index.js';
 import { explainDifference } from './explain.js';
 import { differenceFacts } from './explain-facts.js';
 import { traceCheck } from '../trace/trace.js';
@@ -169,6 +169,45 @@ export function createJcbAgent(o) {
           return ok('jcb.meter_end_saved', { reading: hours(a.valueTenths), hours: hours(worked) });
         }
         return ok(`jcb.meter_${a.which}_saved`, { reading: hours(a.valueTenths) });
+      },
+    },
+
+    // The operator corrects the latest reading of a job before its bill (live, J-4: 9983.1 typed as 99831,
+    // which no end reading could then follow). A new row with the same photo; the old one stays in the
+    // ledger and the owner is told. meterReadings takes the latest row.
+    correct_meter: {
+      roles: ['operator'],
+      commits: true,
+      describe: (a) => {
+        const was = isUuid(a.orderId) && (a.which === 'start' || a.which === 'end') ? meterReadings(ledger.events(a.orderId))[/** @type {'start' | 'end'} */ (a.which)] : null;
+        return { key: 'step.correct_meter', params: {
+          what: t(`meter.which.${a.which === 'end' ? 'end' : 'start'}`), old: was ? hours(was.valueTenths) : '—', reading: nonNegInt(a.valueTenths) ? hours(a.valueTenths) : '—',
+        } };
+      },
+      async run(_p, a) {
+        if (!isUuid(a.orderId) || !counterparty(a.orderId)) return no('common.no_such_order');
+        if ((a.which !== 'start' && a.which !== 'end') || !nonNegInt(a.valueTenths)) return no('common.bad_args');
+        if (ledger.view(a.orderId).currentBill !== null) return no('jcb.meter_has_bill');
+        const r = meterReadings(ledger.events(a.orderId));
+        const was = r[/** @type {'start' | 'end'} */ (a.which)];
+        if (!was) return no('common.wrong_state');
+        const [start, end] = a.which === 'start' ? [a.valueTenths, r.end?.valueTenths] : [r.start?.valueTenths, a.valueTenths];
+        if (start !== undefined && end !== undefined) {
+          if (end <= start) return no('jcb.end_not_after_start', { start: hours(start) });
+          if (end - start > MAX_JOB_TENTHS) return no('jcb.meter_hours_impossible', impossible(start, end));
+        }
+        const stored = ledger.append({
+          orderId: a.orderId, direction: 'local', type: 'EVIDENCE', msgId: randomUUID(),
+          body: { kind: 'meter', which: a.which, valueTenths: a.valueTenths, sha256: was.sha256, takenAt: was.takenAt, corrects: was.record ?? null },
+          at: new Date(agent.now()).toISOString(),
+        });
+        if (stored === null) return no('common.wrong_state');
+        const words = { what: t(`meter.which.${a.which}`), old: hours(was.valueTenths), reading: hours(a.valueTenths) };
+        traceCheck(`meter ${a.which} corrected by the operator: ${words.old} → ${words.reading}`, true,
+          { name: 'meter_corrected', which: a.which, fromTenths: was.valueTenths, toTenths: a.valueTenths }, a.orderId);
+        await tell('jcb_owner', 'jcb.meter_corrected_owner', { ref: refOf(a.orderId), ...words });
+        if (start !== undefined && end !== undefined) await tell('jcb_owner', 'jcb.meter_done', { hours: hours(end - start) });
+        return ok('jcb.meter_corrected', words);
       },
     },
 

@@ -643,6 +643,13 @@ export function createConversation(o) {
       if (m) {
         pending.delete(keyOf(person));
         const valueTenths = Number(m[1]) * 10 + Number(m[2] ?? '0');
+        // Digits with no dot may have lost the meter's last, tenths digit (live, J-4: 9983.1 typed as
+        // 99831). No end reading is there yet to show it, so a start reading is read back. An end
+        // reading typed that way is more than a day's work and is refused.
+        if (p.which === 'start' && !m[2] && m[1].length > 1) {
+          const args = { orderId: p.orderId, which: p.which, valueTenths, sha256: p.sha256, takenAt: p.takenAt };
+          return propose(person, 'record_meter', args, { key: 'meter.typed_no_dot', params: { reading: m[1], dotted: `${m[1].slice(0, -1)}.${m[1].slice(-1)}` } });
+        }
         // The person typed the reading from the meter: their own figure, recorded at once.
         return commitNow(person, 'record_meter', { orderId: p.orderId, which: p.which, valueTenths, sha256: p.sha256, takenAt: p.takenAt }, () => learnFrom(p.sha256, [valueTenths]));
       }
@@ -668,6 +675,8 @@ export function createConversation(o) {
       pending.delete(keyOf(person));
     }
     if (HELP.has(said)) return o.reply(person, `help.${person.role}`);
+    const correction = meterCorrection(person, said);
+    if (correction) return propose(person, 'correct_meter', correction);
 
     // Right after notices told again: a bare yes or no may have been written before they were read, and
     // may not be about them. It decides nothing and goes to no model; the person is told how to name one.
@@ -1039,6 +1048,25 @@ export function createConversation(o) {
 
   /** May this person take this step on this agent? @param {Person} person @param {string} tool */
   const may = (person, tool) => Object.hasOwn(o.tools, tool) && o.tools[tool].roles.includes(person.role);
+
+  /**
+   * A figure alone from someone who may correct a meter reading: the latest reading of the one job
+   * that has a reading and no bill. A reading that counts always comes with a photo, so a bare figure
+   * has no other meaning for them. Null with no such job, several, or the same figure.
+   * @param {Person} person @param {string} said
+   */
+  function meterCorrection(person, said) {
+    const m = /^(\d{1,7})(?:\.(\d))?$/.exec(said);
+    if (!m || !may(person, 'correct_meter')) return null;
+    const jobs = orderRefs(o.ledger).filter((r) => r.state !== 'cancelled' && o.ledger.view(r.orderId).currentBill === null
+      && meterReadings(o.ledger.events(r.orderId)).start !== null);
+    if (jobs.length !== 1) return null;
+    const { orderId } = jobs[0];
+    const r = meterReadings(o.ledger.events(orderId));
+    const which = r.end ? 'end' : 'start';
+    const valueTenths = Number(m[1]) * 10 + Number(m[2] ?? '0');
+    return r[which]?.valueTenths === valueTenths ? null : { orderId, which, valueTenths };
+  }
 
   /**
    * The kinds of photo this person may send on this agent: meter readings (operator, JCB owner), UPI

@@ -35,6 +35,12 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 | `jcb.job_booked` | ref, site, day, time | to operator: a job is booked |
 | `jcb.meter_start_saved` | reading | to operator: start reading saved |
 | `jcb.meter_end_saved` | reading, hours | to operator: end reading saved, hours worked |
+| `jcb.meter_corrected` | what, old, reading | to operator: the latest reading corrected before the bill |
+| `jcb.meter_corrected_owner` | ref, what, old, reading | to owner: the operator corrected a reading |
+| `jcb.meter_has_bill` | — | to operator: the job has a bill, the reading can no longer change |
+| `meter.typed_no_dot` | reading, dotted | start digits typed with no dot: read back, with the same digits as tenths offered |
+| `meter.which.start`, `meter.which.end` | — | "start" or "end", in the correction texts |
+| `step.correct_meter` | what, old, reading | the read-back of a bare figure from the operator |
 | `jcb.meter_which_stale` | — | a start reading when the start is already recorded (a slow photo or an old read-back); nothing recorded |
 | `jcb.start_first` | — | to operator: send the start photo first |
 | `jcb.end_not_after_start` | start | to operator: the end reading must be more than the start |
