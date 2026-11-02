@@ -33,7 +33,7 @@ test('the view shows the JCB agent its own rows, a bare hash of everything else,
   assert.deepEqual(view.events[2], { seq: 3, hash: 'h3' });
   assert.deepEqual(view.events[3], { seq: 4, hash: 'h4' });
   assert.deepEqual(view.events[5], { seq: 6, hash: 'h6' }, 'a local note is not the other side\'s business');
-  assert.equal(view.events[0].direction, 'out');
+  assert.equal(/** @type {any} */ (view.events[0]).direction, 'out');
   assert.equal(/** @type {any} */ (view.events[0]).body, undefined, 'a message of ours: its ids, not its words');
   assert.equal(/** @type {any} */ (view.events[1]).body.from, JCB, 'a receipt the asker signed, in full');
   assert.deepEqual(/** @type {any} */ (view.events[4]).body, { kind: 'undelivered', msg_id: 'm1' });

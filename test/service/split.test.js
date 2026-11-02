@@ -17,12 +17,13 @@ import { loadConfig } from '../../src/main.js';
 import { parseEnvFile, split } from '../../src/service/migrate.js';
 import { signedRequest } from '../../src/service/receipt-check.js';
 import { rewriteRow } from '../ledger/forge.js';
-import { CONTRACTOR, EXPORT_TOKEN, OPERATOR, OWNER, STRANGER, SUPERVISOR, SUPPLIER, inventOneFolder, jcbJob, makeDirs, startServices } from './harness.js';
+import { CONTRACTOR, EXPORT_TOKEN, OPERATOR, OWNER, STRANGER, SUPERVISOR, SUPPLIER, SUPPLIER_LINE_SETTINGS, TWO_LINES, inventOneFolder, jcbJob, makeDirs, startServices } from './harness.js';
 
 const LONG = { timeout: 240_000 };
 const ALARM = t('common.records_disagree');
 const TRY_AGAIN = t('common.try_again');
 const AGENT_JS = fileURLToPath(new URL('../../src/service/agent.js', import.meta.url));
+const ROUTER_JS = fileURLToPath(new URL('../../src/service/router.js', import.meta.url));
 
 /** @param {string} url @param {string} token @param {any} body */
 const internal = (url, token, body) => fetch(url, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -47,6 +48,14 @@ test('a whole JCB job across the processes: booking, meter, bill, accept, paymen
     assert.deepEqual(readdirSync(join(`${s.dirs.prefix}${name}`, 'keys')), [pem]);
   }
   assert.throws(() => readdirSync(join(`${s.dirs.prefix}router`, 'keys')), /ENOENT/, 'the router has no key at all');
+
+  // A document and an evidence photo go through the router like a text, inside the window.
+  await s.say(CONTRACTOR, 'एक्सेल');
+  assert.ok(s.sent.some((/** @type {any} */ x) => x.to === CONTRACTOR && x.kind === 'document'), s.sent.slice(-3).map((/** @type {any} */ x) => `${x.kind}: ${x.text}`).join(' / '));
+  await s.say(CONTRACTOR, 'सबूत J-1');
+  await s.yesIfAsked(OWNER);
+  await s.settle();
+  assert.ok(s.sent.some((/** @type {any} */ x) => x.to === CONTRACTOR && x.kind === 'image'), s.sent.slice(-4).map((/** @type {any} */ x) => `${x.kind}: ${x.text}`).join(' / '));
 });
 
 test('the public addresses stay what they were, and nothing internal shows through the front door', LONG, async (tc) => {
@@ -240,6 +249,89 @@ test('one shared WhatsApp number on both lines: each person still reaches their 
   assert.ok(s.lastTo(OWNER).includes('Shivpuri'), s.lastTo(OWNER));
 });
 
+test('three numbers, one per agent: each line checks its own secret, replies go out on the person\'s line with its token, and a person on two lines has two windows', LONG, async (tc) => {
+  const s = await startServices(tc, { threeLines: true });
+  const tokenOf = { 'line-jcb': 'tok-jcb', 'line-site': 'tok-site', 'line-sup': 'tok-sup' };
+  await s.say(OWNER, 'मदद');
+  await s.say(CONTRACTOR, 'मदद');
+  await s.say(SUPPLIER, 'मदद', 'supplier');
+  assert.deepEqual(s.sent.map((/** @type {any} */ x) => [x.to, x.line, x.text]), [[OWNER, 'line-jcb', t('help.jcb_owner')], [CONTRACTOR, 'line-site', t('help.contractor')], [SUPPLIER, 'line-sup', t('help.supplier')]]);
+
+  // Another line's secret does not open this line's webhook, and a message naming another line is dropped.
+  const body = (/** @type {string} */ lineId, /** @type {string} */ from) => JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'w', changes: [{ field: 'messages', value: { metadata: { phone_number_id: lineId },
+    messages: [{ from, id: `wamid.cross-${lineId}`, timestamp: String(Math.floor(Date.now() / 1000)), type: 'text', text: { body: 'मदद' } }] } }] }] });
+  const signed = (/** @type {string} */ text, /** @type {string} */ secret) => ({ 'x-hub-signature-256': `sha256=${createHmac('sha256', secret).update(text).digest('hex')}` });
+  const before = s.sent.length;
+  const onSupplier = body('line-sup', SUPPLIER);
+  assert.equal((await fetch(`${s.base}/wa/supplier/webhook`, { method: 'POST', headers: signed(onSupplier, s.secret.jcb), body: onSupplier })).status, 401, 'the JCB line\'s secret on the supplier\'s webhook');
+  const naming = body('line-sup', SUPPLIER);
+  assert.equal((await fetch(`${s.base}/wa/jcb/webhook`, { method: 'POST', headers: signed(naming, s.secret.jcb), body: naming })).status, 200);
+  await s.settle();
+  assert.equal(s.sent.length, before, 'a message for another line is not handled');
+  assert.equal(await (await fetch(`${s.base}/wa/supplier/webhook?hub.mode=subscribe&hub.verify_token=verify-sup&hub.challenge=abc`)).text(), 'abc');
+  assert.equal((await fetch(`${s.base}/wa/supplier/webhook?hub.mode=subscribe&hub.verify_token=verify-jcb&hub.challenge=abc`)).status, 403);
+
+  // One phone, two lines, two agents: what they write on a line goes to that line's agent.
+  await s.say(TWO_LINES, 'मदद', 'supplier');
+  assert.deepEqual([s.sent.at(-1).line, s.sent.at(-1).text], ['line-sup', t('help.supplier')]);
+  // A window opened on the supplier's line does not open the JCB line: the JCB owner's notice waits, per line.
+  await s.say(SUPERVISOR, 'kal 8 baje Shivpuri JCB 6 ghante');
+  await s.say(CONTRACTOR, 'ok J-1');
+  assert.ok(s.lastTo(OWNER).includes('Shivpuri'), 'the other owner, who has written on this line, is told');
+  assert.equal(s.sent.filter((/** @type {any} */ x) => x.to === TWO_LINES && x.line === 'line-jcb').length, 0);
+  await s.say(TWO_LINES, 'मदद', 'supplier');
+  assert.equal(s.sent.filter((/** @type {any} */ x) => x.to === TWO_LINES && x.text.includes('Shivpuri')).length, 0, 'writing on the other line does not tell it');
+  await s.say(TWO_LINES, 'मदद', 'jcb');
+  const told = s.sent.filter((/** @type {any} */ x) => x.to === TWO_LINES && x.line === 'line-jcb').map((/** @type {any} */ x) => x.text);
+  assert.ok(told[0].includes('Shivpuri') && told[0].includes('J-1'), told.join(' / '));
+  assert.equal(told.at(-1), t('help.jcb_owner'));
+
+  // An agent reaches a person only on the line where they are its own.
+  const router = `http://127.0.0.1:${s.ports.HB_PORT}`;
+  const jcbToken = s.settings('jcb').HB_INTERNAL_TOKEN;
+  assert.equal((await (await internal(`${router}/internal/wa/send`, jcbToken, { kind: 'text', line: 'line-sup', phone: TWO_LINES, text: 'x' })).json()).ok, false);
+  assert.equal((await (await internal(`${router}/internal/wa/send`, jcbToken, { kind: 'text', line: 'line-jcb', phone: TWO_LINES, text: 'x' })).json()).ok, true);
+  for (const x of s.sent) assert.equal(x.token, /** @type {any} */ (tokenOf)[x.line], `${x.line} goes out with its own token`);
+});
+
+test('from one number to three by settings and people.json alone: nothing in the data moves, and each person must write to their new number first', LONG, async (tc) => {
+  const s = await startServices(tc, { sharedNumber: true });
+  await s.say(OWNER, 'मदद');
+  await s.say(CONTRACTOR, 'मदद');
+  await s.say(SUPPLIER, 'मदद');
+  await s.say(SUPERVISOR, 'kal 8 baje Shivpuri JCB 6 ghante');
+  assert.ok(s.sent.every((/** @type {any} */ x) => x.line === 'line-site'), 'all on the one number');
+  const rowsBefore = (await s.exportOf('site')).events.length;
+
+  // As SPLIT.md says: stop, change the settings and the supplier's line, start. The site keeps the old number.
+  await Promise.all(['router', 'jcb', 'site', 'supplier'].map((n) => s.kill(n)));
+  const envFile = (/** @type {string} */ n) => join(s.dirs.env, `${n}.env`);
+  const ids = ['HB_WA_JCB_PHONE_NUMBER_ID=line-jcb', 'HB_WA_SUPPLIER_PHONE_NUMBER_ID=line-sup'];
+  writeFileSync(envFile('router'), `${readFileSync(envFile('router'), 'utf8')}${[...ids, 'HB_WA_JCB_APP_SECRET=secret-jcb-not-real', ...SUPPLIER_LINE_SETTINGS.slice(1)].join('\n')}\n`);
+  for (const n of ['jcb', 'site', 'supplier']) writeFileSync(envFile(n), `${readFileSync(envFile(n), 'utf8')}${ids.join('\n')}\n`);
+  for (const n of ['router', 'supplier']) {
+    const file = join(`${s.dirs.prefix}${n}`, 'people.json');
+    writeFileSync(file, JSON.stringify(JSON.parse(readFileSync(file, 'utf8')).map((/** @type {any} */ p) => (p.agent === 'supplier' ? { ...p, line: 'supplier' } : p))));
+  }
+  await Promise.all(['router', 'jcb', 'site', 'supplier'].map((n) => s.start(n)));
+
+  // The contractor stays on the site's number and goes on. The owner's new number has no window yet.
+  await s.say(CONTRACTOR, 'ok J-1', 'site');
+  assert.ok(s.lastTo(SUPERVISOR).includes('JCB'), 'the site line goes on with no new step');
+  assert.equal(s.sent.filter((/** @type {any} */ x) => x.line === 'line-jcb').length, 0, 'nothing may go on the new number yet');
+  // Someone still writing to the old number is a stranger there: told so, and nothing is recorded.
+  await s.say(OWNER, 'मदद', 'site');
+  assert.equal(s.lastTo(OWNER), t('wa.unknown_sender'));
+  // They write to the new number: what they missed comes first, on that number.
+  await s.say(OWNER, 'मदद', 'jcb');
+  const told = s.sent.filter((/** @type {any} */ x) => x.to === OWNER && x.line === 'line-jcb').map((/** @type {any} */ x) => x.text);
+  assert.ok(told[0].includes('Shivpuri') && told[0].includes('J-1'), told.join(' / '));
+  assert.equal(told.at(-1), t('help.jcb_owner'));
+  await s.say(SUPPLIER, 'मदद', 'supplier');
+  assert.equal(s.lastTo(SUPPLIER), t('help.supplier'));
+  assert.ok((await s.exportOf('site')).events.length > rowsBefore, 'the same ledgers, carrying on');
+});
+
 test('an agent cannot start with another\'s key: wrong key, a second key in its folder, a missing key, the lines\' secrets, or someone else\'s people', LONG, async () => {
   const dirs = makeDirs('hb-keys-');
   try {
@@ -286,6 +378,12 @@ test('an agent cannot start with another\'s key: wrong key, a second key in its 
     const ok = start('jcb', { HB_ROUTER_URL: 'http://127.0.0.1:9', META_API_KEY: '' });
     assert.notEqual(ok.status, 1, ok.stderr);
     assert.match(ok.stdout, /agent jcb listening/);
+    // The router's real entry point holds no key at all.
+    mkdirSync(join(`${dirs.prefix}router`, 'keys'));
+    const router = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', ROUTER_JS], {
+      env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, ...parseEnvFile(readFileSync(join(dirs.env, 'router.env'), 'utf8')), HB_PORT: '0' }, encoding: 'utf8', timeout: 20_000 });
+    assert.equal(router.status, 1, router.stderr);
+    assert.match(router.stderr, /holds no private key/);
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
   }

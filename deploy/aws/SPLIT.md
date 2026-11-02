@@ -75,6 +75,35 @@ By hand, if the script itself cannot run:
 
 The services' folders and `/etc/hisaab/{router,jcb,site,supplier}.env` stay behind. To split again later, move them aside first: the script refuses to write over them.
 
+## One WhatsApp number, or one for each agent
+
+Both work with the same code. Which one you have is decided only by the settings and `people.json`.
+
+- **One number:** `HB_WA_JCB_PHONE_NUMBER_ID` and `HB_WA_SITE_PHONE_NUMBER_ID` hold the same ID, and a phone can be listed only once.
+- **A number per agent:** each of `HB_WA_JCB_*`, `HB_WA_SITE_*` and `HB_WA_SUPPLIER_*` has its own ID, app secret, verify token and access token. Each number's webhook is `https://<your address>/wa/jcb/webhook`, `/wa/site/webhook` or `/wa/supplier/webhook`. Each person's `"line"` in `people.json` is the number they write to. The same phone can be listed on two lines, even for two agents; what they write on a line goes to that line's agent, with its own 24-hour window and its own missed notices.
+
+### Moving from one number to three
+
+Do this at a quiet time, not during a job.
+
+1. **In Meta (the owner, by hand):** have each new number ready with its phone number ID, app secret and access token, and invent a verify token for each. Do not point the webhooks yet.
+2. **Tell everyone beforehand**, outside this system, which number is theirs, and ask each person to send "मदद" to the old number once just before the move. That sends out anything they missed: a missed notice belongs to the number it was missed on, and after the move it is not told again on the new one. (`बाकी` on the new number still shows what is open, from the ledger.)
+3. Stop everything: `sudo systemctl stop hisaab-router hisaab-agent@jcb hisaab-agent@site hisaab-agent@supplier`
+4. Settings, with `sudo nano`:
+   - `/etc/hisaab/router.env`: all four values of each line.
+   - `/etc/hisaab/jcb.env`, `site.env` and `supplier.env`: only the `HB_WA_*_PHONE_NUMBER_ID` lines, the same IDs in all three. If an agent has an old ID, the router refuses its notices to that person.
+   - `/etc/hisaab/hisaab.env`: the same as `router.env`, so the way back to one program still starts.
+5. People: in `/var/lib/hisaab-router/people.json` (everyone) and in each agent's own `people.json` (only that agent's), set each person's `"line"`. Moving the supplier's people to their own number means changing `"line": "jcb"` to `"line": "supplier"` in the router's file and the supplier's. Keep the two files in step.
+6. Start: `sudo systemctl start hisaab-router hisaab-agent@jcb hisaab-agent@site hisaab-agent@supplier`. Down for about as long as the editing takes; Meta sends waiting messages again.
+7. **In Meta (the owner, by hand):** point each number's webhook at its address above, with its verify token, and subscribe to `messages`. Do this after the start, because Meta checks the address at once.
+8. **Each person must write to their new number first.** WhatsApp lets us reply only within 24 hours of their last message on that number, and a new number has none. Until they write, nothing reaches them on it: their notices are kept and told when they do. Nobody is lost, but nobody hears anything either, so ring anyone who has not written.
+
+No data moves: ledgers, keys and message history stay as they are. Someone who stays on a number that is still in use, as the site's people can if the old number becomes the site's, needs no new step.
+
+What people notice: someone who writes to the old number when they are no longer listed on it gets the "this number is only for registered people" reply, once, and nothing is recorded. A number no longer in the settings at all gets no reply. To soften the change you may list a person on both lines for a few days, but while both their windows are open each notice reaches them twice, and a question must be answered on the number it was asked on. Going back to one number means removing such doubles first, or the services refuse to start.
+
+An alarm from the ledger check that was already told is told once more on the new number, because what was told is remembered per number.
+
 ## When one service is down
 
 - **An agent:** people of that agent are told "send it again" (the usual text); the others go on. Messages from the other agents wait and are delivered again every minute.

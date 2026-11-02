@@ -22,10 +22,15 @@ export const SUPERVISOR = '919000000111';
 export const CONTRACTOR = '919000000112';
 export const STRANGER = '919000000199';
 export const EXPORT_TOKEN = 'test-export-token-not-real';
-const SECRET = { jcb: 'secret-jcb-not-real', site: 'secret-site-not-real' };
+/** Known on two lines when there are three: the JCB agent's owner on one, the supplier agent's on another. */
+export const TWO_LINES = '919000000131';
+const SECRET = { jcb: 'secret-jcb-not-real', site: 'secret-site-not-real', supplier: 'secret-sup-not-real' };
 const CHILD = fileURLToPath(new URL('./child.js', import.meta.url));
-const LINE = { [OWNER]: 'jcb', [OPERATOR]: 'jcb', [SUPPLIER]: 'jcb', [SUPERVISOR]: 'site', [CONTRACTOR]: 'site', [STRANGER]: 'site' };
-const LINE_ID = { jcb: 'line-jcb', site: 'line-site' };
+/** @type {Record<string, 'jcb' | 'site' | 'supplier'>} */
+const LINE = { [OWNER]: 'jcb', [OPERATOR]: 'jcb', [SUPPLIER]: 'jcb', [SUPERVISOR]: 'site', [CONTRACTOR]: 'site', [STRANGER]: 'site', [TWO_LINES]: 'jcb' };
+const LINE_ID = { jcb: 'line-jcb', site: 'line-site', supplier: 'line-sup' };
+/** The settings that give the supplier its own number. */
+export const SUPPLIER_LINE_SETTINGS = ['HB_WA_SUPPLIER_PHONE_NUMBER_ID=line-sup', `HB_WA_SUPPLIER_APP_SECRET=${SECRET.supplier}`, 'HB_WA_SUPPLIER_VERIFY_TOKEN=verify-sup', 'HB_WA_SUPPLIER_ACCESS_TOKEN=tok-sup'];
 
 const freePort = () => new Promise((resolve) => {
   const s = createNetServer();
@@ -37,7 +42,9 @@ const freePort = () => new Promise((resolve) => {
 
 /**
  * The one-process service's folder and settings, with invented people.
- * @param {string} dir @param {string} baseUrl @param {{sharedNumber?: boolean}} [o] both lines the same WhatsApp number, as on the server now
+ * @param {string} dir @param {string} baseUrl
+ * @param {{sharedNumber?: boolean, threeLines?: boolean}} [o] sharedNumber: both lines the same WhatsApp number, as on the server now;
+ *   threeLines: a number for each agent, the supplier's people on their own line and one person on two lines
  */
 export function inventOneFolder(dir, baseUrl, o = {}) {
   mkdirSync(join(dir, 'keys'), { recursive: true });
@@ -47,14 +54,19 @@ export function inventOneFolder(dir, baseUrl, o = {}) {
   writeFileSync(join(dir, 'people.json'), JSON.stringify([
     { line: 'jcb', phone: OWNER, agent: 'jcb', role: 'jcb_owner', name: 'Owner' },
     { line: 'jcb', phone: OPERATOR, agent: 'jcb', role: 'operator', name: 'Operator' },
-    { line: 'jcb', phone: SUPPLIER, agent: 'supplier', role: 'supplier', name: 'Supplier' },
+    { line: o.threeLines ? 'supplier' : 'jcb', phone: SUPPLIER, agent: 'supplier', role: 'supplier', name: 'Supplier' },
     { line: 'site', phone: SUPERVISOR, agent: 'contractor', role: 'supervisor', name: 'Supervisor' },
     { line: 'site', phone: CONTRACTOR, agent: 'contractor', role: 'contractor', name: 'Contractor' },
+    ...(o.threeLines ? [
+      { line: 'jcb', phone: TWO_LINES, agent: 'jcb', role: 'jcb_owner', name: 'Partner' },
+      { line: 'supplier', phone: TWO_LINES, agent: 'supplier', role: 'supplier', name: 'Partner' },
+    ] : []),
   ]));
   const envFile = join(dir, 'hisaab.env');
   writeFileSync(envFile, [`HB_DATA_DIR=${dir}`, `HB_BASE_URL=${baseUrl}`, 'HB_PORT=8080', 'HB_HOST=127.0.0.1', `HB_EXPORT_TOKEN=${EXPORT_TOKEN}`,
     `HB_WA_JCB_PHONE_NUMBER_ID=${o.sharedNumber ? 'line-site' : 'line-jcb'}`, `HB_WA_JCB_APP_SECRET=${o.sharedNumber ? SECRET.site : SECRET.jcb}`, 'HB_WA_JCB_VERIFY_TOKEN=verify-jcb', 'HB_WA_JCB_ACCESS_TOKEN=tok-jcb',
     'HB_WA_SITE_PHONE_NUMBER_ID=line-site', `HB_WA_SITE_APP_SECRET=${SECRET.site}`, 'HB_WA_SITE_VERIFY_TOKEN=verify-site', 'HB_WA_SITE_ACCESS_TOKEN=tok-site',
+    ...(o.threeLines ? SUPPLIER_LINE_SETTINGS : []),
     'META_API_KEY=meta-test-key-not-real', 'META_API_BASE=https://api.meta.ai/v1', 'MUSE_SPARK_MODEL=muse-spark-1.3', ''].join('\n'));
   return envFile;
 }
@@ -90,11 +102,11 @@ export function makeDirs(prefix) {
 /**
  * Starts everything.
  * @param {import('node:test').TestContext} tc
- * @param {{checkMs?: number, sharedNumber?: boolean}} [o]
+ * @param {{checkMs?: number, sharedNumber?: boolean, threeLines?: boolean}} [o]
  */
 export async function startServices(tc, o = {}) {
   const dirs = makeDirs('hb-split-');
-  /** @type {{to: string, line: string, text: string, kind: string}[]} */
+  /** `token`: the access token it went out with. @type {{to: string, line: string, text: string, kind: string, token: string}[]} */
   const sent = [];
   /** Photo bytes by media id. @type {Record<string, string>} */
   const media = {};
@@ -114,10 +126,11 @@ export async function startServices(tc, o = {}) {
         return;
       }
       res.setHeader('content-type', 'application/json');
+      if (url.endsWith('/media')) { res.end(JSON.stringify({ id: 'uploaded-1' })); return; }
       if (graphFails > 0) { graphFails -= 1; res.statusCode = 400; res.end('{}'); return; }
       const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
       const line = /\/(line-[a-z]+)\/messages$/.exec(url)?.[1] ?? '?';
-      sent.push({ to: body.to, line, text: body.text?.body ?? body.image?.caption ?? '', kind: body.type });
+      sent.push({ to: body.to, line, text: body.text?.body ?? body.image?.caption ?? body.document?.caption ?? '', kind: body.type, token: String(req.headers.authorization).replace('Bearer ', '') });
       res.end(JSON.stringify({ messages: [{ id: `wamid.out${sent.length}` }] }));
     });
   });
@@ -141,7 +154,7 @@ export async function startServices(tc, o = {}) {
   });
   await new Promise((r) => front.listen(ports.FRONT, '127.0.0.1', () => r(undefined)));
 
-  const envIn = inventOneFolder(dirs.one, base, { sharedNumber: o.sharedNumber });
+  const envIn = inventOneFolder(dirs.one, base, { sharedNumber: o.sharedNumber, threeLines: o.threeLines });
   /** @type {string[]} */
   const migrated = [];
   assert.equal(await split({ from: dirs.one, envIn, toPrefix: dirs.prefix, envOut: dirs.env }, (l) => { migrated.push(l); }), true, migrated.join(' / '));
@@ -200,10 +213,10 @@ async function finish(tc, s) {
   });
 
   let n = 0;
-  /** @param {string} from @param {any} message */
-  const post = async (from, message) => {
+  /** @param {string} from @param {any} message @param {'jcb' | 'site' | 'supplier'} [onLine] the number written to, when not their usual one */
+  const post = async (from, message, onLine) => {
     n += 1;
-    const line = s.sharedNumber ? 'site' : /** @type {'jcb' | 'site'} */ (LINE[from]);
+    const line = onLine ?? (s.sharedNumber ? 'site' : LINE[from]);
     const body = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'w', changes: [{ field: 'messages', value: { metadata: { phone_number_id: LINE_ID[line] },
       messages: [{ from, id: `wamid.e2e${n}`, timestamp: String(Math.floor(Date.now() / 1000)), ...message }] } }] }] });
     const r = await fetch(`${base}/wa/${line}/webhook`, { method: 'POST', headers: { 'x-hub-signature-256': `sha256=${createHmac('sha256', SECRET[line]).update(body).digest('hex')}` }, body });
@@ -222,8 +235,8 @@ async function finish(tc, s) {
     }
   };
   const lastTo = (/** @type {string} */ phone) => sent.filter((/** @type {any} */ x) => x.to === phone).at(-1)?.text ?? '';
-  /** @param {string} from @param {string} text */
-  const say = async (from, text) => { await post(from, { type: 'text', text: { body: text } }); await settle(); };
+  /** @param {string} from @param {string} text @param {'jcb' | 'site' | 'supplier'} [onLine] */
+  const say = async (from, text, onLine) => { await post(from, { type: 'text', text: { body: text } }, onLine); await settle(); };
   /** @param {string} from @param {string} shows what the stand-in readers will see */
   const photo = async (from, shows) => {
     const id = `media-${n + 1}`;

@@ -51,6 +51,9 @@ export function parseEnvFile(text) {
   return out;
 }
 
+/** A value as systemd reads it, for the few values read here; the settings are written back as they were. @param {string | undefined} v */
+const plain = (v) => (v ?? '').trim().replace(/^(['"])(.*)\1$/, '$2');
+
 /** Copies one SQLite file safely, whatever its write-ahead log still holds. @param {string} from @param {string} to */
 async function copyDb(from, to) {
   const source = new DatabaseSync(from, { readOnly: true });
@@ -151,7 +154,7 @@ async function checkAll(parts, print) {
  */
 export async function split(o, print) {
   const env = parseEnvFile(readFileSync(o.envIn, 'utf8'));
-  const baseUrl = (env.HB_BASE_URL ?? '').replace(/\/+$/, '');
+  const baseUrl = plain(env.HB_BASE_URL).replace(/\/+$/, '');
   if (!baseUrl) throw new Error('the settings file has no HB_BASE_URL');
   const dirOf = (/** @type {string} */ n) => `${o.toPrefix}${n}`;
   for (const n of [...NAMES, 'router']) refuseIfUsed(dirOf(n));
@@ -162,11 +165,11 @@ export async function split(o, print) {
   const peers = /** @type {Record<string, {id: string, publicKey: string, url: string}>} */ ({});
   for (const n of NAMES) {
     keyText[n] = readFileSync(join(o.from, 'keys', `${AGENTS[n].file}.pem`), 'utf8');
-    peers[n] = { id: env[ID_VARS[n]] || DEFAULT_IDS[n], publicKey: publicKeyText(privateKeyFromPem(keyText[n])), url: `${baseUrl}/agents/${n}` };
+    peers[n] = { id: plain(env[ID_VARS[n]]) || DEFAULT_IDS[n], publicKey: publicKeyText(privateKeyFromPem(keyText[n])), url: `${baseUrl}/agents/${n}` };
   }
   const peopleRaw = JSON.parse(readFileSync(join(o.from, 'people.json'), 'utf8'));
   /** @type {Record<string, string>} */
-  const lineIds = { jcb: env.HB_WA_JCB_PHONE_NUMBER_ID ?? '', site: env.HB_WA_SITE_PHONE_NUMBER_ID ?? '', ...(env.HB_WA_SUPPLIER_PHONE_NUMBER_ID ? { supplier: env.HB_WA_SUPPLIER_PHONE_NUMBER_ID } : {}) };
+  const lineIds = { jcb: plain(env.HB_WA_JCB_PHONE_NUMBER_ID), site: plain(env.HB_WA_SITE_PHONE_NUMBER_ID), ...(plain(env.HB_WA_SUPPLIER_PHONE_NUMBER_ID) ? { supplier: plain(env.HB_WA_SUPPLIER_PHONE_NUMBER_ID) } : {}) };
   const people = parsePeople(peopleRaw, lineIds, { jcb: peers.jcb.id, contractor: peers.site.id, supplier: peers.supplier.id });
   const ownerOf = new Map(people.map((p) => [`${p.line}|${p.phone}`, p.agent]));
   const peersText = JSON.stringify(peers, null, 2);

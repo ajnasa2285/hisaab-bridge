@@ -15,7 +15,7 @@ import { loadConfig } from '../../src/main.js';
 import { back, parseEnvFile, run, split } from '../../src/service/migrate.js';
 import { generateKeys, privateKeyFromPem, publicKeyFromText, publicKeyText, signMessage } from '../../src/protocol/keys.js';
 import { rewriteRow } from '../ledger/forge.js';
-import { CONTRACTOR, OWNER, STRANGER, inventOneFolder, makeDirs } from './harness.js';
+import { CONTRACTOR, OWNER, STRANGER, TWO_LINES, inventOneFolder, makeDirs } from './harness.js';
 
 const ORDER = '11111111-1111-4111-8111-111111111111';
 const AT = '2026-10-30T02:30:00.000Z';
@@ -165,6 +165,37 @@ test('split: each service\'s folder holds its own and no more, the settings are 
   assert.equal(await checkFiles([`jcb=${join(oneAgain, 'jcb.db')}`, `site=${join(oneAgain, 'contractor.db')}`, `site.key=${peers.site.publicKey}`, `jcb.key=${peers.jcb.publicKey}`], (l) => { checked.push(l); }), 0, checked.join('\n'));
   // The same refusal going back.
   assert.equal(await run(['back', '--from-prefix', dirs.prefix, '--to', oneAgain], () => {}), 1);
+});
+
+test('three lines: a person on two lines has their notices split by line, to the agent they belong to there', async (tc) => {
+  const dirs = makeDirs('hb-migrate-three-');
+  tc.after(() => rmSync(dirs.root, { recursive: true, force: true }));
+  const envIn = inventOneFolder(dirs.one, 'https://example.test', { threeLines: true });
+  const store = openWaStore(join(dirs.one, 'wa.db'));
+  store.touch('line-jcb', TWO_LINES, 5);
+  store.touch('line-sup', TWO_LINES, 6);
+  store.missed('line-jcb', TWO_LINES, 'J-1', 'on.jcb', 7);
+  store.missed('line-sup', TWO_LINES, 'P-1', 'on.supplier', 8);
+  store.markIntegrityTold('line-sup', TWO_LINES, 'chain:supplier:1', 9);
+  store.close();
+  /** @type {string[]} */
+  const said = [];
+  assert.equal(await split({ from: dirs.one, envIn, toPrefix: dirs.prefix, envOut: dirs.env }, (l) => { said.push(l); }), true, said.join('\n'));
+  const take = (/** @type {string} */ n, /** @type {string} */ line) => {
+    const s = openWaStore(join(`${dirs.prefix}${n}`, 'wa.db'));
+    const rows = s.takeMissed(line, TWO_LINES);
+    s.close();
+    return rows.map((r) => r.ref);
+  };
+  assert.deepEqual([take('jcb', 'line-jcb'), take('jcb', 'line-sup'), take('supplier', 'line-sup'), take('supplier', 'line-jcb')], [['J-1'], [], ['P-1'], []]);
+  assert.equal(count(join(`${dirs.prefix}supplier`, 'wa.db'), 'wa_integrity_told'), 1);
+  assert.equal(count(join(`${dirs.prefix}jcb`, 'wa.db'), 'wa_integrity_told'), 0);
+  assert.equal(count(join(`${dirs.prefix}router`, 'wa.db'), 'wa_window'), 2, 'two windows, one per line');
+  const env = (/** @type {string} */ n) => parseEnvFile(readFileSync(join(dirs.env, `${n}.env`), 'utf8'));
+  assert.equal(env('router').HB_WA_SUPPLIER_ACCESS_TOKEN, 'tok-sup');
+  assert.equal(env('jcb').HB_WA_SUPPLIER_PHONE_NUMBER_ID, 'line-sup');
+  assert.equal(env('supplier').HB_WA_SUPPLIER_ACCESS_TOKEN, undefined);
+  assert.deepEqual(JSON.parse(readFileSync(join(`${dirs.prefix}jcb`, 'people.json'), 'utf8')).filter((/** @type {any} */ p) => p.phone === TWO_LINES).map((/** @type {any} */ p) => p.line), ['jcb']);
 });
 
 test('split stops the start of the services when a ledger was rewritten or a key is wrong: told, not hidden', async (tc) => {
