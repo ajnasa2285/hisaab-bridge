@@ -113,11 +113,11 @@ export async function startService(o = {}) {
     [SUPERVISOR]: ['site', 'line-site', 'secret-site'], [CONTRACTOR]: ['site', 'line-site', 'secret-site'],
   });
   let n = 0;
-  /** @param {string} from @param {string | null} text @param {string} [mediaId] @param {string} [caption] @param {any} [tapped] a reply button's title, tapped */
+  /** @param {string} from @param {string | null} text @param {string} [mediaId] @param {string} [caption] @param {{id: string, title: string}} [tapped] a reply button, tapped */
   async function say(from, text, mediaId, caption, tapped) {
     n += 1;
     const [name, line, secret] = who[from];
-    const m = tapped ? { type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: tapped === 'हाँ' ? 'yes' : 'no', title: tapped } } }
+    const m = tapped ? { type: 'interactive', interactive: { type: 'button_reply', button_reply: tapped } }
       : text === null ? { type: 'image', image: { id: mediaId ?? `media-${n}`, mime_type: 'image/jpeg', ...(caption ? { caption } : {}) } } : { type: 'text', text: { body: text } };
     const body = JSON.stringify({
       object: 'whatsapp_business_account',
@@ -136,8 +136,13 @@ export async function startService(o = {}) {
     }
   }
   const lastTo = (/** @type {string} */ phone) => sent.filter((s) => s.to === phone).at(-1)?.text ?? '';
-  /** A reply button tapped, as WhatsApp sends it. @param {string} from @param {string} title */
-  const tap = (from, title) => say(from, null, undefined, undefined, title);
+  /** The buttons of the last question with buttons sent to this person. @param {string} phone @returns {{id: string, title: string}[]} */
+  const buttonsTo = (phone) => bodies.filter((b) => b.to === phone && b.type === 'interactive').at(-1)?.interactive.action.buttons.map((/** @type {any} */ b) => b.reply) ?? [];
+  /**
+   * A reply button tapped, as WhatsApp sends it: by default the one with this title on the last question
+   * with buttons sent to this person. @param {string} from @param {string} title @param {string} [id] another id, as an old button has
+   */
+  const tap = (from, title, id) => say(from, null, undefined, undefined, { id: id ?? buttonsTo(from).find((b) => b.title === title)?.id ?? 'yes:none-sent-yet', title });
   /** Says "हाँ" when the last message to this person is a yes/no question. @param {string} phone */
   async function yesIfAsked(phone) {
     if (/हाँ \/ नहीं|"हाँ"/u.test(lastTo(phone))) await say(phone, 'हाँ');
@@ -146,7 +151,7 @@ export async function startService(o = {}) {
   const trace = async (name, query = '', token = TOKEN) => fetch(`${base}/agents/${name}/trace${query}`, token ? { headers: { authorization: `Bearer ${token}` } } : {});
 
   return {
-    app, base, sent, bodies, logs, model, say, tap, settle, lastTo, yesIfAsked, trace, dir,
+    app, base, sent, bodies, logs, model, say, tap, buttonsTo, settle, lastTo, yesIfAsked, trace, dir,
     async close() {
       app.close();
       await new Promise((r) => server.close(() => r(undefined)));

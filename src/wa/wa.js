@@ -1,7 +1,8 @@
 // The WhatsApp side of the server: one webhook path per line (each line is its own Meta app with
 // its own app secret), signature checked on the raw bytes before anything is parsed, each message
 // handled once, routed to {agent, role}, and replies sent only inside the 24-hour window. A question
-// ending "हाँ / नहीं" goes with reply buttons, and as plain text if WhatsApp does not take them.
+// ending "हाँ / नहीं", sent with its token, goes with reply buttons, and as plain text if WhatsApp does
+// not take them.
 //
 //   GET  /wa/<line name>/webhook   Meta's subscription handshake
 //   POST /wa/<line name>/webhook   messages
@@ -46,15 +47,16 @@ export function createWa(o) {
    * @param {string} phoneNumberId
    * @param {string} phone
    * @param {string} text
+   * @param {{token?: string}} [opts] `token`: the question's own (src/agents/conversation.js), for its buttons
    * @returns {Promise<{ok: true, id: string} | {ok: false, reason: string}>}
    */
-  async function send(phoneNumberId, phone, text) {
+  async function send(phoneNumberId, phone, text, opts = {}) {
     const line = byId.get(phoneNumberId);
     if (!line) return { ok: false, reason: 'unknown line' };
     if (!o.store.windowOpen(phoneNumberId, phone, now())) return { ok: false, reason: 'outside 24h window' };
-    // A question ending "हाँ / नहीं" goes with those two as buttons. If WhatsApp does not take it, for
-    // any reason, the same text goes as before: nobody loses a question.
-    const asked = yesNoButtons(text);
+    // A question ending "हाँ / नहीं" goes with those two as buttons, which name the question by its
+    // token. If WhatsApp does not take it, for any reason, the same text goes as before: nobody loses a question.
+    const asked = opts.token ? yesNoButtons(text, opts.token) : null;
     if (asked) {
       const b = await line.client.sendButtons(phone, asked.body, asked.buttons);
       if (b.ok) return b;
@@ -179,20 +181,31 @@ export function createWa(o) {
   return { handle, send, sendImage, sendDocument };
 }
 
+/**
+ * A tap of one of our reply buttons: the answer and its question's token. Null for anything else.
+ * @param {Inbound} msg @returns {{answer: 'yes' | 'no', token: string} | null}
+ */
+export function tappedButton(msg) {
+  const m = msg.kind === 'button' ? /^(yes|no):(.+)$/.exec(msg.replyId ?? '') : null;
+  return m && TOKEN.test(m[2]) ? { answer: /** @type {'yes' | 'no'} */ (m[1]), token: m[2] } : null;
+}
+
 const YES_NO = /\s*हाँ \/ नहीं$/u;
+const TOKEN = /^[A-Za-z0-9_-]{8,64}$/;
 
 /**
  * A text that ends with the two answers it accepts, "हाँ / नहीं", as WhatsApp reply buttons: the text
- * before them, and a button for each. A tap arrives as the button's title, the same word typed.
- * Null for any other text, or one whose rest is too long for a button message (it goes as text).
- * @param {string} text
+ * before them, and a button for each, "yes:<token>" / "no:<token>". A tap arrives with that id
+ * (src/wa/webhook.js), so it answers only the question it was sent with. Null for any other text, a
+ * token that is not one of ours, or a rest too long for a button message (it goes as text).
+ * @param {string} text @param {string} token
  * @returns {{body: string, buttons: {id: string, title: string}[]} | null}
  */
-export function yesNoButtons(text) {
-  if (!YES_NO.test(text)) return null;
+export function yesNoButtons(text, token) {
+  if (!YES_NO.test(text) || !TOKEN.test(token)) return null;
   const body = text.replace(YES_NO, '');
   if (!body.trim() || body.length > MAX_BUTTON_BODY) return null;
-  return { body, buttons: [{ id: 'yes', title: 'हाँ' }, { id: 'no', title: 'नहीं' }] };
+  return { body, buttons: [{ id: `yes:${token}`, title: 'हाँ' }, { id: `no:${token}`, title: 'नहीं' }] };
 }
 
 /** @param {import('node:http').IncomingMessage} req @returns {Promise<Buffer>} */

@@ -52,5 +52,26 @@ for (const [name, o] of /** @type {[string, {sharedNumber?: boolean, threeLines?
     const jcb = await s.exportOf('jcb');
     const figures = jcb.events.filter((/** @type {any} */ e) => e.direction === 'local' && e.type === 'EVIDENCE').map((/** @type {any} */ e) => e.body.valueTenths);
     assert.deepEqual(figures, [99894, 99954]);
+
+    // Through the router a tap still answers only its own question: an earlier one's button decides
+    // nothing and the open question is asked again; after the agent restarts, no token is known.
+    const orders = async () => (await s.exportOf('site')).orders.length;
+    await replied(CONTRACTOR, () => s.say(CONTRACTOR, 'kal Shivpuri JCB'));
+    const [older] = s.buttonsTo(CONTRACTOR);
+    await replied(CONTRACTOR, () => s.say(CONTRACTOR, 'kal Shivpuri JCB'));
+    const [newer] = s.buttonsTo(CONTRACTOR);
+    assert.notEqual(older.id, newer.id);
+    const before = count(CONTRACTOR);
+    await replied(CONTRACTOR, () => s.tap(CONTRACTOR, 'हाँ', older.id));
+    for (let i = 0; i < 100 && count(CONTRACTOR) < before + 2; i += 1) await new Promise((r) => setTimeout(r, 50));
+    const told = s.sent.filter((/** @type {any} */ x) => x.to === CONTRACTOR).slice(before);
+    assert.deepEqual(told.map((/** @type {any} */ x) => x.text.slice(0, 20)), [t('common.button_old').slice(0, 20), last(CONTRACTOR).text.slice(0, 20)]);
+    assert.equal(told[1].buttons[0].id, newer.id, 'asked again with its own buttons');
+    assert.equal(await orders(), 1, 'nothing decided');
+    await s.kill('site');
+    await s.start('site');
+    await replied(CONTRACTOR, () => s.tap(CONTRACTOR, 'हाँ', newer.id));
+    assert.equal(s.lastTo(CONTRACTOR), t('common.button_old_none'));
+    assert.equal(await orders(), 1, 'a button from before the restart decides nothing');
   });
 }

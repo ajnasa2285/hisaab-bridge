@@ -28,9 +28,12 @@
 // else is handled as usual, and a question it set aside is asked again once.
 // A meter or (supplier's) challan photo with several orders open is held as the open question: they are listed by number,
 // reference, site and day, and a number or a reference (or a reference in the photo's caption) says which.
+// A question asked with reply buttons carries a token of its own; a tap counts only for the question
+// open now, with that token. A tap of an earlier question's button decides nothing, and the open
+// question is asked again. Typed words are read as always.
 // People decide; the model only proposes.
 
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { answerOpen, fillStep, proposeStep, orderRefs, shareFilled } from '../orchestrator/orchestrator.js';
 import { blank, parseHundredthsList, parseQuantity } from '../orchestrator/units.js';
 import { impossible, meterReadings, MAX_JOB_TENTHS } from './jcb-bill.js';
@@ -52,8 +55,9 @@ import { plain, promptBlock, voiceParty } from '../learn/corrections.js';
 
 /** @typedef {import('../wa/directory.js').Person} Person */
 /** @typedef {import('./common.js').Tool} Tool */
-/** `missed`: what to remember if this could not be sent outside the 24-hour window (src/app.js sendTo).
- * @typedef {(person: Person, key: string, params?: Record<string, string | number>, missed?: {ref: string, key: string}) => Promise<void> | void} Reply */
+/** `missed`: what to remember if this could not be sent outside the 24-hour window (src/app.js sendTo);
+ * `token`: the open question's own, for its reply buttons (src/wa/wa.js).
+ * @typedef {(person: Person, key: string, params?: Record<string, string | number>, missed?: {ref: string, key: string}, opts?: {token?: string}) => Promise<void> | void} Reply */
 /**
  * `notice`: a question the agent put to the person, not a read-back of their own step; `again`: it has been asked again once.
  * @typedef {{kind: 'confirm', tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}, ask?: Asked, at: number, notice?: boolean, again?: boolean} |
@@ -126,6 +130,8 @@ const kindOfWord = (said) => /** @type {PhotoKind | null} */ (Object.entries(KIN
 /** @param {string} mime */
 const isImageMime = (mime) => mime === 'image/jpeg' || mime === 'image/png' || mime === 'image/webp';
 
+/** A fresh token for one question's reply buttons. */
+const newToken = () => randomBytes(9).toString('base64url');
 /** @param {string} text */
 const norm = (text) => text.trim().toLowerCase().replace(/[।.!?,]+$/u, '').replace(/\s+/g, ' ');
 /** "१२" → "12" @param {string} s */
@@ -171,6 +177,29 @@ const tenthsText = (/** @type {number} */ v) => `${Math.floor(v / 10)}.${v % 10}
 export function createConversation(o) {
   /** @type {Map<string, Pending>} */
   const pending = new Map();
+  // Reply buttons: the words each open question was asked with, and the token its buttons carry. A
+  // question is new until the first reply after it was set; that reply is its asking (askedWith).
+  /** @type {WeakSet<Pending>} */
+  const fresh = new WeakSet();
+  /** @type {WeakMap<Pending, {key: string, params?: Record<string, string | number>, token?: string}>} */
+  const asked = new WeakMap();
+  const setPending = pending.set.bind(pending);
+  pending.set = (k, v) => { fresh.add(v); return setPending(k, v); };
+  const send = o.reply;
+  o = { ...o, reply: askedWith };
+  /**
+   * Every reply of this conversation. The first one after a question was set is that question: its
+   * words are kept, and when it ends with "हाँ / नहीं" it gets a fresh token, which its buttons carry.
+   * @type {Reply}
+   */
+  function askedWith(person, key, params, missed) {
+    const p = pending.get(keyOf(person));
+    if (!p || !fresh.has(p)) return send(person, key, params, missed);
+    fresh.delete(p);
+    const token = t(key, params).endsWith('हाँ / नहीं') ? newToken() : undefined;
+    asked.set(p, { key, ...(params ? { params } : {}), ...(token ? { token } : {}) });
+    return send(person, key, params, missed, token ? { token } : undefined);
+  }
   // An end photo of each job that was read but not recorded yet: a figure typed next belongs to it.
   /** @type {Map<string, {sha256: string, takenAt: string | null, at: number}>} */
   const endPhotos = new Map();
@@ -1725,15 +1754,25 @@ export function createConversation(o) {
    * takes that one's place: it waits, and is asked when that one is answered or lapses.
    * @param {Person} person @param {string} tool @param {Record<string, any>} args
    * @param {{tool: string, args: Record<string, any>}} [no] @param {Asked} [ask] the notice's own words
+   * @param {string} [token] the token of the buttons the notice went with
    */
-  function expect(person, tool, args, no, ask) {
+  function expect(person, tool, args, no, ask, token) {
     const open = current(person);
+    // The notice was sent with these buttons (src/app.js tell): it is this question's asking.
+    /** @param {Pending} q */
+    const told = (q) => {
+      if (!token || !ask) return;
+      fresh.delete(q);
+      asked.set(q, { key: ask.key, ...(ask.params ? { params: ask.params } : {}), token });
+    };
     if (!open) {
-      pending.set(keyOf(person), { kind: 'confirm', tool, args, ...(no ? { no } : {}), ...(ask ? { ask } : {}), at: o.now(), notice: true });
+      const q = /** @type {Pending} */ ({ kind: 'confirm', tool, args, ...(no ? { no } : {}), ...(ask ? { ask } : {}), at: o.now(), notice: true });
+      pending.set(keyOf(person), q);
+      told(q);
       return;
     }
     const same = (/** @type {{tool: string, args: Record<string, any>}} */ q) => q.tool === tool && JSON.stringify(q.args) === JSON.stringify(args);
-    if (open.kind === 'confirm' && same(open)) return;
+    if (open.kind === 'confirm' && same(open)) { told(open); return; }
     const queue = waiting.get(keyOf(person)) ?? [];
     if (queue.some(same)) return;
     if (queue.length >= MAX_WAITING) queue.shift();
@@ -1750,5 +1789,27 @@ export function createConversation(o) {
     replayedRefs.set(keyOf(person), { refs, at: o.now() });
   }
 
-  return { onText, onImage, expect, replayed, pending: (/** @type {Person} */ p) => current(p) };
+  /**
+   * A reply button tapped: `answer` and the token its question went with (src/wa/wa.js). The token of the
+   * question open now: exactly the typed word. Any other (an earlier question's, or one from before a
+   * restart): nothing is decided, the person is told so, and the open question is asked again.
+   * @param {Person} person @param {'yes' | 'no'} answer @param {string} token @param {{atMs?: number}} [how]
+   */
+  async function onTap(person, answer, token, how) {
+    const p = current(person);
+    const words = p ? asked.get(p) : undefined;
+    if (words?.token && words.token === token) return onText(person, answer === 'yes' ? 'हाँ' : 'नहीं', how);
+    traceCheck('a button of an earlier question ✗ → nothing decided, the open question asked again', false, { name: 'button_old', open: p?.kind ?? null });
+    if (p) {
+      await send(person, 'common.button_old');
+      const again = words ?? (p.kind === 'confirm' ? p.ask ?? o.tools[p.tool]?.describe?.(p.args) : undefined);
+      if (again) await send(person, again.key, again.params, undefined, words?.token ? { token: words.token } : undefined);
+      return;
+    }
+    if ((waiting.get(keyOf(person))?.length ?? 0) === 0) return send(person, 'common.button_old_none');
+    await send(person, 'common.button_old');
+    await askNext(person);
+  }
+
+  return { onText, onImage, onTap, expect, replayed, pending: (/** @type {Person} */ p) => current(p) };
 }

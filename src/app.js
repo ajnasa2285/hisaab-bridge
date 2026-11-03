@@ -37,14 +37,14 @@ import { normaliseVoice, openLearn, voiceParty, voiceReplacements } from './lear
 import { traceCheck } from './trace/trace.js';
 import { createDirectory } from './wa/directory.js';
 import { openWaStore } from './wa/store.js';
-import { createWa } from './wa/wa.js';
+import { createWa, tappedButton } from './wa/wa.js';
 import { createCloudClient } from './wa/cloud.js';
 import { maskPhone } from './wa/webhook.js';
 import { toWav } from './wa/audio.js';
 import { t } from './i18n/index.js';
 import { checkLedgers } from './ledger/integrity.js';
 import { isJudgePath, serveJudge } from './judge-page.js';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 // The reason src/wa/wa.js gives when a person has not written in the last 24 hours.
 const OUTSIDE_WINDOW = 'outside 24h window';
@@ -122,11 +122,12 @@ export function createApp(cfg) {
    * (`missed`: its reference and text key) is remembered to be told again, rebuilt from the ledger, when
    * the person next writes (tellWaiting). Outside the 24-hour window that is all; any other failure also
    * leaves NOTICE_FAILED, because the person had every reason to expect this notice.
-   * @param {Person} p @param {string} text @param {{ref: unknown, key: string}} [missed]
+   * `token`: a question's own, for its reply buttons (src/wa/wa.js).
+   * @param {Person} p @param {string} text @param {{ref: unknown, key: string}} [missed] @param {string} [token]
    * @returns {Promise<boolean>} sent
    */
-  async function sendTo(p, text, missed) {
-    const r = await wa.send(p.line, p.phone, text);
+  async function sendTo(p, text, missed, token) {
+    const r = await wa.send(p.line, p.phone, text, token ? { token } : undefined);
     if (!r.ok) log(`notice to ${p.role} ${maskPhone(p.phone)} not sent: ${r.reason}`);
     if (!r.ok && missed && typeof missed.ref === 'string' && missed.ref !== '—') {
       store.missed(p.line, p.phone, missed.ref, missed.key, now());
@@ -227,8 +228,10 @@ export function createApp(cfg) {
         // With a question already open, this one waits (src/agents/conversation.js): the person is told
         // what a bare "हाँ" answers now. An expectation stands only on a notice that really went.
         const waits = expect && entry.talk.pending(p) !== null;
-        const sent = await sendTo(p, waits ? `${t(key, params)}\n\n${t('common.question_waits')}` : t(key, params), { ref: params?.ref, key });
-        if (expect && sent) entry.talk.expect(p, expect.tool, expect.args, expect.no, { key, params });
+        // A question asked now goes with buttons that carry its own token; one that waits goes as text.
+        const token = expect && !waits ? randomBytes(9).toString('base64url') : undefined;
+        const sent = await sendTo(p, waits ? `${t(key, params)}\n\n${t('common.question_waits')}` : t(key, params), { ref: params?.ref, key }, token);
+        if (expect && sent) entry.talk.expect(p, expect.tool, expect.args, expect.no, { key, params }, token);
       }
     };
     const evidence = createEvidenceService({ agent: core, link, kind: a.kind, tell, spark,
@@ -259,9 +262,9 @@ export function createApp(cfg) {
         ? createSupplierAgent({ agent: core, link, tell, spark })
         : createContractorAgent({ agent: core, link, tell, spark, jcbAgentId: /** @type {string} */ (a.jcbAgentId), supplierAgentId: a.supplierAgentId, evidence: automaticEvidence });
     /** @type {import('./agents/conversation.js').Reply} */
-    const reply = async (p, key, params, missed) => {
+    const reply = async (p, key, params, missed, opts) => {
       traceReply(key, p.role, 1);
-      await sendTo(p, t(key, params), missed);
+      await sendTo(p, t(key, params), missed, opts?.token);
     };
     // The owner's yes/no to sharing a photo (evidence.tools) is a step like the agent's own.
     const tools = traceTools({ ...agent.tools, ...evidence.tools }, trace);
@@ -303,6 +306,9 @@ export function createApp(cfg) {
     return withTrace(entry.trace, { convo: entry.trace.convoOf(person), role: person.role, text }, async () => {
       const channel = text !== null ? (parseCommand(text) ? 'command' : 'text') : msg.kind === 'image' ? 'photo' : msg.kind === 'audio' ? 'voice' : msg.kind;
       entry.trace.add('received', `${channel} from ${person.role}`, { channel, role: person.role, text: entry.trace.words(text) });
+      // A tap of one of our reply buttons answers only the question it was sent with (its token).
+      const tap = tappedButton(msg);
+      if (tap) return entry.talk.onTap(person, tap.answer, tap.token, { atMs: msg.atMs });
       if (text !== null) return entry.talk.onText(person, text, { atMs: msg.atMs });
       if (msg.kind === 'image' && msg.mediaId) {
         const media = await fetchMedia(person.line, msg.mediaId);

@@ -107,7 +107,7 @@ export function makeDirs(prefix) {
  */
 export async function startServices(tc, o = {}) {
   const dirs = makeDirs('hb-split-');
-  /** `token`: the access token it went out with. @type {{to: string, line: string, text: string, kind: string, token: string}[]} */
+  /** `token`: the access token it went out with; `buttons`: a question's reply buttons. @type {{to: string, line: string, text: string, kind: string, token: string, buttons?: {id: string, title: string}[]}[]} */
   const sent = [];
   /** Photo bytes by media id. @type {Record<string, string>} */
   const media = {};
@@ -135,7 +135,8 @@ export async function startServices(tc, o = {}) {
       if (graphFails > 0) { if (body.type !== 'interactive') graphFails -= 1; res.statusCode = 400; res.end('{}'); return; }
       if (buttonFails > 0 && body.type === 'interactive') { buttonFails -= 1; res.statusCode = 400; res.end(JSON.stringify({ error: { code: 131009 } })); return; }
       const line = /\/(line-[a-z]+)\/messages$/.exec(url)?.[1] ?? '?';
-      sent.push({ to: body.to, line, text: sentText(body) ?? body.image?.caption ?? body.document?.caption ?? '', kind: body.type, token: String(req.headers.authorization).replace('Bearer ', '') });
+      sent.push({ to: body.to, line, text: sentText(body) ?? body.image?.caption ?? body.document?.caption ?? '', kind: body.type, token: String(req.headers.authorization).replace('Bearer ', ''),
+        ...(body.type === 'interactive' ? { buttons: body.interactive.action.buttons.map((/** @type {any} */ b) => b.reply) } : {}) });
       res.end(JSON.stringify({ messages: [{ id: `wamid.out${sent.length}` }] }));
     });
   });
@@ -242,8 +243,16 @@ async function finish(tc, s) {
   const lastTo = (/** @type {string} */ phone) => sent.filter((/** @type {any} */ x) => x.to === phone).at(-1)?.text ?? '';
   /** @param {string} from @param {string} text @param {'jcb' | 'site' | 'supplier'} [onLine] */
   const say = async (from, text, onLine) => { await post(from, { type: 'text', text: { body: text } }, onLine); await settle(); };
-  /** A reply button tapped, as WhatsApp sends it. @param {string} from @param {string} title */
-  const tap = async (from, title) => { await post(from, { type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: title === 'हाँ' ? 'yes' : 'no', title } } }); await settle(); };
+  /** The buttons of the last question with buttons sent to this person. @param {string} phone @returns {{id: string, title: string}[]} */
+  const buttonsTo = (phone) => sent.filter((/** @type {any} */ x) => x.to === phone && x.buttons).at(-1)?.buttons ?? [];
+  /**
+   * A reply button tapped, as WhatsApp sends it: by default the one with this title on the last question
+   * with buttons sent to this person. @param {string} from @param {string} title @param {string} [id] another id, as an old button has
+   */
+  const tap = async (from, title, id) => {
+    await post(from, { type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: id ?? buttonsTo(from).find((b) => b.title === title)?.id ?? 'yes:none-sent-yet', title } } });
+    await settle();
+  };
   /** @param {string} from @param {string} shows what the stand-in readers will see */
   const photo = async (from, shows) => {
     const id = `media-${n + 1}`;
@@ -255,7 +264,7 @@ async function finish(tc, s) {
   /** @param {string} name */
   const exportOf = async (name) => (await fetch(`${base}/agents/${name}/export`, { headers: { authorization: `Bearer ${EXPORT_TOKEN}` } })).json();
 
-  return { ...s, settings, start, kill, children, post, say, tap, photo, settle, lastTo, yesIfAsked, exportOf, sent, media, base, secret: SECRET };
+  return { ...s, settings, start, kill, children, post, say, tap, buttonsTo, photo, settle, lastTo, yesIfAsked, exportOf, sent, media, base, secret: SECRET };
 }
 
 /**

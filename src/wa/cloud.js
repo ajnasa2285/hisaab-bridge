@@ -111,7 +111,7 @@ export function createCloudClient(o) {
       if (!body.trim() || body.length > MAX_BUTTON_BODY) return { ok: false, reason: 'body empty or too long' };
       const titles = new Set(buttons.map((b) => b.title));
       if (buttons.length < 1 || buttons.length > MAX_BUTTONS || titles.size !== buttons.length
-        || buttons.some((b) => !b.title.trim() || b.title.length > MAX_BUTTON_TITLE || !/^[a-z_]{1,32}$/.test(b.id))) return { ok: false, reason: 'bad buttons' };
+        || buttons.some((b) => !b.title.trim() || b.title.length > MAX_BUTTON_TITLE || !/^[a-z]{1,8}:[A-Za-z0-9_-]{1,64}$/.test(b.id))) return { ok: false, reason: 'bad buttons' };
       return sendMessage(to, { type: 'interactive', interactive: { type: 'button', body: { text: body },
         action: { buttons: buttons.map((b) => ({ type: 'reply', reply: { id: b.id, title: b.title } })) } } });
     },

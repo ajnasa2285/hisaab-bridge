@@ -87,7 +87,7 @@ export function createRouter(cfg, o = {}) {
     // Only to this agent's own people: a mistake or a takeover in one agent cannot write as another.
     const person = typeof b?.line === 'string' && typeof b.phone === 'string' ? directory.route(b.line, b.phone) : null;
     if (!person || person.agent !== agent.id) return { ok: false, reason: 'not this agent\'s person' };
-    if (b.kind === 'text') return wa.send(b.line, b.phone, String(b.text));
+    if (b.kind === 'text') return wa.send(b.line, b.phone, String(b.text), typeof b.token === 'string' ? { token: b.token } : undefined);
     const bytes = new Uint8Array(Buffer.from(String(b.bytes), 'base64'));
     if (b.kind === 'image') return wa.sendImage(b.line, b.phone, { bytes, mime: String(b.mime), caption: String(b.caption) });
     if (b.kind === 'document') return wa.sendDocument(b.line, b.phone, { bytes, mime: String(b.mime), fileName: String(b.fileName), caption: String(b.caption) });

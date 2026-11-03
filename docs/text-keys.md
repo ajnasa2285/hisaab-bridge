@@ -639,3 +639,10 @@ The sheets' headings are in Hindi with English in brackets and live in `src/expo
 ## Reply buttons (3 Nov)
 
 No new words. A text that ends with "हाँ / नहीं" goes as a WhatsApp reply-button message (`src/wa/wa.js` `yesNoButtons`): the text before those words, and two buttons "हाँ" and "नहीं". A tap arrives as the button's title, the same word typed. A text that does not end that way (`booking.ask_jcb` with "/ दूसरा दिन", `pay.split_choose`, `learn.read_back_*` with "या सही अंक लिखें", any question followed by `common.question_waits`), or whose rest is over WhatsApp's 1024 characters, goes as text. Buttons WhatsApp refuses go as the same text.
+
+Each question's buttons carry a token of their own (reply ids `yes:<token>` / `no:<token>`). A tap counts as "हाँ" / "नहीं" only when its token is the question open now for that person; typed words are read as before. Only questions the conversation asks (read-backs, its own questions) and notices that set an expectation (`tell` with an expectation) carry a token; any other text ending "हाँ / नहीं" goes as text.
+
+| Key | Params | When |
+|---|---|---|
+| `common.button_old` | — | a tap of an earlier question's button: nothing decided; the open question follows, asked again |
+| `common.button_old_none` | — | the same with no question open (also after a restart): nothing decided, write or send again |

@@ -14,7 +14,7 @@ const MEDIA_TIMEOUT_MS = 60 * 1000;
  * @typedef {{
  *   lineIds: string[],
  *   handle: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<boolean>,
- *   send: (line: string, phone: string, text: string) => Promise<Sent>,
+ *   send: (line: string, phone: string, text: string, opts?: {token?: string}) => Promise<Sent>,
  *   sendImage: (line: string, phone: string, image: {bytes: Uint8Array, mime: string, caption: string}) => Promise<Sent>,
  *   sendDocument: (line: string, phone: string, doc: {bytes: Uint8Array, mime: string, fileName: string, caption: string}) => Promise<Sent>,
  *   fetchMedia: (line: string, mediaId: string) => Promise<{bytes: Buffer, mimeType: string, sha256: string}>,
@@ -40,7 +40,7 @@ export function createGateway(o) {
     lineIds: o.lineIds,
     // The webhooks are the router's.
     handle: async () => false,
-    send: (line, phone, text) => send({ kind: 'text', line, phone, text }),
+    send: (line, phone, text, opts) => send({ kind: 'text', line, phone, text, ...(opts?.token ? { token: opts.token } : {}) }),
     sendImage: (line, phone, image) => send({ kind: 'image', line, phone, mime: image.mime, caption: image.caption, bytes: Buffer.from(image.bytes).toString('base64') }),
     sendDocument: (line, phone, doc) => send({ kind: 'document', line, phone, mime: doc.mime, caption: doc.caption, fileName: doc.fileName, bytes: Buffer.from(doc.bytes).toString('base64') }),
     async fetchMedia(line, mediaId) {

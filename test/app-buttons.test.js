@@ -32,7 +32,11 @@ test('a read-back goes as two buttons; a tapped "हाँ" does what a typed on
     const question = lastBody(s, CONTRACTOR);
     assert.equal(question.type, 'interactive');
     assert.equal(question.interactive.type, 'button');
-    assert.deepEqual(question.interactive.action.buttons, [{ type: 'reply', reply: { id: 'yes', title: 'हाँ' } }, { type: 'reply', reply: { id: 'no', title: 'नहीं' } }]);
+    const [yes, no] = question.interactive.action.buttons;
+    assert.deepEqual([yes.type, yes.reply.title, no.type, no.reply.title], ['reply', 'हाँ', 'reply', 'नहीं']);
+    const token = yes.reply.id.slice(4);
+    assert.match(token, /^[A-Za-z0-9_-]{12}$/);
+    assert.deepEqual([yes.reply.id, no.reply.id], [`yes:${token}`, `no:${token}`], 'both buttons name this question');
     const words = question.interactive.body.text;
     assert.ok(words.includes('Shivpuri') && !words.includes('हाँ / नहीं') && words === words.trim(), words);
 
@@ -49,6 +53,37 @@ test('a read-back goes as two buttons; a tapped "हाँ" does what a typed on
     await s.tap(CONTRACTOR, 'नहीं');
     assert.equal(s.lastTo(CONTRACTOR), t('step.cancelled'));
     assert.equal(siteOrders(s), 2);
+  } finally {
+    await s.close();
+  }
+});
+
+test('a button of an earlier question decides nothing in the whole service: the open question is asked again; with nothing open, nothing is decided', async () => {
+  const s = await startService();
+  try {
+    await s.say(CONTRACTOR, 'मदद');
+    await ask(s);
+    const [old] = s.buttonsTo(CONTRACTOR);
+    await s.tap(CONTRACTOR, 'नहीं');
+    assert.equal(s.lastTo(CONTRACTOR), t('step.cancelled'));
+    await ask(s);
+    const [current] = s.buttonsTo(CONTRACTOR);
+    assert.notEqual(old.id, current.id);
+    const before = s.sent.length;
+    await s.tap(CONTRACTOR, 'हाँ', old.id);
+    const told = s.sent.slice(before).filter((x) => x.to === CONTRACTOR).map((x) => x.text);
+    assert.equal(told[0], t('common.button_old'));
+    assert.ok(told[1]?.includes('Shivpuri') && told[1].endsWith('हाँ / नहीं'), told.join(' / '));
+    assert.equal(lastBody(s, CONTRACTOR).interactive.action.buttons[0].reply.id, current.id, 'asked again with its own buttons');
+    assert.equal(siteOrders(s), 0, 'nothing decided');
+    await s.tap(CONTRACTOR, 'हाँ', current.id);
+    assert.equal(siteOrders(s), 1);
+    // Nothing open now: the same old button, and the button just used, decide nothing.
+    for (const id of [old.id, current.id]) {
+      await s.tap(CONTRACTOR, 'हाँ', id);
+      assert.equal(s.lastTo(CONTRACTOR), t('common.button_old_none'));
+    }
+    assert.equal(siteOrders(s), 1);
   } finally {
     await s.close();
   }
