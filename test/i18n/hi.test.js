@@ -14,7 +14,7 @@ const REF_EXAMPLE = /\b[JP]-\d+\b/g;
 const CHASING = ['जल्दी', 'तुरंत', 'याद दिला', 'कब दोगे', 'कब देंगे', 'कब देंगी', 'चुकाएँ', 'चुकाओ', 'भुगतान करें', 'भुगतान कीजिए', 'पैसे दो', 'पैसे दें', 'देर हो', 'बकाया चुका', 'reminder', 'overdue'];
 
 /** A sample value for every parameter, so every key can be filled. @type {Record<string, string|number>} */
-const SAMPLE = { paid: ' ₹800 पहले मिल चुके, बाक़ी ₹4,500।', word: 'नमूना-word', words: 'नमूना-words', month: 'अक्टूबर 2026', owner: 'ठेकेदार',
+const SAMPLE = { word: 'नमूना-word', words: 'नमूना-words', month: 'अक्टूबर 2026', owner: 'ठेकेदार',
   math: 'सीमेंट 50 बोरी × ₹380 = ₹19,000, पर इनवॉइस पर ₹18,000', computed: '₹19,000', printed: '₹18,000',
   material: 'शिवपुरी पर सीमेंट 50 बोरी', jcb: 'शिवपुरी पर JCB, 2 घंटे', first: 'P-1 भेजी', second: 'J-1 भेजी', why: 'जवाब नहीं आया', new: 3,
   message: 'बिल मिला।', pct: 30, n: 5, metric: 'दर', value: '₹380/बोरी', min: '₹350/बोरी', max: '₹400/बोरी',
