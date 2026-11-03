@@ -132,6 +132,10 @@ const isImageMime = (mime) => mime === 'image/jpeg' || mime === 'image/png' || m
 
 /** A fresh token for one question's reply buttons. */
 const newToken = () => randomBytes(9).toString('base64url');
+/** Does this text ask "हाँ / नहीं" (and so go with buttons)? A key with no text asks nothing. @param {string} key @param {Record<string, string | number>} [params] */
+const endsYesNo = (key, params) => {
+  try { return t(key, params).endsWith('हाँ / नहीं'); } catch { return false; }
+};
 /** @param {string} text */
 const norm = (text) => text.trim().toLowerCase().replace(/[।.!?,]+$/u, '').replace(/\s+/g, ' ');
 /** "१२" → "12" @param {string} s */
@@ -196,7 +200,7 @@ export function createConversation(o) {
     const p = pending.get(keyOf(person));
     if (!p || !fresh.has(p)) return send(person, key, params, missed);
     fresh.delete(p);
-    const token = t(key, params).endsWith('हाँ / नहीं') ? newToken() : undefined;
+    const token = endsYesNo(key, params) ? newToken() : undefined;
     asked.set(p, { key, ...(params ? { params } : {}), ...(token ? { token } : {}) });
     return send(person, key, params, missed, token ? { token } : undefined);
   }
