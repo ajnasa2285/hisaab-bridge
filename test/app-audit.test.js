@@ -13,6 +13,7 @@ import { generateKeys, publicKeyFromText, publicKeyText } from '../src/protocol/
 import { createApp } from '../src/app.js';
 import { runTool } from '../src/agents/common.js';
 import { t } from '../src/i18n/index.js';
+import { sentText } from './wa/sent-text.js';
 
 const CONTRACTOR = '919000000061';
 const HOUR = 3600 * 1000;
@@ -36,7 +37,7 @@ async function desk(tc, o = {}) {
     const special = o.graph?.(String(input));
     if (special) return special;
     const body = JSON.parse(String(init?.body ?? '{}'));
-    sent.push({ to: body.to, text: body.text?.body });
+    sent.push({ to: body.to, text: sentText(body) });
     return Response.json({ messages: [{ id: `wamid.out${sent.length}` }] });
   };
   /** @type {any} */

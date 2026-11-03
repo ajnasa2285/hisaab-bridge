@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { generateKeys, publicKeyFromText, publicKeyText } from '../src/protocol/keys.js';
 import { createApp } from './../src/app.js';
 import { t } from '../src/i18n/index.js';
+import { sentText } from './wa/sent-text.js';
 
 const OWNER = '919000000001';
 const SUPERVISOR = '919000000011';
@@ -27,7 +28,7 @@ test('a supervisor\'s WhatsApp message reaches the JCB owner through both agents
     if (url === 'https://lookaside.example/voice') return new Response(new Uint8Array([1, 2, 3]));
     const body = JSON.parse(String(init?.body ?? '{}'));
     const line = /\/(line-[a-z]+)\/messages$/.exec(url)?.[1] ?? '?';
-    sent.push({ to: body.to, line, text: body.text?.body });
+    sent.push({ to: body.to, line, text: sentText(body) });
     return Response.json({ messages: [{ id: `wamid.out${sent.length}` }] });
   };
   /** @type {{name: string, args: any}[]} */
@@ -156,7 +157,7 @@ test('three agents in one service: a material order goes from the site line to t
     if (url === 'https://lookaside.example/challan') return new Response(new Uint8Array([4, 1, 2]));
     const body = JSON.parse(String(init?.body ?? '{}'));
     const line = /\/(line-[a-z]+)\/messages$/.exec(url)?.[1] ?? '?';
-    sent.push({ to: body.to, line, text: body.text?.body });
+    sent.push({ to: body.to, line, text: sentText(body) });
     return Response.json({ messages: [{ id: `wamid.out${sent.length}` }] });
   };
   /** @type {{name: string, args: any}[]} */

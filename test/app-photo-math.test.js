@@ -14,6 +14,7 @@ import { generateKeys, publicKeyFromText, publicKeyText } from '../src/protocol/
 import { createApp } from '../src/app.js';
 import { runTool } from '../src/agents/common.js';
 import { t } from '../src/i18n/index.js';
+import { sentText } from './wa/sent-text.js';
 
 const CONTRACTOR = '919000000091';
 const SUPERVISOR = '919000000092';
@@ -44,7 +45,7 @@ async function desk(tc) {
       if (url.endsWith(`/${id}.bin`)) return new Response(bytes);
     }
     const body = JSON.parse(String(init?.body ?? '{}'));
-    sent.push({ to: body.to, text: body.text?.body });
+    sent.push({ to: body.to, text: sentText(body) });
     return Response.json({ messages: [{ id: `wamid.out${sent.length}` }] });
   };
   /** @type {any} */

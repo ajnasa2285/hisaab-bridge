@@ -120,12 +120,12 @@ test('any other message lapses the question, drops the photo, and is read as a n
   for (const id of f.ids) assert.equal(f.meters(id).length, 0);
 });
 
-test('after the choice the normal flow goes on: an unclear reading asks for the digits, for that job', async (tc) => {
+test('after the choice the normal flow goes on: an unsure reading is read back, and typed digits are recorded for that job', async (tc) => {
   const f = await desk(tc);
   f.next = reading(20617, false);
   await f.talk.onImage(operator, photo(1));
   await f.talk.onText(operator, 'J-2');
-  assert.equal(f.last(), 'meter.ask_person');
+  assert.equal(f.last(), 'meter.unsure_read_back');
   assert.equal(f.talk.pending(operator)?.kind, 'meter_digits');
   await f.talk.onText(operator, '2061.7');
   assert.equal(f.last(), 'jcb.meter_start_saved');

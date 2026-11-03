@@ -15,6 +15,7 @@ import { createApp } from '../src/app.js';
 import { runTool, ofType } from '../src/agents/common.js';
 import { t } from '../src/i18n/index.js';
 import { SHA_A, SHA_B } from './agents/helpers.js';
+import { sentText } from './wa/sent-text.js';
 
 const CONTRACTOR = '919000000081';
 const SUPPLIER = '919000000082';
@@ -41,9 +42,10 @@ async function desk(tc) {
   const state = { failNext: 0, sparks: 0, nowMs: Date.parse('2026-10-29T02:30:00Z') };
   /** @type {typeof globalThis.fetch} */
   const fetch = async (_input, init) => {
-    if (state.failNext > 0) { state.failNext -= 1; return new Response('{}', { status: 500 }); }
     const body = JSON.parse(String(init?.body ?? '{}'));
-    sent.push({ to: body.to, text: body.text?.body });
+    // A question's buttons and the text sent when they fail are one notice that did not go.
+    if (state.failNext > 0) { if (body.type !== 'interactive') state.failNext -= 1; return new Response('{}', { status: 500 }); }
+    sent.push({ to: body.to, text: sentText(body) });
     return Response.json({ messages: [{ id: `wamid.out${sent.length}` }] });
   };
   /** @type {any} */

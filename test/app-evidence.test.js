@@ -9,6 +9,7 @@ import { createApp } from '../src/app.js';
 import { generateKeys } from '../src/protocol/keys.js';
 import { TYPES } from '../src/protocol/messages.js';
 import { runTool } from '../src/agents/common.js';
+import { sentText } from './wa/sent-text.js';
 
 test('app asks the supplier first, then exchanges evidence over real A2A, sends WhatsApp image and exports signed metadata only', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'hb-app-evidence-'));
@@ -63,9 +64,9 @@ test('app asks the supplier first, then exchanges evidence over real A2A, sends 
     const until = async (seen) => { for (let n = 0; n < 200 && !sent.some(seen); n += 1) await new Promise((r) => setTimeout(r, 10)); };
     await post('supplier', supplier.phone, 'wamid.supplier-hello', 'मदद');
     await post('site', contractor.phone, 'wamid.evidence-command', 'सबूत P-1');
-    await until((m) => m.to === supplier.phone && m.text?.body?.includes('भेजें? हाँ / नहीं'));
-    await until((m) => m.to === contractor.phone && m.text?.body?.includes('उनके हाँ कहने पर आएगी'));
-    assert.ok(sent.some((m) => m.to === contractor.phone && m.text?.body?.includes('उनके हाँ कहने पर आएगी')), 'the contractor waits for the supplier');
+    await until((m) => m.to === supplier.phone && sentText(m)?.includes('भेजें? हाँ / नहीं'));
+    await until((m) => m.to === contractor.phone && sentText(m)?.includes('उनके हाँ कहने पर आएगी'));
+    assert.ok(sent.some((m) => m.to === contractor.phone && sentText(m)?.includes('उनके हाँ कहने पर आएगी')), 'the contractor waits for the supplier');
     assert.equal(sent.filter((m) => m.type === 'image').length, 0, 'nothing shared before the supplier decides');
     await post('supplier', supplier.phone, 'wamid.supplier-yes', 'हाँ');
     await until((m) => m.type === 'image');

@@ -1,6 +1,7 @@
 // The WhatsApp side of the server: one webhook path per line (each line is its own Meta app with
 // its own app secret), signature checked on the raw bytes before anything is parsed, each message
-// handled once, routed to {agent, role}, and replies sent only inside the 24-hour window.
+// handled once, routed to {agent, role}, and replies sent only inside the 24-hour window. A question
+// ending "हाँ / नहीं" goes with reply buttons, and as plain text if WhatsApp does not take them.
 //
 //   GET  /wa/<line name>/webhook   Meta's subscription handshake
 //   POST /wa/<line name>/webhook   messages
@@ -8,6 +9,7 @@
 // What a message means is decided by the agents (src/agents/), never here.
 
 import { handshake, maskPhone, parseFailedStatuses, parseInbound, signatureIsValid } from './webhook.js';
+import { MAX_BUTTON_BODY } from './cloud.js';
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
@@ -50,6 +52,14 @@ export function createWa(o) {
     const line = byId.get(phoneNumberId);
     if (!line) return { ok: false, reason: 'unknown line' };
     if (!o.store.windowOpen(phoneNumberId, phone, now())) return { ok: false, reason: 'outside 24h window' };
+    // A question ending "हाँ / नहीं" goes with those two as buttons. If WhatsApp does not take it, for
+    // any reason, the same text goes as before: nobody loses a question.
+    const asked = yesNoButtons(text);
+    if (asked) {
+      const b = await line.client.sendButtons(phone, asked.body, asked.buttons);
+      if (b.ok) return b;
+      log(`wa ${line.name}: buttons to ${maskPhone(phone)} failed: ${b.reason}; sent as text`);
+    }
     const r = await line.client.sendText(phone, text);
     if (!r.ok) log(`wa ${line.name}: send to ${maskPhone(phone)} failed: ${r.reason}`);
     return r;
@@ -167,6 +177,22 @@ export function createWa(o) {
   }
 
   return { handle, send, sendImage, sendDocument };
+}
+
+const YES_NO = /\s*हाँ \/ नहीं$/u;
+
+/**
+ * A text that ends with the two answers it accepts, "हाँ / नहीं", as WhatsApp reply buttons: the text
+ * before them, and a button for each. A tap arrives as the button's title, the same word typed.
+ * Null for any other text, or one whose rest is too long for a button message (it goes as text).
+ * @param {string} text
+ * @returns {{body: string, buttons: {id: string, title: string}[]} | null}
+ */
+export function yesNoButtons(text) {
+  if (!YES_NO.test(text)) return null;
+  const body = text.replace(YES_NO, '');
+  if (!body.trim() || body.length > MAX_BUTTON_BODY) return null;
+  return { body, buttons: [{ id: 'yes', title: 'हाँ' }, { id: 'no', title: 'नहीं' }] };
 }
 
 /** @param {import('node:http').IncomingMessage} req @returns {Promise<Buffer>} */

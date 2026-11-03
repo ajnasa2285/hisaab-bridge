@@ -191,7 +191,7 @@ test('J-4 at the end: refused digits leave the question open, and the right digi
   await f.talk.onImage(operator, photo(1));
   f.next = unsure(99893);
   await f.talk.onImage(operator, photo(2));
-  assert.equal(f.last(), 'meter.ask_person');
+  assert.equal(f.last(), 'meter.unsure_read_back');
   await f.talk.onText(operator, '99893');
   assert.equal(f.last(), 'jcb.meter_hours_impossible');
   await f.talk.onText(operator, '9989.3');

@@ -418,6 +418,7 @@ export const hi = Object.freeze({
   'meter.not_meter': 'इस फ़ोटो में घंटा-मीटर नहीं दिखा। कृपया JCB के मीटर की फ़ोटो भेजें।',
   'meter.ask_person': 'मीटर के अंक पक्के नहीं पढ़े गए ({raw})। कृपया अंक लिखकर भेजें, जैसे 3677.7।',
   'meter.ask_person_blank': 'मीटर के अंक पक्के नहीं पढ़े गए। कृपया अंक लिखकर भेजें, जैसे 3677.7।',
+  'meter.unsure_read_back': 'मीटर {reading} पढ़ा। सही है? हाँ / नहीं',
   // Photo guards (docs/BUILD2.md "Photo guards and owner consent"; Claude drafted, Fable polished 29 Oct).
   'meter.typed_no_dot': 'आपने {reading} लिखा, दशमलव के बिना। शुरू का मीटर {reading} घंटे दर्ज करें? मीटर का आख़िरी अंक दशमलव के बाद का हो तो {dotted} लिखें। हाँ / नहीं',
   'meter.which.start': 'शुरू',

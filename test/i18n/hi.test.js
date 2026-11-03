@@ -244,7 +244,7 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'supplier.order_request_time': ['ref', 'site', 'day', 'time', 'items'], 'step.reply_booking_yes_time': ['site', 'day', 'time', 'rate'],
     'step.reply_booking_other_time_time': ['site', 'day', 'time'], 'step.reply_order_other_time_time': ['site', 'day', 'time'],
     'step.record_delivery_challan': ['site', 'items', 'challan'], 'office.approval_needed_estimate': ['ref', 'by', 'estimate', 'step'],
-    'office.status_held_estimate': ['ref', 'step', 'estimate', 'decision'], 'meter.ask_person': ['raw'], 'meter.ask_person_blank': [],
+    'office.status_held_estimate': ['ref', 'step', 'estimate', 'decision'], 'meter.ask_person': ['raw'], 'meter.ask_person_blank': [], 'meter.unsure_read_back': ['reading'],
     'challan.ask_person_blank': ['items'], 'site.challan_ask_person_blank': ['ref', 'names'],
     'site.challan_count_saved': ['ref', 'site', 'items'], 'site.challan_count_saved_challan': ['ref', 'site', 'items', 'challan'],
     'site.challan_count_matches': ['ref', 'site', 'items'], 'site.challan_count_matches_challan': ['ref', 'site', 'items', 'challan'],

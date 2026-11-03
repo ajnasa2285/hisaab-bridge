@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateKeys } from '../../src/protocol/keys.js';
 import { parseEnvFile, split } from '../../src/service/migrate.js';
+import { sentText } from '../wa/sent-text.js';
 
 export const OWNER = '919000000101';
 export const OPERATOR = '919000000102';
@@ -111,6 +112,8 @@ export async function startServices(tc, o = {}) {
   /** Photo bytes by media id. @type {Record<string, string>} */
   const media = {};
   let graphFails = 0;
+  // Reply-button messages refused, the texts after them not.
+  let buttonFails = 0;
   const graph = createServer((req, res) => {
     /** @type {Buffer[]} */
     const chunks = [];
@@ -127,10 +130,12 @@ export async function startServices(tc, o = {}) {
       }
       res.setHeader('content-type', 'application/json');
       if (url.endsWith('/media')) { res.end(JSON.stringify({ id: 'uploaded-1' })); return; }
-      if (graphFails > 0) { graphFails -= 1; res.statusCode = 400; res.end('{}'); return; }
       const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+      // A question's buttons and the text sent when they fail are one notice that did not go.
+      if (graphFails > 0) { if (body.type !== 'interactive') graphFails -= 1; res.statusCode = 400; res.end('{}'); return; }
+      if (buttonFails > 0 && body.type === 'interactive') { buttonFails -= 1; res.statusCode = 400; res.end(JSON.stringify({ error: { code: 131009 } })); return; }
       const line = /\/(line-[a-z]+)\/messages$/.exec(url)?.[1] ?? '?';
-      sent.push({ to: body.to, line, text: body.text?.body ?? body.image?.caption ?? body.document?.caption ?? '', kind: body.type, token: String(req.headers.authorization).replace('Bearer ', '') });
+      sent.push({ to: body.to, line, text: sentText(body) ?? body.image?.caption ?? body.document?.caption ?? '', kind: body.type, token: String(req.headers.authorization).replace('Bearer ', '') });
       res.end(JSON.stringify({ messages: [{ id: `wamid.out${sent.length}` }] }));
     });
   });
@@ -158,7 +163,7 @@ export async function startServices(tc, o = {}) {
   /** @type {string[]} */
   const migrated = [];
   assert.equal(await split({ from: dirs.one, envIn, toPrefix: dirs.prefix, envOut: dirs.env }, (l) => { migrated.push(l); }), true, migrated.join(' / '));
-  return finish(tc, { dirs, sent, media, front, graph, graphUrl, ports, base, routes, migrated, setGraphFails: (/** @type {number} */ n) => { graphFails = n; }, checkMs: o.checkMs, sharedNumber: o.sharedNumber });
+  return finish(tc, { dirs, sent, media, front, graph, graphUrl, ports, base, routes, migrated, setGraphFails: (/** @type {number} */ n) => { graphFails = n; }, setButtonFails: (/** @type {number} */ n) => { buttonFails = n; }, checkMs: o.checkMs, sharedNumber: o.sharedNumber });
 }
 
 /** @param {import('node:test').TestContext} tc @param {any} s */
@@ -237,6 +242,8 @@ async function finish(tc, s) {
   const lastTo = (/** @type {string} */ phone) => sent.filter((/** @type {any} */ x) => x.to === phone).at(-1)?.text ?? '';
   /** @param {string} from @param {string} text @param {'jcb' | 'site' | 'supplier'} [onLine] */
   const say = async (from, text, onLine) => { await post(from, { type: 'text', text: { body: text } }, onLine); await settle(); };
+  /** A reply button tapped, as WhatsApp sends it. @param {string} from @param {string} title */
+  const tap = async (from, title) => { await post(from, { type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: title === 'हाँ' ? 'yes' : 'no', title } } }); await settle(); };
   /** @param {string} from @param {string} shows what the stand-in readers will see */
   const photo = async (from, shows) => {
     const id = `media-${n + 1}`;
@@ -248,7 +255,7 @@ async function finish(tc, s) {
   /** @param {string} name */
   const exportOf = async (name) => (await fetch(`${base}/agents/${name}/export`, { headers: { authorization: `Bearer ${EXPORT_TOKEN}` } })).json();
 
-  return { ...s, settings, start, kill, children, post, say, photo, settle, lastTo, yesIfAsked, exportOf, sent, media, base, secret: SECRET };
+  return { ...s, settings, start, kill, children, post, say, tap, photo, settle, lastTo, yesIfAsked, exportOf, sent, media, base, secret: SECRET };
 }
 
 /**

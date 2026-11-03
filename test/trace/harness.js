@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateKeys, publicKeyFromText, publicKeyText } from '../../src/protocol/keys.js';
 import { createApp } from '../../src/app.js';
+import { sentText } from '../wa/sent-text.js';
 
 export const OWNER = '919000000001';
 export const OPERATOR = '919000000002';
@@ -28,6 +29,10 @@ export async function startService(o = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'hb-trace-'));
   /** @type {{to: string, line: string, text: string}[]} */
   const sent = [];
+  /** Every message as posted to the Graph API, and the service's log lines. @type {any[]} */
+  const bodies = [];
+  /** @type {string[]} */
+  const logs = [];
   /** @type {typeof globalThis.fetch} */
   const fakeGraph = async (input, init) => {
     const url = String(input);
@@ -36,11 +41,14 @@ export async function startService(o = {}) {
     if (url.startsWith('https://lookaside.example/')) return new Response(new TextEncoder().encode(`${PHOTO_MARK}:${url}`));
     const body = JSON.parse(String(init?.body ?? '{}'));
     const line = /\/(line-[a-z]+)\/messages$/.exec(url)?.[1] ?? '?';
-    sent.push({ to: body.to, line, text: body.text?.body ?? body.image?.caption ?? '' });
+    bodies.push(body);
+    if (model.buttonFails > 0 && body.type === 'interactive') { model.buttonFails -= 1; return Response.json({ error: { code: 131009 } }, { status: 400 }); }
+    sent.push({ to: body.to, line, text: sentText(body) ?? body.image?.caption ?? '' });
     return Response.json({ messages: [{ id: `wamid.out${sent.length}` }] });
   };
   /** What the stand-in Muse Spark proposes next (understanding a message), and what the readers return. */
-  const model = { calls: /** @type {{name: string, args: any}[]} */ ([]), kind: 'meter', meters: /** @type {number[]} */ ([]), upiPaise: 0 };
+  // `meters`: a reading in tenths, or what the reader returns; `buttonFails`: reply-button messages refused next.
+  const model = { calls: /** @type {{name: string, args: any}[]} */ ([]), kind: 'meter', meters: /** @type {any[]} */ ([]), upiPaise: 0, buttonFails: 0 };
   const spark = o.spark ?? (async (/** @type {any} */ req) => {
     if (req.schema) return { ok: true, json: { explanation: 'x' }, text: '', toolCalls: [], model: 'muse-spark-1.2', latencyMs: 5, usage: { input_tokens: 1, output_tokens: 1 } };
     return { ok: true, toolCalls: model.calls, model: 'muse-spark-1.2', latencyMs: 7, usage: { input_tokens: 10, output_tokens: 5 } };
@@ -86,7 +94,8 @@ export async function startService(o = {}) {
     spark,
     classifyPhoto: async () => ({ ok: true, kind: /** @type {any} */ (model.kind), clear: true, model: 'muse-spark-1.2', latencyMs: 4 }),
     readMeter: async () => {
-      const v = /** @type {number} */ (model.meters.shift());
+      const v = model.meters.shift();
+      if (typeof v !== 'number') return v;
       return { ok: true, kind: 'hour_meter', raw: (v / 10).toFixed(1), valueTenths: v, clear: true, dashClock: null, model: 'muse-spark-1.2', latencyMs: 9 };
     },
     readUpi: async () => ({ ok: true, kind: 'upi_payment', amountPaise: model.upiPaise, date: '2026-10-30', time: null, clock: '14:05', utr: '000011112222',
@@ -96,7 +105,7 @@ export async function startService(o = {}) {
     fetch: fakeGraph,
     exportToken: TOKEN,
     traceText: o.traceText ?? false,
-    log: () => {},
+    log: (/** @type {string} */ l) => { logs.push(l); },
   });
 
   const who = /** @type {Record<string, [string, string, string]>} */ ({
@@ -104,11 +113,12 @@ export async function startService(o = {}) {
     [SUPERVISOR]: ['site', 'line-site', 'secret-site'], [CONTRACTOR]: ['site', 'line-site', 'secret-site'],
   });
   let n = 0;
-  /** @param {string} from @param {string | null} text @param {string} [mediaId] @param {string} [caption] */
-  async function say(from, text, mediaId, caption) {
+  /** @param {string} from @param {string | null} text @param {string} [mediaId] @param {string} [caption] @param {any} [tapped] a reply button's title, tapped */
+  async function say(from, text, mediaId, caption, tapped) {
     n += 1;
     const [name, line, secret] = who[from];
-    const m = text === null ? { type: 'image', image: { id: mediaId ?? `media-${n}`, mime_type: 'image/jpeg', ...(caption ? { caption } : {}) } } : { type: 'text', text: { body: text } };
+    const m = tapped ? { type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: tapped === 'हाँ' ? 'yes' : 'no', title: tapped } } }
+      : text === null ? { type: 'image', image: { id: mediaId ?? `media-${n}`, mime_type: 'image/jpeg', ...(caption ? { caption } : {}) } } : { type: 'text', text: { body: text } };
     const body = JSON.stringify({
       object: 'whatsapp_business_account',
       entry: [{ id: 'w', changes: [{ field: 'messages', value: { metadata: { phone_number_id: line }, messages: [{ from, id: `wamid.t${n}`, timestamp: String(Math.floor(Date.now() / 1000)), ...m }] } }] }],
@@ -126,6 +136,8 @@ export async function startService(o = {}) {
     }
   }
   const lastTo = (/** @type {string} */ phone) => sent.filter((s) => s.to === phone).at(-1)?.text ?? '';
+  /** A reply button tapped, as WhatsApp sends it. @param {string} from @param {string} title */
+  const tap = (from, title) => say(from, null, undefined, undefined, title);
   /** Says "हाँ" when the last message to this person is a yes/no question. @param {string} phone */
   async function yesIfAsked(phone) {
     if (/हाँ \/ नहीं|"हाँ"/u.test(lastTo(phone))) await say(phone, 'हाँ');
@@ -134,7 +146,7 @@ export async function startService(o = {}) {
   const trace = async (name, query = '', token = TOKEN) => fetch(`${base}/agents/${name}/trace${query}`, token ? { headers: { authorization: `Bearer ${token}` } } : {});
 
   return {
-    app, base, sent, model, say, settle, lastTo, yesIfAsked, trace, dir,
+    app, base, sent, bodies, logs, model, say, tap, settle, lastTo, yesIfAsked, trace, dir,
     async close() {
       app.close();
       await new Promise((r) => server.close(() => r(undefined)));

@@ -22,6 +22,7 @@ import { XLSX_MIME } from '../src/export/xlsx.js';
 import { t } from '../src/i18n/index.js';
 import { readWorkbook, rowsOf } from './export/read-xlsx.js';
 import { SHA_A, SHA_B } from './agents/helpers.js';
+import { sentText } from './wa/sent-text.js';
 
 const CONTRACTOR = '919000000091';
 const SUPERVISOR = '919000000092';
@@ -67,7 +68,7 @@ async function desk(tc) {
     if (body.type === 'document') {
       if (state.failDocument) return new Response('{}', { status: 500 });
       documents.push({ to: body.to, document: body.document });
-    } else sent.push({ to: body.to, text: body.text?.body });
+    } else sent.push({ to: body.to, text: sentText(body) });
     return Response.json({ messages: [{ id: `wamid.out${sent.length + documents.length}` }] });
   };
   /** @type {any} */

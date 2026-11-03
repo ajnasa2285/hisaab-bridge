@@ -7,6 +7,11 @@ const MAX_TEXT = 4096;
 const DEFAULT_MAX_MEDIA_BYTES = 10 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_CAPTION = 1024;
+// WhatsApp's limits for an interactive reply-button message: the body, each title, how many buttons.
+// https://developers.facebook.com/docs/whatsapp/cloud-api/messages/interactive-reply-buttons-messages
+export const MAX_BUTTON_BODY = 1024;
+const MAX_BUTTON_TITLE = 20;
+const MAX_BUTTONS = 3;
 // WhatsApp's limit for a document.
 const MAX_DOCUMENT_BYTES = 100 * 1024 * 1024;
 const DOCUMENT_MIMES = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
@@ -56,6 +61,29 @@ export function createCloudClient(o) {
     }
   }
 
+  /**
+   * One message with no upload: a text, or an interactive one.
+   * @param {string} to @param {Record<string, unknown>} message the type and its object
+   * @returns {Promise<{ok: true, id: string} | {ok: false, reason: string}>}
+   */
+  async function sendMessage(to, message) {
+    let res;
+    try {
+      res = await doFetch(`${base}/${o.phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, ...message }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch {
+      return { ok: false, reason: 'network' };
+    }
+    const json = /** @type {any} */ (await res.json().catch(() => null));
+    if (!res.ok) return { ok: false, reason: `http ${res.status}${json?.error?.code ? ` code ${json.error.code}` : ''}` };
+    const id = json?.messages?.[0]?.id;
+    return typeof id === 'string' ? { ok: true, id } : { ok: false, reason: 'no message id' };
+  }
+
   return {
     phoneNumberId: o.phoneNumberId,
     /**
@@ -66,21 +94,26 @@ export function createCloudClient(o) {
     async sendText(to, body) {
       if (!/^\d{6,15}$/.test(to)) return { ok: false, reason: 'bad recipient' };
       if (!body || body.length > MAX_TEXT) return { ok: false, reason: 'text empty or too long' };
-      let res;
-      try {
-        res = await doFetch(`${base}/${o.phoneNumberId}/messages`, {
-          method: 'POST',
-          headers: { ...auth, 'content-type': 'application/json' },
-          body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'text', text: { body, preview_url: false } }),
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-      } catch {
-        return { ok: false, reason: 'network' };
-      }
-      const json = /** @type {any} */ (await res.json().catch(() => null));
-      if (!res.ok) return { ok: false, reason: `http ${res.status}${json?.error?.code ? ` code ${json.error.code}` : ''}` };
-      const id = json?.messages?.[0]?.id;
-      return typeof id === 'string' ? { ok: true, id } : { ok: false, reason: 'no message id' };
+      return sendMessage(to, { type: 'text', text: { body, preview_url: false } });
+    },
+
+    /**
+     * A question with reply buttons. A tap comes back on the webhook as the button's title
+     * (src/wa/webhook.js), so a tapped "हाँ" is the same message as a typed one. Nothing goes out
+     * for a body or titles WhatsApp would not take.
+     * @param {string} to
+     * @param {string} body
+     * @param {{id: string, title: string}[]} buttons
+     * @returns {Promise<{ok: true, id: string} | {ok: false, reason: string}>}
+     */
+    async sendButtons(to, body, buttons) {
+      if (!/^\d{6,15}$/.test(to)) return { ok: false, reason: 'bad recipient' };
+      if (!body.trim() || body.length > MAX_BUTTON_BODY) return { ok: false, reason: 'body empty or too long' };
+      const titles = new Set(buttons.map((b) => b.title));
+      if (buttons.length < 1 || buttons.length > MAX_BUTTONS || titles.size !== buttons.length
+        || buttons.some((b) => !b.title.trim() || b.title.length > MAX_BUTTON_TITLE || !/^[a-z_]{1,32}$/.test(b.id))) return { ok: false, reason: 'bad buttons' };
+      return sendMessage(to, { type: 'interactive', interactive: { type: 'button', body: { text: body },
+        action: { buttons: buttons.map((b) => ({ type: 'reply', reply: { id: b.id, title: b.title } })) } } });
     },
 
     /**

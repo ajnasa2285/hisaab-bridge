@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { generateKeys, publicKeyFromText, publicKeyText } from '../src/protocol/keys.js';
 import { createApp } from './../src/app.js';
 import { openWaStore } from '../src/wa/store.js';
+import { sentText } from './wa/sent-text.js';
 
 const OWNER = '919000000051';
 const OPERATOR = '919000000052';
@@ -34,7 +35,7 @@ test('the JCB owner and operator, who had not written today, get their waiting n
   /** @type {typeof globalThis.fetch} */
   const fakeGraph = async (_input, init) => {
     const body = JSON.parse(String(init?.body ?? '{}'));
-    sent.push({ to: body.to, text: body.text?.body });
+    sent.push({ to: body.to, text: sentText(body) });
     return Response.json({ messages: [{ id: `wamid.out${sent.length}` }] });
   };
   /** @type {{name: string, args: any}[]} */

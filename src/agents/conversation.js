@@ -57,7 +57,7 @@ import { plain, promptBlock, voiceParty } from '../learn/corrections.js';
 /**
  * `notice`: a question the agent put to the person, not a read-back of their own step; `again`: it has been asked again once.
  * @typedef {{kind: 'confirm', tool: string, args: Record<string, any>, no?: {tool: string, args: Record<string, any>}, ask?: Asked, at: number, notice?: boolean, again?: boolean} |
- *   {kind: 'meter_digits', orderId: string, which: 'start' | 'end', sha256: string, takenAt: string | null, at: number} |
+ *   {kind: 'meter_digits', orderId: string, which: 'start' | 'end', sha256: string, takenAt: string | null, at: number, readBack?: number} |
  *   {kind: 'challan_figures', orderId: string, sha256: string, challanNo: string | null, invoice?: Invoice | null, at: number} |
  *   {kind: 'site_challan_order', orderIds: string[], sha256: string, reading: SiteReading, at: number} |
  *   {kind: 'site_challan_figures', orderId: string, sha256: string, challanNo: string | null, at: number} |
@@ -647,7 +647,13 @@ export function createConversation(o) {
       if (NO.has(said)) return o.reply(person, 'step.cancelled');
     }
     if (p && p.kind === 'meter_digits') {
-      const m = /^(\d{1,7})(?:\.(\d))?$/.exec(said);
+      // An unsure reading read back (onMeterImage): "हाँ" is that figure, as if typed, and goes through
+      // the same checks; "नहीं" asks for the digits, and the question stays open for them.
+      if (p.readBack !== undefined && NO.has(said)) {
+        pending.set(keyOf(person), { kind: 'meter_digits', orderId: p.orderId, which: p.which, sha256: p.sha256, takenAt: p.takenAt, at: o.now() });
+        return o.reply(person, 'meter.ask_person_blank');
+      }
+      const m = /^(\d{1,7})(?:\.(\d))?$/.exec(p.readBack !== undefined && YES.has(said) ? tenthsText(p.readBack) : said);
       if (m) {
         pending.delete(keyOf(person));
         const valueTenths = Number(m[1]) * 10 + Number(m[2] ?? '0');
@@ -1250,7 +1256,12 @@ export function createConversation(o) {
     rememberPhoto(person, image);
     if (which === 'end') endPhotos.set(picked.orderId, { sha256, takenAt, at: o.now() });
     if (!read.clear || read.valueTenths === null) {
-      pending.set(keyOf(person), { kind: 'meter_digits', orderId: picked.orderId, which, sha256, takenAt, at: o.now() });
+      // A full reading with its dot ("9989.4") is read back, one tap to record it; the person may type
+      // the right digits instead. Anything less is asked for as before.
+      const full = /^(\d{1,7})\.(\d)$/.exec(read.raw.trim());
+      const readBack = full ? Number(full[1]) * 10 + Number(full[2]) : undefined;
+      pending.set(keyOf(person), { kind: 'meter_digits', orderId: picked.orderId, which, sha256, takenAt, at: o.now(), ...(readBack !== undefined ? { readBack } : {}) });
+      if (readBack !== undefined) return o.reply(person, 'meter.unsure_read_back', { reading: tenths(readBack) });
       // Digits with no dot are not shown: live on J-4, 99831 was copied back for 9983.1.
       return o.reply(person, read.raw.includes('.') ? 'meter.ask_person' : 'meter.ask_person_blank', { raw: read.raw });
     }

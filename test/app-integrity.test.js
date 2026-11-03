@@ -16,6 +16,7 @@ import { t } from '../src/i18n/index.js';
 import { openLedger } from '../src/ledger/store.js';
 import { checkFiles } from '../src/ledger/check-files.js';
 import { deleteFrom, rewriteRow } from './ledger/forge.js';
+import { sentText } from './wa/sent-text.js';
 
 const CONTRACTOR = '919000000071';
 const SUPPLIER = '919000000072';
@@ -48,9 +49,10 @@ async function desk(tc, o = {}) {
   const state = { failNext: 0, nowMs: Date.parse('2026-10-29T02:30:00Z') };
   /** @type {typeof globalThis.fetch} */
   const fetch = async (_input, init) => {
-    if (state.failNext > 0) { state.failNext -= 1; return new Response('{}', { status: 400 }); }
     const body = JSON.parse(String(init?.body ?? '{}'));
-    sent.push({ to: body.to, text: body.text?.body });
+    // A question's buttons and the text sent when they fail are one notice that did not go.
+    if (state.failNext > 0) { if (body.type !== 'interactive') state.failNext -= 1; return new Response('{}', { status: 400 }); }
+    sent.push({ to: body.to, text: sentText(body) });
     return Response.json({ messages: [{ id: `wamid.out${sent.length}` }] });
   };
   /** @type {any} */

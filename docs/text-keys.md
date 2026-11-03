@@ -384,7 +384,8 @@ A value that was not given is left out of the sentence, never shown as "—": co
 | `supplier.reply_sent_yes` | ref, site, day, rates | receipt of the supplier's exact yes (was without figures) |
 | `supplier.reply_sent_no` / `_other_time` | ref, site, day | receipts |
 | `challan.ask_person_blank` | items | the supplier types the quantities, when nothing was read to show |
-| `meter.ask_person_blank` | — | the person types the meter digits, when nothing was read to show |
+| `meter.ask_person_blank` | — | the person types the meter digits, when nothing was read to show; also after "नहीं" to `meter.unsure_read_back` |
+| `meter.unsure_read_back` | reading | the reader was unsure but gave a full reading with a dot: read back; "हाँ" records it, typed digits record their own, "नहीं" asks for the digits |
 | `step.request_jcb`, `step.request_material` | what | the read-back now carries the request as a statement (`what.*`) |
 | `step.reply_booking_yes` / `_time`, `step.reply_booking_other_time` / `_time`, `step.reply_order_other_time` / `_time` | site, day, [time], rate | read-backs of an answer understood from free words |
 | `step.record_delivery` / `_challan`, `step.site_challan` / `_challan` | site, items, [challan] (+ ref, names) | read-backs; `step.site_challan` is now used only when the photo differs from the supplier's delivery, and says so |
@@ -634,3 +635,7 @@ Exact command, by code; no model. `src/export/records.js`.
 | `excel.bill`, `excel.correction` (n), `excel.in_force`, `excel.not_in_force` | | cells on the bills sheet |
 
 The sheets' headings are in Hindi with English in brackets and live in `src/export/records.js`, not here.
+
+## Reply buttons (3 Nov)
+
+No new words. A text that ends with "हाँ / नहीं" goes as a WhatsApp reply-button message (`src/wa/wa.js` `yesNoButtons`): the text before those words, and two buttons "हाँ" and "नहीं". A tap arrives as the button's title, the same word typed. A text that does not end that way (`booking.ask_jcb` with "/ दूसरा दिन", `pay.split_choose`, `learn.read_back_*` with "या सही अंक लिखें", any question followed by `common.question_waits`), or whose rest is over WhatsApp's 1024 characters, goes as text. Buttons WhatsApp refuses go as the same text.

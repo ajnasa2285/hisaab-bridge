@@ -5,10 +5,10 @@
 import { startAgent } from '../../src/service/agent.js';
 import { startRouter } from '../../src/service/router.js';
 
-/** A photo's bytes say what it shows: "meter:12345" or "upi:732000". @param {{bytes: Uint8Array}} image */
+/** A photo's bytes say what it shows: "meter:12345" or "upi:732000"; "meter:99894:unsure", a reading the reader is not sure of. @param {{bytes: Uint8Array}} image */
 const shown = (image) => {
-  const [kind, value] = Buffer.from(image.bytes).toString('utf8').split(':');
-  return { kind, value: Number(value) };
+  const [kind, value, unsure] = Buffer.from(image.bytes).toString('utf8').split(':');
+  return { kind, value: Number(value), unsure: unsure === 'unsure' };
 };
 const STAND_IN = { model: 'muse-spark-1.3', latencyMs: 1 };
 
@@ -22,8 +22,8 @@ const models = {
   },
   classifyPhoto: async (/** @type {any} */ image) => ({ ok: true, kind: shown(image).kind, clear: true, ...STAND_IN }),
   readMeter: async (/** @type {any} */ image) => {
-    const v = shown(image).value;
-    return { ok: true, kind: 'hour_meter', raw: (v / 10).toFixed(1), valueTenths: v, clear: true, dashClock: null, ...STAND_IN };
+    const { value: v, unsure } = shown(image);
+    return { ok: true, kind: 'hour_meter', raw: (v / 10).toFixed(1), valueTenths: unsure ? null : v, clear: !unsure, dashClock: null, ...STAND_IN };
   },
   readUpi: async (/** @type {any} */ image) => ({ ok: true, kind: 'upi_payment', amountPaise: shown(image).value, date: '2026-10-30', time: null, clock: '14:05', utr: '000011112222',
     status: 'success', payeeName: 'Payee', payeeVpa: 'payee@upi', payerName: 'Payer', clear: true, ...STAND_IN }),
