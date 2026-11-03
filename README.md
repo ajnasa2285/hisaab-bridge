@@ -1,6 +1,6 @@
 # Hisaab Bridge
 
-**Every business gets its own agent that runs its books, and the agents talk to each other to get work done, so small businesses grow together instead of arguing.**
+**Every business gets its own agent that keeps its record of each job, and the agents talk to each other to get work done, so small businesses grow together instead of arguing.**
 
 Each agent works for its own owner on WhatsApp: it keeps that business's ledger, records only what a person allowed to decide has said or sent, and connects to the agents of the businesses it deals with. Every deal leaves the same signed record on both sides. In this entry, three agents (a contractor's site office, a JCB owner's and a sand/cement supplier's) agree on bookings, hours, deliveries, bills and payments over A2A. **Muse reads and explains. Code does the arithmetic and checks each figure against the agreed rates and earlier records. The other side confirms. People decide.**
 
@@ -48,26 +48,26 @@ flowchart LR
     L2[Site number]
     L3[Supplier number]
   end
-  subgraph Server[One Node 24 service on EC2 behind Caddy, HTTPS]
-    R[Webhook: signature check, routing by line + phone to agent + role]
-    C[Conversation: read-back, हाँ / नहीं, commands, approvals]
-    J[JCB agent<br/>jcb.db]
-    S[Contractor agent<br/>contractor.db]
-    P[Supplier agent<br/>supplier.db]
+  subgraph Server[Four Node 24 services on one EC2 host behind Caddy, HTTPS]
+    R[WhatsApp router<br/>signature check, routing by line + phone to agent + role<br/>no key, no ledger]
+    J[JCB agent service<br/>own user, own key, jcb.db]
+    S[Contractor agent service<br/>own user, own key, contractor.db]
+    P[Supplier agent service<br/>own user, own key, supplier.db]
   end
   M[(Meta Model API<br/>Muse Spark<br/>Muse Voice Transcribe)]
-  L1 & L2 & L3 --> R --> C
-  C --> J & S & P
+  L1 & L2 & L3 --> R
+  R --> J & S & P
   J <-- "signed messages over A2A" --> S
   P <-- "signed messages over A2A" --> S
-  C -. "understand, read photos, explain" .-> M
+  J & S & P -. "understand, read photos, explain" .-> M
 ```
 
+- **Separate services** (`src/service/`, `deploy/aws/SPLIT.md`): since 3 November each agent runs as its own process under its own system user, with its own data folder that only it can read, so no agent can read another's key or ledger. A fourth service, the router, holds the WhatsApp secrets and passes each person's message to their agent; it holds no signing key and no ledger. The agents reach each other only over A2A.
 - **Signed messages** (`src/protocol/`): every message between agents is RFC 8785 canonical JSON signed with Ed25519, names its sender and addressee, expires, and carries a unique id. A misaddressed, expired or out-of-order message is refused with a signed `REFUSE` and writes nothing; a forged or altered one gets an unsigned error, never our signature; a repeat is not applied twice: it writes nothing and is answered with a fresh receipt for the same entry.
 - **Ledgers** (`src/ledger/`): each agent has its own append-only SQLite ledger, hash-chained. The chain has no secret, so on its own it shows only an edit that did not recompute the later hashes. A forced edit that does recompute them is caught by the other side's signed receipts, which name hashes of this chain: the server compares them at start and every 6 hours and tells the owners concerned, and the judge page compares them in the browser (limits below). Order states are enforced by code: no bill before work or delivery, settlement only for the payment in force on the bill in force, a correction names the bill it replaces.
 - **A2A** (`src/transport/a2a.js`): the official `@a2a-js/sdk`, A2A 1.0 JSON-RPC. Each agent publishes an Agent Card with its id and public key; our signed message travels as a `data` part and the signed receipt comes back the same way. A2A is the envelope only; whether a message is genuine is decided by the protocol layer, never by the transport.
 - **WhatsApp** (`src/wa/`): one webhook per line, `X-Hub-Signature-256` checked on the raw bytes before parsing, each message handled once, replies only inside the 24-hour window. A line is only transport: people are routed by `{line, phone}` to `{agent, role}`, so one phone can be a JCB owner on one number and a contractor on another.
-- **Conversation** (`src/agents/conversation.js`): Muse Spark turns free words into one proposed tool call; the agent reads it back in Hindi and acts only on the person's हाँ. A person's own exact reply to a request open for them ("हाँ 380", "नहीं", "30-10", "बिल", typed figures) and a clear photo reading that code finds consistent act at once with one receipt, because each record already has a second person checking it downstream (`docs/BUILD2.md`, "Fewer steps"). Exact commands are parsed by code before any model: `status J-1`, `pending`, `stock`, `ok P-2`, `no P-2 <reason>`, `help` / `मदद`.
+- **Conversation** (`src/agents/conversation.js`): Muse Spark turns free words into one proposed tool call; the agent reads it back in Hindi and acts only on the person's हाँ. A yes/no question comes with हाँ / नहीं reply buttons, and a tap answers only the question it came with: a tap on an older question decides nothing and the current one is asked again. A person's own exact reply to a request open for them ("हाँ 380", "नहीं", "30-10", "बिल", typed figures) and a clear photo reading that code finds consistent act at once with one receipt, because each record already has a second person checking it downstream (`docs/BUILD2.md`, "Fewer steps"). Exact commands are parsed by code before any model: `status J-1`, `pending`, `stock`, `ok P-2`, `no P-2 <reason>`, `help` / `मदद`.
 - **Approvals** (`src/agents/office.js`): a supervisor's order above the contractor's limit (or with no estimate; a JCB request naming no hours counts as a 12-hour day at the last agreed rate) is held under its reference until the contractor replies `ok` or `no`. Nobody approves their own entry; a decision is made once.
 - **Readers** (`src/readers/`): Muse Spark with a strict JSON schema decides what a photo is (meter, UPI receipt, challan, other) and reads the hour meter, the UPI screenshot and the delivery challan, printed and handwritten. Amounts become integer paise, quantities integer hundredths. An unsure reading says so and the person is asked; a value is never guessed. A meter photo is checked before it counts: a forwarded one is refused, Muse Spark compares it with the other reading's photo (same machine?), and a date on the display must be the job's.
 - **Evidence on request** (`src/agents/evidence.js`): on a dispute, a count difference or `सबूत J-1`, an agent asks the other for the photo behind a record; the photo's owner is asked first and only their हाँ sends it, hash-checked against the fingerprint already in the asker's ledger; नहीं sends a signed refusal (`declined_by_owner`).
@@ -109,15 +109,18 @@ The figure that matters most is the "wrong but confident" column: across all rea
 
 Not yet measured: UPI on unseen screenshots and other UPI apps, the challan reader and the photo-kind reader on real challans. Sample sizes are small and stated as such.
 
-**Tests:** 1024 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and the repeat is answered with a fresh receipt for the same entry), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, exact replies and clear photos that act at once, evidence exchange with hash checks, the site's signed copy, the explanation and answer checks, and the judge page's file serving.
+**Tests:** 1085 automated tests (`node:test`), run on an AWS machine before every merge and deploy, with the TypeScript checker in strict mode over the JSDoc types. They cover the protocol (forged, altered, wrong addressee, expired, repeated, out of order), a crash between writing and answering (the message is written once and the repeat is answered with a fresh receipt for the same entry), whole jobs between agents with both ledgers agreeing at every step, the approval rules, intake that asks only for what is missing, exact replies and clear photos that act at once, evidence exchange with hash checks, the site's signed copy, the explanation and answer checks, and the judge page's file serving.
 
 ## What works today, honestly
 
-- Running live on EC2 with HTTPS: three agents, their keys and ledgers, the webhooks, the judge page.
+- Running live on EC2 with HTTPS: three agent services, each with its own key and ledger, a WhatsApp router, the webhooks, the judge page.
 - All three agents run on one server and one WhatsApp number, each person routed by their phone number to their own agent and role. The code has a line per agent, but everyone writes to the one number today.
-- Every order so far is a test order, run on real phones. The builder played the contractor throughout and the supplier on P-1 to P-4, and people the builder knows played the supervisor, the JCB owner and the operator. No money changed hands on any order: the bills and payments are test entries, and "settled" means settled in the test. J-1 followed real work, but its ₹7,200 bill is a made-up figure and its meter photos were old ones, not from that job. J-1 and P-1 to P-4 are settled. J-2 and J-3 were booked and then cancelled because of rain.
+- **Two real JCB jobs, J-4 (2 November) and J-7 (3 November).** The builder, who runs a brick kiln, was the contractor. The builder's own supervisor asked for the JCB by voice note. The JCB owner is a real JCB owner and broker the builder hires, who agreed to take part; the meter photos were sent by the JCB's operator and the builder's helper who stays with the machine. Real work, real meter readings, real cash: J-4 was 6.2 hours at ₹1,000, billed ₹6,200; J-7 was 5.3 hours, billed ₹5,300. The builder paid ₹7,000 in cash on 2 November (₹6,200 to J-4, ₹800 as an advance on J-7) and ₹4,500 on 3 November, and the JCB owner confirmed each payment on WhatsApp. Both are settled. J-8 is booked for 4 November.
+- What went wrong on them, and what changed. J-4's start photo had a faint decimal point: the operator typed the figure without it, and it was corrected before the bill; every earlier reading stays on record. A figure typed for J-4's end photo was taken as a change to the start, through a fault in our code; it was put right on WhatsApp before the bill and the code was fixed that day. A second, duplicate booking of J-4 (J-5) was cancelled by the contractor. On J-7 the agent asked once about the start photo and read the end photo first time.
+- Every other order is a test order, run on real phones. The builder played the contractor and the supplier on P-1 to P-4, and people the builder knows played the supervisor, the JCB owner and the operator; no money changed hands. J-1 followed real work, but its ₹7,200 bill is a made-up figure and its meter photos were old ones, not from that job. J-2 and J-3 were booked and then cancelled because of rain.
 - So P-4's objection and corrected bill were the builder on both sides, testing the flow, not a dispute between two businesses.
-- Nobody is paying, and no unrelated business has used it. There is no self-service onboarding: each phone is added by hand.
+- Nobody is paying. One outside business has used it, the JCB owner on J-4 and J-7, and only with the builder. There is no self-service onboarding: each phone is added by hand.
+- The reply buttons and the separate services went live on 3 November, after J-7. They pass the automated tests and a trial on copies of the live ledgers; the buttons have not yet been seen on WhatsApp.
 - The latest fixes (the ledger cross-check, hiding money from the JCB operator, the JCB rate check, the supervisor's hours, the sellers' warnings, corrections to zero) passed the automated tests and are live, but have not been tried on WhatsApp. The same goes for the missed notices told again after 24 hours' silence. Some older paths have also not been seen on WhatsApp, among them advance payments and the `सबूत` command.
 - On 28 October Meta locked the business account of a separate site number (error 131031). Nothing we hold shows this has been resolved. The orders above did not depend on that number.
 
@@ -136,10 +139,10 @@ An independent audit found no critical or high issue. A later AI red-team review
 - **A wrong count can still be entered.** The agent cannot know what actually reached the site. The contractor is told each supervisor count that equals the challan, and whether it was a plain yes, typed figures or a photo, and can object when the bill comes; nothing stops a false figure being entered, and a plain yes proves nobody counted. The same goes for a JCB job's hours, which also cannot be changed once entered: a mistake there shows as a difference when the bill comes.
 - **A JCB bill's hours are not compared with its meter readings on the contractor's side.** The JCB agent builds the bill from those readings; the contractor's agent checks the rate and the amount, and the supervisor's hours when recorded.
 - **A supervisor can split one need into several orders under the approval limit.** The contractor is told of each order, but they are not added up against the limit.
-- **All three agents run in one process on one host.** They keep separate keys and ledgers and talk only over A2A, but a compromise of that host reaches all three.
+- **All three agents run on one host.** Each is its own process under its own user and cannot read the others' keys, but someone with full control of that host reaches all three. The folder from before the split, with all three keys, is still on the server, readable only by its administrator, until the new setup has run a real job.
 - **A connected agent can lie in its answers.** It can record a message and answer "refused", or give a receipt for one it did not record. Nothing prevents that, because each agent writes its own ledger. The cross-check shows that the two records differ, but not which side lied, and it can only run where both ledgers can be read, as on our one server today.
 - **A notice lost in a crash is not told again.** One whose send fails is remembered and told when the person next writes, but there is no retry before that, and a crash just before the send leaves nothing to tell.
-- **A connected agent that stays down freezes the order.** Only one unanswered message is allowed per order, so nothing new can be sent, not even a cancel, and there is no manual close. All agents run in one process today, so this will matter once businesses run their own.
+- **A connected agent that stays down freezes the order.** Only one unanswered message is allowed per order, so nothing new can be sent, not even a cancel, and there is no manual close. All agents run on one host today, so this will matter once businesses run their own.
 - **A cancel crossing a delivery loses both.** If each side sends at the same moment, each refuses the other's message. The records stay in agreement at `booked`, and each person is told only that the other side refused, so both must act again.
 - **The cross-check through receipts reaches only as far as the last receipt.** Rows written after the last receipt from that peer can't be checked, so their edit or deletion goes unseen until a later receipt names a head after them; a seller's own sent bill is among those rows until it next receives a message.
 - **All three agents and their signing keys sit on one server today.** Someone with full server access could rewrite all three ledgers and re-sign them consistently. Only a copy of the chain heads held off the server would catch that, and that isn't built.
@@ -156,6 +159,7 @@ An independent audit found no critical or high issue. A later AI red-team review
 - **An agreed rate cannot be corrected.** A correction changes quantities or hours, never the rate in the seller's yes. A wrong rate can only be undone by cancelling while the order is still only booked, and ordering again.
 - **The same-amount warning relies on exact amounts.** A seller's entry equal to money already confirmed on that order is asked about first. The same money written as a different figure, or put on another order, is not noticed.
 - **A voice note heard exactly as an exact reply or command acts with no read-back.** It takes the same path as typed text (a few steps, such as a correction or a cancel, are still read back), so a mishearing that still reads as a valid reply commits, and the receipt is the only sign.
+- **A bill notice shows the bill, not the balance.** The contractor is told the full bill (J-7: ₹5,300), not that an advance (₹800) leaves ₹4,500 to pay; the balance is right in the ledger and shown when a payment is entered.
 - **One person is the only operator of this system.** There is nobody else to watch it or fix it if they are away.
 - **The two sides' challan checks are not independent when both send the same photo.** On 31 October a live challan listing its items in another order put 40 bags instead of 50 on a signed delivery, and both checks agreed. The matching is fixed, and the invoice's grand total still differed from the bill's, but a person's own count is the real check. Identical photos are now flagged in the notices; a re-photographed or recompressed copy of the same paper cannot be detected.
 
@@ -185,7 +189,7 @@ Most small contractors have no accountant. They have a munshi or a helper and lo
 
 Bigger contractors often do have an accountant, and already run deliveries through WhatsApp groups, posted by the supplier or the supervisor. We add approval and evidence to that habit, and the owner can ask for an Excel copy of their records for the accountant. Our agents work in one-to-one chats, not in groups, so it is still a change of habit for those teams, and it adds work before the benefit appears. There is no Tally import.
 
-An accounts person works for one side and cannot give both businesses a record the other accepts. Here each business has its own ledger and its own key, and each can check the other's signed receipts. Today all three agents sit on our one server, so that separation is not complete yet (see Known limits).
+An accounts person works for one side and cannot give both businesses a record the other accepts. Here each business has its own ledger and its own key, and each can check the other's signed receipts. Today all three agents run as separate services on our one server, so that separation is not complete yet (see Known limits).
 
 We don't remove people from the hard cases. We remove the chasing and retyping before them, and put the figures, the difference and the photo (once its owner agrees to share it) in front of the person who decides.
 
@@ -231,7 +235,7 @@ Our application proposed a WhatsApp site office that turns contractors' field ph
 
 Our previous private project is Bhatta Munshi, a WhatsApp bookkeeping agent running daily at our own brick kiln, described in our application. What we learned there (the person confirms before anything is recorded, code checks every figure the model reads) shaped this design. In this entry those ideas hold only as described above: a clear photo needs no extra reply, and some things a model reads, such as the UPI payee, are shown rather than checked. No code from it is used, and it is not part of this entry. The organisers confirmed that mentioning it as context is fine.
 
-No pilot has started. The people in the tests are listed under "What works today". All data in this repository is invented; real photos and phone numbers stay on the private server.
+No pilot has started: J-4 and J-7 were the builder's own jobs with one JCB owner. The people involved are listed under "What works today". All data in this repository is invented; real photos, phone numbers and the real jobs' ledgers stay on the private server.
 
 Built by the owner with AI coding tools, all disclosed: Claude Code (lead and integrator), Astra (readers and measurement), Fable (Hindi texts, contractor features, judge page) and Codex. No code predates the event. Claude Code, Astra and Fable wrote it in parallel sessions, each in its own git worktree, and Astra's ultra mode itself runs parallel agents. Their work is merged in batches, which is why large tested commits can land minutes apart.
 
