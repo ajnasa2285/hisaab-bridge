@@ -719,6 +719,11 @@ export function createContractorAgent(o) {
    */
   function billNotice(orderId, b, type) {
     const ref = refOf(orderId);
+    // Money already confirmed on the order (an advance), and what the bill leaves to pay; empty when none.
+    const s = summaryOf(ledger, orderId);
+    const paid = s.confirmedPaise > 0 && s.billTotalPaise !== null
+      ? t(s.duePaise ? 'site.bill_paid_part' : 'site.bill_paid_full', { paid: rupees(s.confirmedPaise), due: rupees(/** @type {number} */ (s.duePaise)) })
+      : '';
     const site = siteOf(orderId);
     const total = rupees(b.totalPaise);
     const yes = t('site.yes_word');
@@ -732,12 +737,12 @@ export function createContractorAgent(o) {
       const noted = hoursCheck(orderId, b);
       if (noted) {
         const word = type === 'BILL' ? 'bill' : 'correction';
-        const shown = { ref, site, yes, total, hours: hours(line.hoursTenths), rate: rupees(line.ratePaise), photos: Array.isArray(b.evidence) ? b.evidence.length : 0 };
+        const shown = { ref, site, yes, total, paid, hours: hours(line.hoursTenths), rate: rupees(line.ratePaise), photos: Array.isArray(b.evidence) ? b.evidence.length : 0 };
         if (!noted.differs) return { key: `site.${word}_received_hours_match`, armed: true, params: shown };
         return { key: `site.${word}_hours_differs`, armed: false, params: { ...shown, siteHours: hours(noted.hoursTenths), siteTotal: rupees(noted.totalPaise) } };
       }
       return { key: type === 'BILL' ? 'site.bill_received' : 'site.correction_received', armed: true, params: {
-        ref, site, yes, total, hours: line.hoursTenths !== undefined ? hours(line.hoursTenths) : '—', rate: rupees(line.ratePaise), photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
+        ref, site, yes, total, paid, hours: line.hoursTenths !== undefined ? hours(line.hoursTenths) : '—', rate: rupees(line.ratePaise), photos: Array.isArray(b.evidence) ? b.evidence.length : 0,
       } };
     }
     const { d, rates, count, follows } = materialBillCheck(b, type, orderId);

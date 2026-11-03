@@ -61,10 +61,11 @@ Claude adds a key here when code starts using it; Fable writes the Hindi in `src
 |---|---|---|
 | `site.jcb_requested` | ref, site, day, time | JCB request sent |
 | `site.booking_yes` / `_no` / `_other_time` | ref, site, day, time, rate | the JCB owner's answer |
-| `site.bill_received` | ref, site, yes, hours, rate, total, photos | a bill arrived (with this many meter photos) |
+| `site.bill_received` | ref, site, yes, hours, rate, total, photos, paid | a bill arrived (with this many meter photos) |
+| `site.bill_paid_part` / `site.bill_paid_full` | paid, due / paid | `{paid}` in the JCB bill notices: money already confirmed on the order and what the bill leaves (empty when nothing was paid) |
 | `site.correction_received` | ref, site, yes, hours, rate, total, photos | a corrected bill arrived |
-| `site.bill_received_hours_match` / `site.correction_received_hours_match` | ref, site, yes, hours, rate, total, photos, example | a JCB bill or correction equal to the site's recorded hours; "हाँ" accepts |
-| `site.bill_hours_differs` / `site.correction_hours_differs` | ref, site, hours, rate, total, photos, siteHours, siteTotal | a JCB bill or correction beside the site's different hours and what they come to at the agreed rate (no "हाँ" offered) |
+| `site.bill_received_hours_match` / `site.correction_received_hours_match` | ref, site, yes, hours, rate, total, photos, example, paid | a JCB bill or correction equal to the site's recorded hours; "हाँ" accepts |
+| `site.bill_hours_differs` / `site.correction_hours_differs` | ref, site, hours, rate, total, photos, siteHours, siteTotal, paid | a JCB bill or correction beside the site's different hours and what they come to at the agreed rate (no "हाँ" offered) |
 | `site.booking_yes_hours` / `_time` | ref, site, day, time, rate | `site.booking_yes` as the supervisor gets it: says the hours may be noted; asks nothing |
 | `site.hours_saved` | ref, site, hours | the site's hours recorded on a JCB job |
 | `site.hours_already` | ref, hours | the hours are recorded once |

@@ -149,3 +149,30 @@ test('a yes for a bill since replaced: the new bill is offered again only when i
     assert.equal(ofType(s.siteCore.ledger.events(orderId), 'ACCEPT', 'out').length, 0);
   } finally { await s.close(); }
 });
+
+test('an advance already confirmed is in the bill notice, with what is left to pay (live, J-7)', async () => {
+  const { s, orderId } = await booked(100000);
+  try {
+    const pay = await runTool(s.site.tools, contractor, { tool: 'claim_payment', args: { orderId, method: 'cash', amountPaise: 80000, paidOn: '2026-10-29' } });
+    assert.equal(pay.ok, true, pay.key);
+    await settle();
+    assert.equal((await runTool(s.jcb.tools, owner, { tool: 'confirm_payment', args: { orderId } })).ok, true);
+    await settle();
+    await runTool(s.jcb.tools, owner, { tool: 'send_bill', args: { orderId } });
+    await settle();
+    const n = toldContractor(s, 'site.bill_received').at(-1);
+    const text = t(n[2], n[3]);
+    assert.ok(text.includes('₹6,000') && text.includes('₹800 पहले मिल चुके, बाक़ी ₹5,200।'), text);
+  } finally { await s.close(); }
+});
+
+test('no money yet: the bill notice says nothing about payments', async () => {
+  const { s, orderId } = await booked();
+  try {
+    await runTool(s.jcb.tools, owner, { tool: 'send_bill', args: { orderId } });
+    await settle();
+    const n = toldContractor(s, 'site.bill_received').at(-1);
+    assert.equal(n[3].paid, '');
+    assert.ok(!t(n[2], n[3]).includes('पहले मिल चुके'));
+  } finally { await s.close(); }
+});

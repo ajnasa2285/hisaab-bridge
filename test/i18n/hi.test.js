@@ -14,7 +14,7 @@ const REF_EXAMPLE = /\b[JP]-\d+\b/g;
 const CHASING = ['जल्दी', 'तुरंत', 'याद दिला', 'कब दोगे', 'कब देंगे', 'कब देंगी', 'चुकाएँ', 'चुकाओ', 'भुगतान करें', 'भुगतान कीजिए', 'पैसे दो', 'पैसे दें', 'देर हो', 'बकाया चुका', 'reminder', 'overdue'];
 
 /** A sample value for every parameter, so every key can be filled. @type {Record<string, string|number>} */
-const SAMPLE = { word: 'नमूना-word', words: 'नमूना-words', month: 'अक्टूबर 2026', owner: 'ठेकेदार',
+const SAMPLE = { paid: ' ₹800 पहले मिल चुके, बाक़ी ₹4,500।', word: 'नमूना-word', words: 'नमूना-words', month: 'अक्टूबर 2026', owner: 'ठेकेदार',
   math: 'सीमेंट 50 बोरी × ₹380 = ₹19,000, पर इनवॉइस पर ₹18,000', computed: '₹19,000', printed: '₹18,000',
   material: 'शिवपुरी पर सीमेंट 50 बोरी', jcb: 'शिवपुरी पर JCB, 2 घंटे', first: 'P-1 भेजी', second: 'J-1 भेजी', why: 'जवाब नहीं आया', new: 3,
   message: 'बिल मिला।', pct: 30, n: 5, metric: 'दर', value: '₹380/बोरी', min: '₹350/बोरी', max: '₹400/बोरी',
@@ -160,7 +160,8 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'jcb.correction_sent': ['hours', 'total'], 'jcb.payment_claimed': ['ref', 'site', 'amount', 'utr', 'day'], 'jcb.settled_sent': ['amount'],
     'site.jcb_requested': ['ref', 'site', 'day', 'time'], 'site.booking_yes': ['ref', 'site', 'day', 'time', 'rate'],
     'site.booking_no': ['ref', 'site', 'day', 'time', 'rate'], 'site.booking_other_time': ['ref', 'site', 'day', 'time', 'rate'],
-    'site.bill_received': ['yes', 'ref', 'site', 'hours', 'rate', 'total', 'photos', 'example'], 'site.correction_received': ['yes', 'ref', 'site', 'hours', 'rate', 'total', 'photos', 'example'],
+    'site.bill_received': ['yes', 'ref', 'site', 'hours', 'rate', 'total', 'photos', 'example', 'paid'], 'site.correction_received': ['yes', 'ref', 'site', 'hours', 'rate', 'total', 'photos', 'example', 'paid'],
+    'site.bill_paid_part': ['paid', 'due'], 'site.bill_paid_full': ['paid'],
     'site.bill_accepted': ['ref', 'site'], 'site.bill_disputed': ['ref', 'site'], 'site.reason_needed': [], 'site.figure_needed': [],
     'site.payment_claimed': ['ref', 'payment'], 'site.settled': ['ref', 'site', 'amount'],
     'step.reply_booking_yes': ['site', 'day', 'time', 'rate'], 'step.reply_booking_no': ['site', 'day', 'time', 'rate'],
@@ -193,8 +194,8 @@ test('every key the agents use (docs/text-keys.md on main) exists, with its para
     'site.hours_saved': ['ref', 'site', 'hours'], 'site.hours_already': ['ref', 'hours'], 'site.hours_closed': ['ref'], 'site.hours_not_open': ['ref'], 'site.hours_jcb_only': ['ref'], 'site.hours_figure': ['ref'],
     'step.record_site_hours': ['ref', 'site', 'hours'],
     'site.booking_yes_hours': ['ref', 'site', 'day', 'rate'], 'site.booking_yes_hours_time': ['ref', 'site', 'day', 'time', 'rate'],
-    'site.bill_received_hours_match': ['ref', 'site', 'hours', 'rate', 'total', 'photos', 'yes', 'example'], 'site.correction_received_hours_match': ['ref', 'site', 'hours', 'rate', 'total', 'photos', 'yes', 'example'],
-    'site.bill_hours_differs': ['ref', 'site', 'hours', 'rate', 'total', 'photos', 'siteHours', 'siteTotal'], 'site.correction_hours_differs': ['ref', 'site', 'hours', 'rate', 'total', 'photos', 'siteHours', 'siteTotal'],
+    'site.bill_received_hours_match': ['ref', 'site', 'hours', 'rate', 'total', 'photos', 'yes', 'example', 'paid'], 'site.correction_received_hours_match': ['ref', 'site', 'hours', 'rate', 'total', 'photos', 'yes', 'example', 'paid'],
+    'site.bill_hours_differs': ['ref', 'site', 'hours', 'rate', 'total', 'photos', 'siteHours', 'siteTotal', 'paid'], 'site.correction_hours_differs': ['ref', 'site', 'hours', 'rate', 'total', 'photos', 'siteHours', 'siteTotal', 'paid'],
     'records.hours_entered': ['by'],
     'site.count_closed': [], 'site.dispute_which_item': ['ref', 'items'], 'site.dispute_same': ['ref', 'total'], 'site.dispute_format': ['example'], 'site.dispute_already': ['ref'], 'answer.unclear': ['ref'], 'step.dispute_bill_items': ['ref', 'site', 'items', 'total', 'reason'], 'site.material_bill_received': ['yes', 'ref', 'site', 'lines', 'total', 'photos', 'example'],
     'site.material_correction_received': ['yes', 'ref', 'site', 'lines', 'total', 'photos', 'example'],
