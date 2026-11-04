@@ -8,7 +8,7 @@ Built during the Meta Global AI Developer Hackathon (Startup track, *Build for Y
 
 - **Judge page:** https://16-4-100-70.sslip.io/judge/ (three ledgers side by side, every message with its signature check; inside the agent: every Muse call, every code check, every decision). It opens on invented sample data; the live ledgers need an access key.
 - **Agent Cards:** `https://16-4-100-70.sslip.io/agents/{jcb,site,supplier}/.well-known/agent-card.json`
-- **Demo video:** *(link added at submission)*
+- **Demo video:** https://youtu.be/4rWi071hFh0 (2 min 9 s, English voice; the chats are in Hindi with English labels)
 
 ## The problem
 
@@ -120,7 +120,7 @@ Not yet measured: UPI on unseen screenshots and other UPI apps, the challan read
 - Every other order is a test order, run on real phones. The builder played the contractor and the supplier on P-1 to P-4, and people the builder knows played the supervisor, the JCB owner and the operator; no money changed hands. J-1 followed real work, but its ₹7,200 bill is a made-up figure and its meter photos were old ones, not from that job. J-2 and J-3 were booked and then cancelled because of rain.
 - So P-4's objection and corrected bill were the builder on both sides, testing the flow, not a dispute between two businesses.
 - Nobody is paying. One outside business has used it, the JCB owner on J-4 and J-7, and only with the builder. There is no self-service onboarding: each phone is added by hand.
-- The reply buttons and the separate services went live on 3 November, after J-7. They pass the automated tests and a trial on copies of the live ledgers; the buttons have not yet been seen on WhatsApp.
+- The reply buttons and the separate services went live on 3 November, after J-7. They pass the automated tests and a trial on copies of the live ledgers; the buttons have been seen on WhatsApp, but a tap on one has not yet been tried in a real job. J-8 was booked and then cancelled on the separate services on 4 November.
 - The latest fixes (the ledger cross-check, hiding money from the JCB operator, the JCB rate check, the supervisor's hours, the sellers' warnings, corrections to zero) passed the automated tests and are live, but have not been tried on WhatsApp. The same goes for the missed notices told again after 24 hours' silence. Some older paths have also not been seen on WhatsApp, among them advance payments and the `सबूत` command.
 - On 28 October Meta locked the business account of a separate site number (error 131031). Nothing we hold shows this has been resolved. The orders above did not depend on that number.
 
